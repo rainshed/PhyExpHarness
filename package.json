@@ -1,0 +1,24 @@
+{
+  "name": "phyexp-harness",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Minimal experiment harness integration and smoke checks",
+  "scripts": {
+    "smoke:luna": "node tests/smoke/luna/run.mjs",
+    "smoke:harbor": "python3 tests/smoke/harbor/run.py",
+    "h0": "python3 src/integrations/quantum_harbor/run.py",
+    "pretest": "npm run build:knowledge",
+    "test": "node --test tests/unit/*.test.mjs && python3 -m unittest discover -s tests/unit -p '*_test.py'",
+    "build": "npm run build:knowledge && npm run build:workbench",
+    "build:knowledge": "python3 scripts/build-knowledge.py knowledge/plugin-sdk/reference",
+    "build:workbench": "node scripts/build-workbench.mjs",
+    "test:contracts": "node --test tests/contracts/*.test.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "esbuild": "0.25.12"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
+}

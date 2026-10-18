@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "name",
+    "version",
+    "entry",
+    "purpose",
+    "configSchema",
+    "dependencies",
+    "observes",
+    "intervenes",
+    "capabilities",
+    "fallbackBehavior",
+    "assets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "entry": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "configSchema": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names of other selected execution plugins, in earlier load order. Native Cordis services such as systemPrompt belong in entry.inject, not here; use [] when there are no plugin dependencies."
+    },
+    "observes": {
+      "type": "array"
+    },
+    "intervenes": {
+      "type": "array"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "tools",
+          "public-context",
+          "tool-results",
+          "model-gateway",
+          "local-files"
+        ]
+      },
+      "uniqueItems": true,
+      "description": "Execution boundary declarations. System prompt contributions use public-context. These names match the existing execution allowlist."
+    },
+    "fallbackBehavior": {
+      "type": "string"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Additional workspace-relative files to freeze; entry and plugin.json are always included."
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Exact additional tool names registered by the plugin, if any."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Concise user-facing Chinese name; optional for legacy plugins."
+    },
+    "functionSummary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plain Chinese explanation of capabilities, when they act, and limitations. Intended function, not a claim of verified effectiveness."
+    },
+    "mechanism": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Explain how this plugin acts: e.g. advisory system context, callable tool, automatic check, or a combination. State whether it advises, executes or enforces; do not overclaim."
+    }
+  },
+  "additionalProperties": true
+}

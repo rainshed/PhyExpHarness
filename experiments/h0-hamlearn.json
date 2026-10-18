@@ -1,0 +1,8 @@
+{
+  "id": "h0-hamlearn-luna",
+  "recipe": "recipes/h0-luna.json",
+  "task": "time_budgeted_hamlearn_10q",
+  "attempts": 1,
+  "retries": 0,
+  "purpose": "End-to-end H0 pilot, not a statistical performance estimate. Official Quantum-Harbor verification remains authoritative."
+}

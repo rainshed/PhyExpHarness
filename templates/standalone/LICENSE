@@ -1,0 +1,5 @@
+This project includes a frozen PhyExpHarness execution configuration and selected plugins.
+Third-party components retain their respective licenses, available in each installed package.
+DeepSeek Harness SDK components: MIT, Copyright (c) DeepSeek.
+The origin and content hashes of included source files are recorded in bundle.json.
+No license grant for unrelated source projects or task datasets is implied.

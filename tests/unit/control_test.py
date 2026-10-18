@@ -1,0 +1,148 @@
+import json
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from fastapi.testclient import TestClient
+from src.control.service import ControlService
+from src.control.server import make_app
+from src.control.store import Refused
+from src.evidence.library import feedback
+
+ROOT=Path(__file__).resolve().parents[2]
+class ControlTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.data=Path(self.temp.name)
+        self.service=ControlService(ROOT,self.data,ROOT.parent/'Quantum-Harbor','http://127.0.0.1:1')
+        self.client=TestClient(make_app(self.service,supervise=False))
+        self.client.headers['Authorization']='Bearer '+self.service.user_token
+        # Store setup deliberately bypasses resource provisioning; no real models or task containers.
+        self.config={'solver':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},
+            'meta':{'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'},'tasks':['time_budgeted_hamlearn_10q'],
+            'maxRounds':2,'maxTrials':2,'concurrency':1,'wallTimeSeconds':7200,'trialTimeSeconds':3600,
+            'softTokenLimit':3000000,'reserveSeconds':900,'reserveTokens':300000}
+        self.c=self.service.store.create(self.config,'setup')['id'];self.service.store.control(self.c,'start','start')
+    def tearDown(self):
+        self.service.pool.shutdown(wait=True);self.client.close();self.temp.cleanup()
+    def test_user_meta_and_solver_identities_cannot_cross_authority(self):
+        self.assertEqual(self.client.get('/health').status_code,200)
+        lease,token=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        self.assertEqual(self.client.get('/campaigns').status_code,403)
+        self.assertEqual(self.client.get('/candidates/unknown/plugins/unknown').status_code,403)
+        self.assertEqual(self.client.post('/candidates/unknown/plugins/unknown/open').status_code,403)
+        self.assertEqual(self.client.post('/exports/unknown/open').status_code,403)
+        response=self.client.post('/meta/'+self.c,json={'operation':'sdk_inspect','input':{'name':'ctx.credentials.resolve'}})
+        self.assertEqual(response.status_code,200);self.assertEqual(response.json()['availability'],'unavailable')
+        self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'limits','input':{}}).status_code,403)
+        other=self.service.store.create(self.config,'other')['id']
+        self.assertEqual(self.client.post('/meta/'+other,json={'operation':'campaign_status'}).status_code,403)
+        for operation in ['materials_list','materials_search','materials_read']:
+            self.assertEqual(self.client.post('/meta/'+other,json={'operation':operation,'input':{}}).status_code,403)
+        for input in [{'ref':'../../user-token'},{'ref':'guide:reporting','path':'/etc/passwd'}]:
+            self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'materials_read','input':input}).status_code,403)
+        self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'materials_read','input':{'ref':'guide:reporting'}}).status_code,200)
+        self.assertEqual(self.client.post('/accounting/'+lease['id']+'/reserve',json={'id':'request','reservedTokens':300000,'purpose':'report'}).json()['purpose'],'meta')
+        solver,token=self.service.lease(self.c,'solver',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'sdk_search','input':{'query':'tools'}}).status_code,403)
+        self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'materials_list','input':{}}).status_code,403)
+        self.assertEqual(self.client.post('/accounting/'+lease['id']+'/settle',json={'id':'request','confirmedTokens':0,'unknown':False}).status_code,403)
+    def test_meta_retention_api_compares_scored_results_and_explains_failures(self):
+        store=self.service.store;task=self.config['tasks'][0]
+        ids=[store.candidate(self.c,{'id':name,'path':'/fixture','plugins':[]},name)['id'] for name in ['H0','H1','H2']]
+        e=self.service.evidence.add(self.c,'fixture','official-result','{}',{'fixture':True})
+        for i,(candidate,scores) in enumerate(zip(ids,[[0,None],[0,1],[1,None,None]])):
+            for j,score in enumerate(scores):
+                store.put('trials',{'id':f'{i}-{j}','campaignId':self.c,'candidateId':candidate,'task':task,
+                    'state':'finished' if score is not None else 'failed','score':score,'startedAt':1,
+                    'comparisonContext':{'taskImageIds':['image'],'runnerImageId':'runner'}})
+        store.retain(self.c,ids[0],'Reference',[e['id']])
+        lease,token=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        body={'operation':'candidate_retain','input':{'candidateId':ids[1],'reason':'Compare all attempts','evidenceRefs':[e['id']]}}
+        response=self.client.post('/meta/'+self.c,json=body)
+        self.assertEqual(response.status_code,200);self.assertEqual(response.json()['retainedCandidateId'],ids[1])
+        body['input']['candidateId']=ids[2]
+        response=self.client.post('/meta/'+self.c,json=body)
+        self.assertEqual(response.status_code,403);self.assertIn('completion rate regression',response.text)
+        self.assertEqual(store.status(self.c)['retainedCandidateId'],ids[1])
+
+    def test_filtered_evidence_and_reports_never_publish_unknown_score_fields(self):
+        score={'reward_binary':0,'secret':'hidden','result':{'linf':.3,'coefficients_true':[1,2,3]}}
+        public=feedback('time_budgeted_hamlearn_10q',score)
+        self.assertNotIn('secret',str(public));self.assertNotIn('coefficients_true',str(public))
+        self.assertNotIn('result',feedback('unknown',score))
+        e=self.service.evidence.add(self.c,'trial-fixture','official-result',json.dumps(public),{'fixture':True})
+        self.assertEqual(self.service.evidence.read(self.c,e['id'])['sha256'],e['sha256'])
+        analysis={'summary':'A fixture result','observations':['No scientific conclusion'],'hypotheses':[],
+            'limitations':['Fixture only'],'decision':'No candidate decision','evidenceRefs':[e['id']]}
+        self.assertRaises(Refused,self.service.reports.save,self.c,analysis) # No Trial links this evidence to report facts.
+        self.assertRaises(Refused,self.service.evidence.read,'other',e['id'])
+        Path(e['path']).chmod(0o644);Path(e['path']).write_text('changed')
+        self.assertRaises(Refused,self.service.evidence.read,self.c,e['id'])
+    def test_workspace_cannot_escape_or_write_after_exploration_closes(self):
+        self.assertRaises(Refused,self.service.meta_call,self.c,'workspace_write',{'path':'../outside','content':'x'})
+        result=self.service.meta_call(self.c,'workspace_write',{'path':'plugin/index.mjs','content':'export const name="test";'})
+        self.assertGreater(result['bytes'],0)
+        self.service.store.close_admission(self.c,'round_limit')
+        self.assertRaises(Refused,self.service.meta_call,self.c,'workspace_write',{'path':'plugin/index.mjs','content':'changed'})
+        self.assertEqual(self.service.meta_call(self.c,'sdk_inspect',{'name':'ctx.tools.register'})['availability'],'declared-in-execution-sdk')
+    def test_report_costs_attribute_closeout_to_meta_and_keep_unknown_solver_reserve(self):
+        solver,_=self.service.lease(self.c,'solver',time.time()+60)
+        meta,_=self.service.lease(self.c,'meta',time.time()+60)
+        self.service.store.reserve(self.c,solver['id'],'solver-unknown',300000,'solver')
+        self.service.store.settle(self.c,solver['id'],'solver-unknown',13,True)
+        self.service.store.close_admission(self.c,'round_limit')
+        request=self.service.store.reserve(self.c,meta['id'],'meta-closeout',300000,'meta')
+        self.assertEqual(request['purpose'],'report')
+        self.service.store.settle(self.c,meta['id'],'meta-closeout',21,False)
+        facts=self.service.reports.facts(self.c)
+        self.assertEqual(facts['usageByRole']['solver'],{'confirmedTokens':13,'unknownReservedTokens':300000})
+        self.assertEqual(facts['usageByRole']['meta'],{'confirmedTokens':21,'unknownReservedTokens':0})
+    def test_user_stop_keeps_meta_available_for_closeout_reports(self):
+        from unittest.mock import Mock
+        self.service.meta_driver=Mock()
+        result=self.service.control(self.c,'stop','stop-for-report')
+        self.assertEqual(result['state'],'closing')
+        self.service.meta_driver.interrupt.assert_not_called()
+        lease,_=self.service.lease(self.c,'meta',time.time()+60)
+        self.assertEqual(self.service.store.reserve(self.c,lease['id'],'closeout',300000,'meta')['purpose'],'report')
+    def test_restart_does_not_relaunch_an_uncertain_claim(self):
+        b={'id':'hash','path':'/fixture','plugins':[]};candidate=self.service.store.candidate(self.c,b,'H0',check={'status':'passed'})
+        self.service.store.submit(self.c,candidate['id'],self.config['tasks'],1,'one')
+        trial=self.service.store.claim(self.c)
+        restarted=ControlService(ROOT,self.data,ROOT.parent/'Quantum-Harbor','http://127.0.0.1:1')
+        try:
+            restarted.tick();row=restarted.store.get('trials',trial['id'])
+            self.assertEqual(row['state'],'unknown');self.assertEqual(row['score'],None)
+            self.assertEqual(restarted.store.status(self.c)['counts']['startedTrials'],1)
+            self.assertEqual(len(restarted.store.list('trials',self.c)),1)
+        finally:restarted.pool.shutdown(wait=True)
+    def test_supervisor_survives_client_exit_and_service_reconnect_without_duplicate_start(self):
+        from src.execution.bundle.freeze import freeze
+        bundle=freeze(ROOT,self.data/'bundles',json.loads((ROOT/'recipes/h0-sol.json').read_text()))
+        candidate=self.service.store.candidate(self.c,bundle,'H0',check={'status':'passed'})
+        self.service.store.submit(self.c,candidate['id'],self.config['tasks'],1,'once')
+        started=[]
+        def launch(trial):
+            proc=subprocess.Popen([sys.executable,str(ROOT/'tests/fixtures/trial_supervisor.py'),'--output',trial['output'],'--deadline',str(time.time()+.4)])
+            started.append(proc);return proc
+        self.service.launch_trial_override=launch;self.service.tick()
+        trial=self.service.store.list('trials',self.c)[0]
+        self.assertEqual(trial['state'],'running')
+        self.service.store.reserve(self.c,trial['leaseId'],'lost-response',300000,'solver')
+        self.client.close() # The client has no process-lifecycle ownership.
+        restarted=ControlService(ROOT,self.data,ROOT.parent/'Quantum-Harbor','http://127.0.0.1:1',launch_trial=lambda _:self.fail('duplicate launch'))
+        try:
+            restarted.tick();self.assertEqual(restarted.store.list('trials',self.c)[0]['state'],'running')
+            started[0].wait(timeout=3);restarted.tick()
+            row=restarted.store.list('trials',self.c)[0];self.assertEqual(row['state'],'failed');self.assertIsNone(row['score'])
+            self.assertEqual(len(started),1);self.assertEqual(restarted.store.status(self.c)['usage']['unknownRequests'],1)
+            self.assertTrue(restarted.store.list('evidence',self.c))
+        finally:
+            restarted.pool.shutdown(wait=True)
+            for proc in started:
+                if proc.poll() is None:proc.terminate();proc.wait(timeout=3)

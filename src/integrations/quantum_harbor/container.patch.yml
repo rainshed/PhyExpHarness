@@ -1,0 +1,16 @@
+# Transport and isolation only. No scientific strategy or execution assistance.
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- insert:
+    - id: harbor-container-bash
+      name: __PHYEXP_HARBOR_TOOL_PLUGIN__

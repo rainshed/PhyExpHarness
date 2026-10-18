@@ -1,0 +1,5 @@
+# Package-name template for a host where @phyexp/meta-workbench is installed.
+# For this checkout use node scripts/workbench.mjs; it resolves an absolute entry for a fresh DSH_HOME.
+- insert:
+    - id: phyexp-meta-workbench
+      name: '@phyexp/meta-workbench'

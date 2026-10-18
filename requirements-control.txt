@@ -1,0 +1,4 @@
+# Fixed control service only; these dependencies never enter standalone Solver exports.
+fastapi==0.136.3
+uvicorn==0.42.0
+jsonschema==4.26.0

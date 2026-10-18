@@ -1,0 +1,14 @@
+{
+  "name": "@phyexp/meta-harness",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tool-cordis": "0.2.1-rc.2"
+  }
+}

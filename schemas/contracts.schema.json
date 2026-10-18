@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phyexp:contracts:v1",
+  "$defs": {
+    "Campaign": {
+      "type": "object",
+      "required": [
+        "id",
+        "solver",
+        "meta",
+        "limits",
+        "state",
+        "revision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "solver": {
+          "type": "object"
+        },
+        "meta": {
+          "type": "object"
+        },
+        "limits": {
+          "$ref": "#/$defs/RunLimits"
+        },
+        "state": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "KnowledgePack": {
+      "type": "object",
+      "required": [
+        "id",
+        "dshVersion",
+        "profileDigest",
+        "documents"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "dshVersion": {
+          "type": "string"
+        },
+        "profileDigest": {
+          "type": "string"
+        },
+        "documents": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "PluginVersion": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "name",
+        "version",
+        "entry",
+        "purpose",
+        "configSchema",
+        "dependencies",
+        "observes",
+        "intervenes",
+        "capabilities",
+        "fallbackBehavior",
+        "assets"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "configSchema": {
+          "type": "object"
+        },
+        "dependencies": {
+          "type": "array"
+        },
+        "observes": {
+          "type": "array"
+        },
+        "intervenes": {
+          "type": "array"
+        },
+        "capabilities": {
+          "type": "array"
+        },
+        "fallbackBehavior": {
+          "type": "string"
+        },
+        "assets": {
+          "type": "array"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Concise user-facing Chinese name; optional for legacy plugins."
+        },
+        "functionSummary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Plain Chinese explanation of capabilities, when they act, and limitations. Intended function, not a claim of verified effectiveness."
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Explain how this plugin acts: e.g. advisory system context, callable tool, automatic check, or a combination. State whether it advises, executes or enforces; do not overclaim."
+        }
+      },
+      "additionalProperties": true
+    },
+    "Candidate": {
+      "type": "object",
+      "required": [
+        "id",
+        "bundleDigest",
+        "recipe",
+        "plugins"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "bundleDigest": {
+          "type": "string"
+        },
+        "recipe": {
+          "type": "object"
+        },
+        "plugins": {
+          "type": "array"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "additionalProperties": true
+    },
+    "Batch": {
+      "type": "object",
+      "required": [
+        "id",
+        "campaignId",
+        "candidateId",
+        "idempotencyKey",
+        "trials",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "campaignId": {
+          "type": "string"
+        },
+        "candidateId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "trials": {
+          "type": "array"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Trial": {
+      "type": "object",
+      "required": [
+        "id",
+        "batchId",
+        "launchId",
+        "state",
+        "score",
+        "usage"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "batchId": {
+          "type": "string"
+        },
+        "launchId": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "usage": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Usage": {
+      "type": "object",
+      "required": [
+        "id",
+        "purpose",
+        "status",
+        "confirmedTokens",
+        "reservedTokens"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "confirmedTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reservedTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "Evidence": {
+      "type": "object",
+      "required": [
+        "id",
+        "sha256",
+        "kind",
+        "access",
+        "trialId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "access": {
+          "type": "string"
+        },
+        "trialId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Report": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "facts",
+        "analysis",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "facts": {
+          "type": "object"
+        },
+        "analysis": {
+          "type": "object"
+        },
+        "evidenceRefs": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Export": {
+      "type": "object",
+      "required": [
+        "id",
+        "candidateId",
+        "bundleDigest",
+        "archiveDigest",
+        "checks"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "candidateId": {
+          "type": "string"
+        },
+        "bundleDigest": {
+          "type": "string"
+        },
+        "archiveDigest": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "RunLimits": {
+      "type": "object",
+      "required": [
+        "wallTimeSeconds",
+        "concurrency"
+      ],
+      "properties": {
+        "maxRounds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "maxTrials": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "trialTimeSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "softTokenLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "wallTimeSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

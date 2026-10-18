@@ -1,0 +1,13 @@
+{
+  "id": "h0-public-remaining-sol",
+  "recipe": "recipes/h0-sol.json",
+  "tasks": [
+    "time_budgeted_shadow_surrogate_60q",
+    "tunable_coupler_cz_netzero",
+    "logical_cnot_decoder_calibration",
+    "adaptive_clustered_clbcs_h2o"
+  ],
+  "attempts": 1,
+  "retries": 0,
+  "purpose": "One independent original-task trial per remaining released Quantum-Harbor task, with official grading and whole-task wall time."
+}

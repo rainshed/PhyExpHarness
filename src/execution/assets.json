@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "dynamicAssets": [
+    "src/execution/runner/boot.mjs",
+    "src/execution/runner/isolated.mjs",
+    "src/execution/runner/gateway_plugin.mjs",
+    "src/execution/runner/assets/sdk-minimal.yml",
+    "src/execution/adapters/quantum_harbor/container_tool.mjs",
+    "src/execution/adapters/quantum_harbor/worker.mjs",
+    "src/execution/adapters/quantum_harbor/agent.py"
+  ],
+  "generatedPlugins": "Only manifest-declared entry/assets under the frozen plugins directory; loaded inside network-none Runner",
+  "externalInputs": [
+    "Quantum-Harbor checkout",
+    "output directory",
+    "host credential file"
+  ]
+}

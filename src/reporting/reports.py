@@ -1,0 +1,102 @@
+"""System facts and versioned Meta analysis stay distinct in every report."""
+import hashlib
+import copy
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from src.control.store import Refused,identity,encoded,comparison_issues,retention_rule_description
+from .tables import build_tables, read_annotations
+from .reading import project, render_reading, PRESENTATION_VERSION
+
+class Reports:
+    def __init__(self,store,data):self.store=store;self.root=Path(data)/'reports'
+    def tables(self,campaign,batch_id=None,context=None):
+        return build_tables(self.store.list('candidates',campaign), self.store.list('batches',campaign),
+            self.store.list('trials',campaign), context or self.store.status(campaign),
+            read_annotations(self.root.parent), batch_id)
+    def refresh_presentation(self,report_id):
+        """Append a display revision; never replace the original analysis or fact snapshot."""
+        old=self.store.get('reports',report_id)
+        if self.store.get('campaigns',old['campaignId'])['state'] not in ['finished','failed']:
+            raise Refused('Display migration requires a terminal Campaign')
+        tables=self.tables(old['campaignId'],old['batchId'],old['facts']['campaign'])
+        # Preserve the result/state visible to the original report. This command is
+        # restricted to terminal Campaigns by its CLI, and records that provenance.
+        reading=project({**old,'tables':tables},self.root.parent)
+        if old.get('tables')==tables and old.get('reading')==reading and old.get('presentationVersion')==PRESENTATION_VERSION:return old
+        record=copy.deepcopy(old)
+        for key in ['id','revision','analysisRevision','previousReportId','markdownPath','createdAt']:
+            record.pop(key,None)
+        record.update(id=identity('report'),createdAt=self.store.clock(),tables=tables,
+            presentationSourceReportId=old['id'],revisionReason='阅读版更新；原始分析、事实快照和历史文件保留',
+            presentationAuthor='system')
+        return self._persist(record)
+    def facts(self,campaign,batch_id=None):
+        c=self.store.status(campaign)
+        batches=self.store.list('batches',campaign)
+        if batch_id:
+            batches=[b for b in batches if b['id']==batch_id]
+            if not batches:raise Refused('Batch unavailable')
+        ids={b['id'] for b in batches};trials=[t for t in self.store.list('trials',campaign) if t['batchId'] in ids]
+        usage=self.store.list('usage',campaign)
+        for t in trials:
+            if 'taskSources' in t.get('comparisonContext',{}):
+                context=t['comparisonContext'];context['taskSourcesDigest']=hashlib.sha256(encoded(context.pop('taskSources')).encode()).hexdigest()
+            requests=[r for r in usage if r['leaseId']==t.get('leaseId')]
+            t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests)}
+        trials=[{k:v for k,v in t.items() if k!='summary'} for t in trials]
+        candidates=[candidate for candidate in self.store.list('candidates',campaign)
+            if not batch_id or any(t['candidateId']==candidate['id'] for t in trials)]
+        roles={lease['id']:lease['role'] for lease in self.store.list('leases',campaign)}
+        by_role={role:{'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in usage if roles.get(r['leaseId'])==role),
+            'unknownReservedTokens':sum(r['reservedTokens'] for r in usage if roles.get(r['leaseId'])==role and r['status']=='unknown')}
+            for role in ['solver','meta']}
+        return {'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
+            'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
+            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if any(e['trialId']==t['id'] for t in trials)],
+            'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
+            'comparisonRule':retention_rule_description(c['config'])}
+    def save(self,campaign,analysis,batch_id=None,author='meta'):
+        fields={'summary','observations','hypotheses','limitations','decision','evidenceRefs'}
+        if not fields.issubset(analysis) or not isinstance(analysis['summary'],str) or not analysis['summary'].strip():
+            raise Refused('Analysis requires summary, observations, hypotheses, limitations, decision and evidenceRefs')
+        refs=analysis['evidenceRefs']
+        if not isinstance(refs,list) or not all(isinstance(x,str) for x in refs):raise Refused('evidenceRefs must be an array of exact evidence IDs')
+        facts=self.facts(campaign,batch_id)
+        allowed={x['id'] for x in facts['evidence']}
+        if set(refs)-allowed:raise Refused('Unknown or unrelated evidence reference')
+        if any(t.get('startedAt') for t in facts['trials']) and not refs:raise Refused('Analysis needs evidence references')
+        optional={'process','problems','pluginContributions'}
+        for key in optional & analysis.keys():
+            if not isinstance(analysis[key],list):raise Refused(key+' must be an array')
+        for item in analysis.get('pluginContributions',[]):
+            if not isinstance(item,dict) or not all(isinstance(item.get(k),str) for k in ['plugin','expected','observed','comparison','assessment']):raise Refused('Plugin contribution requires plain-language fields')
+            if not isinstance(item.get('evidenceRefs',[]),list) or any(x not in allowed for x in item.get('evidenceRefs',[])):raise Refused('Invalid contribution evidence')
+        record={'id':identity('report'),'campaignId':campaign,'batchId':batch_id,'kind':'round' if batch_id else 'final',
+            'author':author,'status':'analysis','facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
+            'analysis':{k:analysis[k] for k in fields | (optional & analysis.keys())},'createdAt':self.store.clock(),
+            'tables':self.tables(campaign,batch_id,facts['campaign'])}
+        return self._persist(record)
+    def status_summary(self,campaign,reason):
+        facts=self.facts(campaign)
+        return self._persist({'id':identity('report'),'campaignId':campaign,'batchId':None,'kind':'status_summary','author':'system',
+            'status':'analysis_incomplete','facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
+            'analysis':{'summary':reason,'observations':[],'hypotheses':[],'limitations':['Meta 完整分析尚未完成。'],
+                        'decision':'保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
+            'tables':self.tables(campaign,context=facts['campaign'])})
+    def _persist(self,record):
+        record['reading']=project(record,self.root.parent)
+        record['presentationVersion']=PRESENTATION_VERSION
+        with self.store.connection(True) as db:
+            prior=[r for r in self.store._list(db,'reports',record['campaignId']) if r['batchId']==record['batchId'] and r['kind']==record['kind']]
+            record['analysisRevision']=len(prior)+1;record['previousReportId']=prior[-1]['id'] if prior else None
+            directory=self.root/record['id'];directory.mkdir(parents=True)
+            record['markdownPath']=str(directory/'report.md')
+            (directory/'report.md').write_text(render(record))
+            (directory/'report.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
+            result=self.store._save(db,'reports',record)
+            self.store._event(db,record['campaignId'],'report_saved',reportId=record['id'],reportKind=record['kind'])
+            return result
+
+def render(report):
+    return render_reading(report)

@@ -1,0 +1,15 @@
+{
+  "id": "h0-luna-v1",
+  "dshVersion": "0.2.1-rc.2",
+  "profile": "sdk-minimal",
+  "provider": "openai-codex",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "medium",
+  "maxTokens": 8192,
+  "agentTimeoutSec": 3600,
+  "commandTimeoutSec": 300,
+  "maxOutputChars": 16000,
+  "shell": "harbor-main-fresh-bash",
+  "modules": [],
+  "notes": "H0 uses the native minimal agent loop and compaction. Authentication and container tool transport are fixed infrastructure. Each bash call starts in /app; files persist, shell state does not. Host filesystem tools are disabled. No task-solving hints, reminders, retries, or submission repair."
+}

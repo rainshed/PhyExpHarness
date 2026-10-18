@@ -1,0 +1,50 @@
+# Local runs, reports, exports and service state; preserve existing files.
+/runs/
+/reports/
+/.runtime/
+/data/
+/exports/
+/artifacts/
+/logs/
+*.log
+*.pid
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-wal
+*.db-shm
+
+# Rebuilt from source and pinned dependencies with `npm run build`.
+/packages/meta-workbench/lib/
+/knowledge/plugin-sdk/reference/
+
+# Dependencies, Python bytecode and test/tool caches.
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+
+# Private configuration and local discussion drafts.
+.env
+.env.*
+!.env.example
+/.codex/
+/auth.json
+/user-token
+brainstorm/
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo

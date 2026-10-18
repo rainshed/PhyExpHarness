@@ -1,0 +1,394 @@
+"""Independent control service: owns scheduling, recovery and admission; never executes generated code."""
+import hashlib
+import fcntl
+import json
+import os
+import secrets
+import signal
+import subprocess
+import sys
+import threading
+import time
+import shutil
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from .store import Store,Refused,identity,encoded,comparison_issues,retention_rule_description
+from .knowledge import KnowledgePack
+from .image_identity import resolve as resolve_image_identity
+from .operations import workspace_path,read_workspace,write_workspace,execute_workspace
+from src.execution.bundle.freeze import freeze,verify
+from src.execution.host.single_run import cleanup,source_hashes,validate_task_image_lock
+from src.execution.host.network import network_preflight
+from src.execution.adapters.quantum_harbor.results import verify_manifest
+from src.evidence.library import EvidenceLibrary
+from src.evidence.materials import Materials,snapshot_tasks
+from .meta_context import activity_state
+from src.reporting.reports import Reports
+from src.exporting.project import export_project
+from src.exporting.validate import relocate
+
+class ControlService:
+    def __init__(self,source,data,quantum_harbor,base_url,launch_trial=None):
+        self.source=Path(source).resolve();self.data=Path(data).resolve();self.data.mkdir(parents=True,exist_ok=True);self.data.chmod(0o700)
+        self.quantum=Path(quantum_harbor).resolve();self.base_url=base_url
+        self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
+        self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
+        self.materials=Materials(self)
+        self.pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='phyexp-build');self.operations={};self.children={}
+        self.operation_lock=threading.Lock()
+        for row in self.store.list('operations'):
+            if row['state']=='running':
+                row.update(state='failed',error='Control process restarted during build; no experiment was launched by this operation',finishedAt=time.time());self.store.put('operations',row)
+                with self.store.connection(True) as db:self.store._event(db,row['campaignId'],'operation_finished',operationId=row['id'],state='failed')
+        self.launch_trial_override=launch_trial;self.tick_lock=threading.Lock();self.meta_driver=None
+        token_file=self.data/'user-token'
+        if not token_file.exists():token_file.write_text(secrets.token_urlsafe(32));token_file.chmod(0o600)
+        self.user_token=token_file.read_text().strip()
+    def authenticate(self,token):
+        if secrets.compare_digest(token,self.user_token):return {'role':'user'}
+        digest=hashlib.sha256(token.encode()).hexdigest()
+        for lease in self.store.list('leases'):
+            if secrets.compare_digest(digest,lease['tokenHash']):
+                if lease.get('revoked') or time.time()>=lease['deadline']:raise Refused('Lease expired')
+                return lease
+        raise Refused('Authentication failed')
+    def lease(self,campaign,role,deadline,trial_id=None):
+        token=secrets.token_urlsafe(32)
+        row=self.store.put('leases',{'id':identity('lease'),'campaignId':campaign,'role':role,'trialId':trial_id,
+            'deadline':deadline,'tokenHash':hashlib.sha256(token.encode()).hexdigest(),'revoked':False})
+        return row,token
+    def workspace(self,campaign):
+        self.store.get('campaigns',campaign)
+        path=self.data/'campaigns'/campaign/'workspace';path.mkdir(parents=True,exist_ok=True);return path
+    def knowledge_for(self,campaign):
+        config=self.store.get('campaigns',campaign)['config']
+        candidates=self.store.list('candidates',campaign)
+        target=None
+        if candidates and Path(candidates[0]['bundlePath'],'bundle.json').is_file():
+            target=verify(candidates[0]['bundlePath'])
+        id=config.get('knowledgePackId') or (target or {}).get('knowledgePackId')
+        if not id:id=self.knowledge.manifest['id']
+        if not isinstance(id,str) or len(id)!=64 or any(c not in '0123456789abcdef' for c in id):raise Refused('Invalid knowledge pack identity')
+        path=self.data/'knowledge-packs'/id
+        if not path.exists() and id==self.knowledge.manifest['id']:path=self.knowledge.path
+        if not path.exists():raise Refused('Version-matched knowledge pack unavailable')
+        pack=KnowledgePack(path,(target or {}).get('dshVersion','0.2.1-rc.2'),(target or {}).get('profileDigest'))
+        if pack.manifest['id']!=id:raise Refused('Knowledge pack identity mismatch')
+        return pack
+    def _operation(self,campaign,kind,payload,fn):
+        row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
+        def work():
+            try:result=fn();row.update(state='finished',result=result)
+            except Exception as error:row.update(state='failed',error=str(error))
+            row['finishedAt']=time.time();self.store.put('operations',row)
+            with self.store.connection(True) as db:self.store._event(db,campaign,'operation_finished',operationId=row['id'],state=row['state'])
+        self.operations[row['id']]=self.pool.submit(work)
+        return {'operationId':row['id'],'state':'running'}
+    def create(self,config,key):
+        # Freeze operator preparation into this Campaign; later cache changes cannot alter it.
+        locks={}
+        for task in config.get('tasks',[]):
+            file=self.data/'task-runtime-locks'/(task+'.json')
+            if file.is_file():
+                lock=json.loads(file.read_text())
+                validate_task_image_lock(lock,task,source_hashes(self.quantum,['src','configs','docker','harbor_tasks']))
+                locks[task]=lock
+        config={**config,'taskImageLocks':locks}
+        campaign=self.store.create(config,key,defaults={'knowledgePackId':self.knowledge.manifest['id'],'materialVersion':1})
+        id=campaign['id'];self.workspace(id)
+        with self.operation_lock:
+            if campaign['config'].get('materialVersion')==1:
+                destination=self.data/'knowledge-packs'/campaign['config']['knowledgePackId']
+                if not destination.exists():
+                    destination.parent.mkdir(parents=True,exist_ok=True)
+                    shutil.copytree(self.knowledge_for(id).path,destination,dirs_exist_ok=True)
+                snapshot_tasks(self,id)
+            if not self.store.list('candidates',id) and not self.store.list('operations',id):
+                self._operation(id,'prepare_h0',{},lambda:self.build_candidate(id,[],'H0：固定执行基线'))
+        return self.status(id)
+    def status(self,campaign):
+        value=self.store.status(campaign)
+        value.update(candidates=self.store.list('candidates',campaign),batches=self.store.list('batches',campaign),
+            trials=self.store.list('trials',campaign),operations=self.store.list('operations',campaign),
+            reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.list('reports',campaign)],
+            exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),
+            evidence=[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign)])
+        value['comparisonIssues']=comparison_issues(value['trials'])
+        value['retentionRuleDescription']=retention_rule_description(value['config'])
+        value['tables']=self.reports.tables(campaign,context=value)
+        return value
+    def build_candidate(self,campaign,selections,description,parent=None,display_name=None):
+        c=self.store.get('campaigns',campaign)
+        recipe=json.loads((self.source/'recipes/h0-sol.json').read_text())
+        recipe.update(c['config']['solver']);recipe['modules']=[]
+        recipe['agentTimeoutSec']=c['config']['trialTimeSeconds'] or 3600
+        chosen=[]
+        for selected in selections:
+            directory=workspace_path(self.workspace(campaign),selected['path'])
+            if not directory.is_dir():raise Refused('Plugin directory missing')
+            # Reject explicit routing by exposed task ID. This check is evidence, not proof of generalization.
+            for file in directory.rglob('*.mjs'):
+                if file.is_symlink():raise Refused('Plugin symlink forbidden')
+                text=file.read_text()
+                if any(task in text for task in c['config']['tasks']):raise Refused('Task-specific selector detected in plugin source')
+            chosen.append({'path':str(directory),'config':selected.get('config',{})})
+        bundle=freeze(self.source,self.data/'objects/sha256',recipe,chosen,self.knowledge_for(campaign).manifest)
+        existing=self.store.list('candidates',campaign)
+        if existing:
+            base=verify(existing[0]['bundlePath'])
+            fixed=lambda m:{p:h for p,h in m['files'].items() if not p.startswith('plugins/') and p!='recipe.json'}
+            if fixed(base)!=fixed(bundle['manifest']) or base['profileDigest']!=bundle['manifest']['profileDigest']:
+                raise Refused('Fixed infrastructure changed; start a new Campaign for a comparable baseline')
+        directory=Path(bundle['path']);logs=self.data/'campaigns'/campaign/'checks'/identity('check');logs.mkdir(parents=True)
+        locks=self.data/'locks';locks.mkdir(exist_ok=True)
+        with (locks/(bundle['id']+'.lock')).open('a') as lock,(logs/'installation.log').open('w') as log:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            marker=directory/'node_modules/.phyexp-install'
+            lock_hash=hashlib.sha256((directory/'package-lock.json').read_bytes()).hexdigest()
+            if not marker.exists() or marker.read_text()!=lock_hash:
+                subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=directory,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
+                marker.write_text(lock_hash)
+            subprocess.run(['node','install-runner.mjs'],cwd=directory,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=300)
+            subprocess.run(['node',str(directory/'src/execution/bundle/check.mjs'),str(directory),str(logs)],
+                cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True,timeout=45)
+        check=json.loads((logs/'assembly.json').read_text());check.update(evidence=str(logs),generalization='not_verified')
+        row=self.store.candidate(campaign,bundle,description,parent,check)
+        if display_name and isinstance(display_name,str):
+            row['displayName']=display_name.strip()[:80];row=self.store.put('candidates',row)
+        return row
+    def control(self,campaign,action,key,expected_revision=None,changes=None):
+        c=self.store.get('campaigns',campaign)
+        if action=='start':
+            candidates=self.store.list('candidates',campaign)
+            h0=next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
+            if not h0:raise Refused('H0 assembly is not ready')
+            if c['state']=='draft' and not self.launch_trial_override:
+                checked=network_preflight()
+                with self.store.connection(True) as db:self.store._event(db,campaign,'network_preflight',**checked)
+        result=self.store.control(campaign,action,key,expected_revision,changes)
+        if action=='start':self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
+        # User stop ends experiments but leaves the remaining Meta budget available for reports.
+        if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)
+        if action=='stop':
+            for t in self.store.list('trials',campaign):
+                if t['state'] in ['launching','running']:self.stop_trial(t,'user_stop')
+        return result
+    def _process_alive(self,pid,output):
+        if not isinstance(pid,int):return False
+        result=subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True)
+        return result.returncode==0 and str(output) in result.stdout
+    def _launch(self,trial):
+        candidate=self.store.get('candidates',trial['candidateId']);bundle=Path(candidate['bundlePath']);verify(bundle)
+        output=self.data/'trials'/trial['launchId']
+        lease,token=self.lease(trial['campaignId'],'solver',trial['deadline'],trial['id'])
+        trial=self.store.trial_update(trial['id'],output=str(output),leaseId=lease['id'])
+        if self.launch_trial_override:
+            process=self.launch_trial_override(trial)
+        else:
+            env=dict(os.environ,PHYEXP_ACCOUNTING_URL=self.base_url+'/accounting/'+lease['id'],PHYEXP_ACCOUNTING_TOKEN=token,
+                PHYEXP_LAUNCH_ID=trial['launchId'])
+            args=[sys.executable,str(bundle/'run.py'),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
+                '--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-time.time())),
+                '--soft-token-limit',str(self.store.get('campaigns',trial['campaignId'])['config']['softTokenLimit'] or 'none')]
+            lock=self.store.get('campaigns',trial['campaignId'])['config'].get('taskImageLocks',{}).get(trial['task'])
+            if lock:
+                lock_file=self.data/'campaigns'/trial['campaignId']/(trial['task']+'.image-lock.json')
+                lock_file.write_text(json.dumps(lock,sort_keys=True)+'\n')
+                args+=['--task-image-lock',str(lock_file)]
+            log=self.data/'trials'/(trial['launchId']+'.supervisor.log');log.parent.mkdir(parents=True,exist_ok=True)
+            with log.open('w') as stream:process=subprocess.Popen(args,env=env,cwd='/tmp',stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+        self.children[trial['id']]=process
+        return self.store.trial_update(trial['id'],state='running',pid=process.pid)
+    def stop_trial(self,trial,reason):
+        if trial.get('stopRequestedAt'):return
+        if trial.get('leaseId'):
+            lease=self.store.get('leases',trial['leaseId']);lease['revoked']=True;self.store.put('leases',lease)
+        if self._process_alive(trial.get('pid'),trial.get('output','')):
+            os.kill(trial['pid'],signal.SIGTERM)
+        self.store.trial_update(trial['id'],stopReason=reason,stopRequestedAt=time.time())
+    def _reconcile_usage(self,trial):
+        if not trial.get('leaseId'):return
+        for file in Path(trial['output']).glob('harbor/*/phyexp/gateway-audit.jsonl'):
+            for line in file.read_text().splitlines():
+                try:row=json.loads(line)
+                except json.JSONDecodeError:continue
+                if row.get('type')!='settled':continue
+                try:self.store.settle(trial['campaignId'],trial['leaseId'],row['id'],(row.get('usage') or {}).get('totalTokens'),not row.get('finish') or row.get('finish',{}).get('kind')=='error' or not row.get('usage'),host_audit=True)
+                except (KeyError,ValueError):pass
+        self.store.mark_unknown(trial['leaseId'])
+    def _collect(self,trial):
+        output=Path(trial['output']);verify_manifest(output)
+        summary=json.loads((output/'summary.json').read_text());self._reconcile_usage(trial)
+        state='finished' if summary.get('pipelineStatus')=='completed' else 'failed'
+        changes=dict(state=state,score=summary.get('officialReward'),outcome=summary.get('taskOutcome'),
+            usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),stopReason=trial.get('stopReason') or summary.get('stopReason'),summary=summary)
+        provenance_path=output/'provenance.json'
+        if provenance_path.exists():
+            provenance=json.loads(provenance_path.read_text())
+            images=[]
+            for file in output.glob('harbor/*/phyexp/container-images.txt'):
+                images.extend(sorted(line.split(' ',1)[1] for line in file.read_text().splitlines() if ' ' in line))
+            changes['comparisonContext']={'taskSourcesDigest':hashlib.sha256(encoded(provenance.get('quantumHarbor',{}).get('sourceHashes')).encode()).hexdigest(),
+                'runnerImageId':provenance.get('runnerImageId'),'taskImageIds':images}
+            if provenance.get('taskImageLock'):
+                changes['comparisonContext']['verifierImageId']=provenance['taskImageLock']['images']['verifier']
+            try:
+                proof=resolve_image_identity(provenance.get('runnerImageId'),self.data/'runtime-image-proofs')
+                changes['comparisonContext']['runnerExecutionManifest']=proof['executionDigest']
+                changes['runnerImageProof']=proof
+            except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
+                pass # Keep strict raw-image comparison when proof is unavailable.
+        items=self.evidence.ingest(trial)
+        t=self.store.trial_update(trial['id'],**changes)
+        c=self.store.get('campaigns',trial['campaignId'])
+        if c['retainedCandidateId'] is None and t['score'] is not None:
+            self.store.retain(c['id'],t['candidateId'],'首个有官方结果的参考版本；不表示已验证泛化。',[items[0]['id']])
+        return t
+    def _reconcile_trial(self,trial):
+        output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
+        if (output/'summary.json').is_file() and (output/'archive-manifest.json').is_file():
+            return self._collect({**trial,'output':str(output)})
+        process=self.children.get(trial['id'])
+        alive=process.poll() is None if process else self._process_alive(trial.get('pid'),output)
+        if not alive and not trial.get('pid'):
+            candidate=self.store.get('candidates',trial['candidateId'])
+            listing=subprocess.run(['ps','-Ao','pid,command'],capture_output=True,text=True).stdout
+            for line in listing.splitlines():
+                if str(Path(candidate['bundlePath'])/'run.py') in line and str(output) in line:
+                    pid=int(line.strip().split()[0])
+                    self.store.trial_update(trial['id'],state='running',pid=pid,output=str(output));return
+        if not alive and (output/'supervisor.json').exists():
+            info=json.loads((output/'supervisor.json').read_text());pid=info.get('pid')
+            if self._process_alive(pid,output):
+                self.store.trial_update(trial['id'],state='running',pid=pid,output=str(output));return
+        if not alive:
+            # A launching claim is never silently retried after a crash window.
+            cleanup(output);self._reconcile_usage({**trial,'output':str(output)})
+            return self._failed_trial(trial,'supervisor_lost_start_not_repeated',state='unknown',output=str(output))
+        if time.time()>=trial['deadline'] and not trial.get('stopRequestedAt'):self.stop_trial(trial,'trial_deadline')
+        if trial.get('stopRequestedAt') and time.time()-trial['stopRequestedAt']>15:
+            if self._process_alive(trial.get('pid'),output):os.kill(trial['pid'],signal.SIGKILL)
+            cleanup(output)
+    def _failed_trial(self,trial,reason,**extra):
+        changes={'state':'failed','score':None,'stopReason':reason,'finishedAt':time.time(),**extra}
+        self.evidence.add(trial['campaignId'],trial['id'],'lifecycle',json.dumps({'trialId':trial['id'],**changes},ensure_ascii=False),{'authority':'controller','officialScore':None})
+        return self.store.trial_update(trial['id'],**changes)
+    def tick(self):
+        if not self.tick_lock.acquire(blocking=False):return
+        try:
+            for campaign in self.store.list('campaigns'):
+                id=campaign['id']
+                if campaign['state'] in ['draft','finished','failed']:continue
+                for trial in self.store.list('trials',id):
+                    if trial['state'] in ['launching','running']:
+                        try:self._reconcile_trial(trial)
+                        except Exception as error:self.store.trial_update(trial['id'],lastCollectionError=str(error))
+                c=self.store.status(id);cfg=c['config'];now=time.time()
+                if c['state']=='running' and not self.store.list('batches',id):
+                    h0=next((x for x in self.store.list('candidates',id) if not x['plugins'] and x['check']['status']=='passed'),None)
+                    if h0:self.store.submit(id,h0['id'],cfg['tasks'],1,'system-baseline')
+                usage=c['usage']
+                if cfg['softTokenLimit'] is not None and not usage['inflightReservedTokens'] and usage['confirmedTokens']+usage['unknownReservedTokens']+300000>cfg['softTokenLimit']-cfg['reserveTokens']:
+                    self.store.close_admission(id,'token_threshold')
+                if now>=c['deadline']-cfg['reserveSeconds'] and c['state']!='closing':self.store.close_admission(id,'time_limit')
+                if c['state']=='running':
+                    trial=self.store.claim(id)
+                    if trial:
+                        try:self._launch(trial)
+                        except Exception as error:self._failed_trial(trial,'startup_failure',error=str(error))
+                c=self.store.status(id)
+                if c['explorationClosed'] and c['counts']['activeTrials']==0 and c['counts']['reservedTrials']==0:
+                    self.store.close_admission(id,c['stopReason'] or 'completed',False)
+                if now>=c['deadline']:
+                    for t in self.store.list('trials',id):
+                        if t['state'] in ['launching','running'] and (cfg['stopMode']=='strict' or now>=t['deadline']):self.stop_trial(t,'campaign_deadline')
+                    if self.meta_driver:self.meta_driver.interrupt(id,'campaign_deadline')
+                if self.meta_driver:self.meta_driver.tick(id)
+                elif c['state']=='closing' and c['counts']['activeTrials']==0:
+                    self.store.finalize(id);self.reports.status_summary(id,'达到活动上限；Meta 分析尚未完成。')
+        finally:self.tick_lock.release()
+    def export(self,campaign,candidate):
+        c=self.store.get('candidates',candidate)
+        if c['campaignId']!=campaign:raise Refused('Candidate unavailable')
+        prior=next((x for x in self.store.list('exports',campaign) if x['candidateId']==candidate),None)
+        if prior:return prior
+        result=export_project(c['bundlePath'],self.data/'exports');result.update(campaignId=campaign,candidateId=candidate)
+        return self.store.put('exports',result)
+    def validate_export(self,id):
+        with self.operation_lock:
+            row=self.store.get('exports',id)
+            if row.get('relocationValidation')=='passed' and row.get('validationEvidence'):
+                proof=json.loads(Path(row['validationEvidence']).read_text())
+                if proof['archiveSha256']==hashlib.sha256(Path(row['archive']).read_bytes()).hexdigest() and proof['bundleId']==row['bundleId']:
+                    return {'state':'finished','result':row}
+            active=next((o for o in self.store.list('operations',row['campaignId']) if o['kind']=='export_relocation' and o['state']=='running' and o['payload']['exportId']==id),None)
+            if active:return {'operationId':active['id'],'state':'running'}
+            def work():
+                try:
+                    proof=relocate(row,self.data/'export-checks'/identity('relocated export'))
+                    row.update(relocationValidation='passed',validationEvidence=proof['evidence'])
+                except Exception:
+                    row['relocationValidation']='failed';self.store.put('exports',row);raise
+                return self.store.put('exports',row)
+            return self._operation(row['campaignId'],'export_relocation',{'exportId':id},work)
+    def meta_call(self,campaign,operation,args):
+        c=self.store.get('campaigns',campaign)
+        if c['state'] in ['draft','finished','failed']:raise Refused('Meta session is not active')
+        if not isinstance(args,dict):raise Refused('Operation input must be an object')
+        if operation=='sdk_search':return self.knowledge_for(campaign).search(**args)
+        if operation=='sdk_read':return self.knowledge_for(campaign).read(**args)
+        if operation=='sdk_inspect':return self.knowledge_for(campaign).inspect(**args)
+        if operation in ['materials_list','materials_search','materials_read']:
+            allowed={'ref','offset','limit'} if operation=='materials_read' else {'kind','task','candidateId','batchId','offset','limit'}|({'query'} if operation=='materials_search' else set())
+            if set(args)-allowed:raise Refused('Unknown material query fields')
+            if operation=='materials_read' and 'ref' not in args:raise Refused('Material ref required')
+            if operation=='materials_search' and 'query' not in args:raise Refused('Material query required')
+            return getattr(self.materials,operation.removeprefix('materials_'))(campaign,**args)
+        if operation=='campaign_status':
+            if args.get('view','summary')=='summary':return activity_state(self,campaign)
+            if args.get('view')!='full':raise Refused('Unknown status view')
+            status=self.status(campaign)
+            for t in status['trials']:
+                t.pop('summary',None)
+                if 'taskSources' in t.get('comparisonContext',{}):
+                    context=t['comparisonContext'];context['taskSourcesDigest']=hashlib.sha256(encoded(context.pop('taskSources')).encode()).hexdigest()
+            return status
+        if operation=='workspace_read':
+            if args.get('candidateId'):
+                selected=self.store.get('candidates',args['candidateId'])
+                if selected['campaignId']!=campaign:raise Refused('Candidate unavailable')
+                return read_workspace(Path(selected['bundlePath'])/'plugins',args['path'])
+            return read_workspace(self.workspace(campaign),args['path'])
+        if operation=='candidate_list':return self.store.list('candidates',campaign)
+        if operation=='evidence_list':
+            rows=self.store.list('evidence',campaign)
+            if args.get('batchId'):
+                ids={t['id'] for t in self.store.list('trials',campaign) if t['batchId']==args['batchId']};rows=[e for e in rows if e['trialId'] in ids]
+            return [{k:v for k,v in e.items() if k!='path'} for e in rows]
+        if operation=='evidence_read':return self.evidence.read(campaign,**args)
+        if operation=='report_save':
+            batch=args.get('batchId');analysis={k:v for k,v in args.items() if k!='batchId'}
+            record=self.reports.save(campaign,analysis,batch)
+            return {k:record[k] for k in ['id','kind','batchId','analysisRevision','status','factsSha256']}
+        if operation=='candidate_retain':return self.store.retain(campaign,args['candidateId'],args['reason'],args['evidenceRefs'])
+        if operation=='export_create':return self.export(campaign,args['candidateId'])
+        if operation=='campaign_finish':
+            reason=args.get('reason')
+            if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('A concise evidence-based stop reason is required')
+            return self.store.control(campaign,'finish','meta-finish',changes={'reason':reason})
+        if c['state']!='running' or c['explorationClosed']:raise Refused('Search writes closed; evidence and reports remain available')
+        if operation=='workspace_write':return write_workspace(self.workspace(campaign),**args)
+        if operation=='workspace_exec':
+            candidates=self.store.list('candidates',campaign)
+            bundle=verify(candidates[0]['bundlePath'])
+            return execute_workspace(self.workspace(campaign),args['command'],bundle['runnerImage'])
+        if operation=='candidate_freeze':
+            with self.operation_lock:
+                key=args.get('idempotencyKey')
+                prior=next((x for x in self.store.list('operations',campaign) if key and x['kind']=='freeze' and x['payload'].get('idempotencyKey')==key),None)
+                if prior:
+                    if prior['payload']!=args:raise Refused('Freeze idempotency key conflicts with prior input')
+                    return {'operationId':prior['id'],'state':prior['state'],'result':prior.get('result'),'error':prior.get('error')}
+                return self._operation(campaign,'freeze',args,lambda:self.build_candidate(campaign,args['plugins'],args['description'],args.get('parent'),args.get('displayName')))
+        if operation=='batch_submit':return self.store.submit(campaign,args['candidateId'],args['tasks'],args['repeats'],args['idempotencyKey'])
+        raise Refused('Meta capability unavailable')
