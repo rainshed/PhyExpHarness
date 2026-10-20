@@ -2,13 +2,16 @@ import React,{useState,useEffect,useRef} from 'react';
 import {configError,numericConfig} from './form.mjs';
 import {loadGoalDraft} from './goal.mjs';
 import {readModelCatalog} from './model-catalog.mjs';
+import {createAttempt,createAttemptStorageKey} from './create-attempt.mjs';
 import {NumberField} from './fields';
 import {defaults,api,key} from './common';
 function loadDraft(){try{return loadGoalDraft(localStorage,defaults)}catch{return defaults}}
+function loadCreateAttempt(){try{return JSON.parse(localStorage.getItem(createAttemptStorageKey)||'null')}catch{return null}}
 export function useWorkbench(){
  const [list,setList]=useState<any[]>([]),[selected,setSelected]=useState(()=>localStorage.getItem('phyexp-campaign')||''),[c,setC]=useState<any>(null),[view,setView]=useState('overview'),[creating,setCreating]=useState(false),[config,setConfig]=useState<any>(loadDraft),[error,setError]=useState(''),[connected,setConnected]=useState(false),[busy,setBusy]=useState(''),[events,setEvents]=useState<any[]>([]),[report,setReport]=useState<any>(null),[evidence,setEvidence]=useState<any>(null),[limits,setLimits]=useState<any>(null),[notice,setNotice]=useState('');
  const [models,setModels]=useState<any[]>([]),[modelCatalogNote,setModelCatalogNote]=useState(''),[settingsOpen,setSettingsOpen]=useState(false);
  const catalogRevision=useRef<number|undefined>(undefined);
+ const pendingCreate=useRef<any>(loadCreateAttempt());
  const acceptCatalog=(catalog:any)=>{if(catalog.revision!=null&&catalogRevision.current!=null&&catalog.revision<catalogRevision.current)return;const parsed=readModelCatalog(catalog);catalogRevision.current=catalog.revision;setModels(parsed.models);setModelCatalogNote(parsed.note)};
  const refreshModels=async()=>acceptCatalog(await api('/models'));
  const [source,setSource]=useState<any>(null),[renaming,setRenaming]=useState<any>(null);
@@ -38,8 +41,10 @@ export function useWorkbench(){
   if(actionLock.current)return;
   const problem=configError(config);setFormError(problem);if(problem){focus(formErrorRef.current);return}
   actionLock.current=true;setBusy('create');setError('');setNotice('');
-  try{const next=await api('/campaigns',{config:numericConfig(config),idempotencyKey:key(),modelCatalogRevision:catalogRevision.current});setSelected(next.id);active.current=next.id;setCreating(false);setView('overview');setNotice('活动已创建。后台正在准备任务环境并检查基线，完成后即可启动。');setC(next);requestAnimationFrame(()=>focus(heroRef.current));}
-  catch(e:any){setFormError('创建未完成：'+e.message+'。配置已保留，请修改后重试。')}
+  const values=numericConfig(config);pendingCreate.current=createAttempt(values,pendingCreate.current,key);
+  try{localStorage.setItem(createAttemptStorageKey,JSON.stringify(pendingCreate.current))}catch{}
+  try{const next=await api('/campaigns',{config:values,idempotencyKey:pendingCreate.current.key,modelCatalogRevision:catalogRevision.current});pendingCreate.current=null;try{localStorage.removeItem(createAttemptStorageKey)}catch{}setSelected(next.id);active.current=next.id;setCreating(false);setView('overview');setNotice('活动已创建。后台正在准备任务环境并检查基线，完成后即可启动。');setC(next);requestAnimationFrame(()=>focus(heroRef.current));}
+  catch(e:any){setFormError('创建未完成：'+e.message+'。配置已保留，可以重试；不需要重新填写。')}
   finally{actionLock.current=false;setBusy('')}
  }
  async function saveLimits(){

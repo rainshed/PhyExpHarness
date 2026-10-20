@@ -1,5 +1,5 @@
 """Read-only SDK access. Never introspects the credential-bearing UI/control host."""
-import hashlib,json
+import errno,hashlib,json,tempfile
 from pathlib import Path
 class KnowledgePack:
     def __init__(self,path,version,profile_digest=None):
@@ -11,10 +11,36 @@ class KnowledgePack:
             if target.is_symlink() or not target.resolve().is_relative_to(self.path.resolve()):raise ValueError('Knowledge path escapes pack')
         if self.manifest['dshVersion']!=version: raise ValueError('SDK version mismatch')
         if profile_digest and self.manifest['profileDigest']!=profile_digest: raise ValueError('Execution profile mismatch')
-    def read(self,id,offset=0,limit=16000):
+    def _text(self,id):
         if id not in self.manifest['documents']: raise ValueError('Document unavailable')
-        entry=self.manifest['documents'][id]; text=(self.path/entry['file']).read_text()
+        entry=self.manifest['documents'][id];target=self.path/entry['file']
+        if target.is_symlink() or not target.resolve().is_relative_to(self.path.resolve()):raise ValueError('Knowledge path escapes pack')
+        text=target.read_text(encoding='utf-8')
         if hashlib.sha256(text.encode()).hexdigest()!=entry['sha256']: raise ValueError('Knowledge integrity mismatch')
+        return text
+    def snapshot(self,root):
+        """Publish only a complete verified pack, before a Campaign binds its identity."""
+        root=Path(root);root.mkdir(parents=True,exist_ok=True)
+        destination=root/self.manifest['id']
+        if not destination.exists():
+            with tempfile.TemporaryDirectory(prefix='.snapshot-',dir=root) as temporary:
+                stage=Path(temporary)/'pack';stage.mkdir()
+                for id,entry in self.manifest['documents'].items():
+                    text=self._text(id)
+                    target=stage/entry['file'];target.parent.mkdir(parents=True,exist_ok=True)
+                    target.write_text(text,encoding='utf-8')
+                (stage/'manifest.json').write_text(json.dumps(self.manifest),encoding='utf-8')
+                try:stage.rename(destination)
+                except OSError as error:
+                    # Another creator may have published this same identity.
+                    if error.errno not in (errno.EEXIST,errno.ENOTEMPTY):raise
+        if destination.is_symlink():raise ValueError('Knowledge path escapes pack')
+        frozen=KnowledgePack(destination,self.manifest['dshVersion'],self.manifest['profileDigest'])
+        if frozen.manifest['id']!=self.manifest['id']:raise ValueError('Knowledge pack identity mismatch')
+        for id in frozen.manifest['documents']:frozen._text(id)
+        return frozen
+    def read(self,id,offset=0,limit=16000):
+        text=self._text(id);entry=self.manifest['documents'][id]
         if not isinstance(offset,int) or offset<0 or not isinstance(limit,int) or not 1<=limit<=32000: raise ValueError('Invalid range')
         return {'id':id,'source':entry['source'],'version':self.manifest['dshVersion'],'packId':self.manifest['id'],'sha256':entry['sha256'],'profileDigest':self.manifest['profileDigest'],'offset':offset,'total':len(text),'text':text[offset:offset+limit]}
     def search(self,query):

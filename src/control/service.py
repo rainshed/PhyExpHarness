@@ -114,18 +114,24 @@ class ControlService:
                     'value':config.get(k)} for k in planning.LIMITS}
             if planning.enabled(config):config.setdefault('taskEvaluationRule',RESOURCE_RULE)
             if model_revision is not None and not replay:self.providers.check_revision(catalog,model_revision)
+            # The generated reference can change while this long-lived service runs.
+            # Freeze and verify the current files before persisting a new Campaign;
+            # retries keep their original pack instead of silently rebinding it.
+            knowledge=None
+            if not replay:
+                try:
+                    knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2').snapshot(self.data/'knowledge-packs')
+                except (ValueError,OSError) as error:
+                    raise Refused('开发资料包尚未准备好；请完成资料构建后重试。此次未创建活动。详情：'+str(error)) from error
             composition=freeze_meta(self.source,self.data,config) if not replay else None
-            campaign=self.store.create(config,key,defaults={'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':self.knowledge.manifest['id'],'materialVersion':1,
+            campaign=self.store.create(config,key,defaults={'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **({'executionTimePolicy':planning.execution_time_policy()} if planning.enabled(config) else {}),
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
         id=campaign['id'];self.workspace(id)
         with self.operation_lock:
             if campaign['config'].get('materialVersion')==1:
-                destination=self.data/'knowledge-packs'/campaign['config']['knowledgePackId']
-                if not destination.exists():
-                    destination.parent.mkdir(parents=True,exist_ok=True)
-                    shutil.copytree(self.knowledge_for(id).path,destination,dirs_exist_ok=True)
+                self.knowledge_for(id).snapshot(self.data/'knowledge-packs')
                 snapshot_tasks(self,id)
             if not self.store.list('candidates',id) and not self.store.list('operations',id):
                 self._operation(id,'prepare_h0',{},lambda:self._prepare_h0(id))

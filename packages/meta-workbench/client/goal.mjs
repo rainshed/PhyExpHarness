@@ -7,7 +7,7 @@ export function loadGoalDraft(storage,fallback){
  if(!draft)return fallback;
  if(draft.objective===oldDefault){
   if(!storage.getItem('phyexp-draft-before-meta-goal-v1'))storage.setItem('phyexp-draft-before-meta-goal-v1',raw);
-  return {...draft,objective:defaultObjective};
+  return {...fallback,...draft,objective:defaultObjective};
  }
- return draft;
+ return {...fallback,...draft};
 }

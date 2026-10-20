@@ -2,6 +2,18 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {configError,numericConfig} from '../../packages/meta-workbench/client/form.mjs';
 import {loadGoalDraft,defaultObjective} from '../../packages/meta-workbench/client/goal.mjs';
+import {createAttempt} from '../../packages/meta-workbench/client/create-attempt.mjs';
+
+test('an unchanged create retry survives reload without duplicating a campaign',()=>{
+ let keys=0;const key=()=>String(++keys);
+ const config={name:'Draft',concurrency:3,maxTrials:null};
+ const first=createAttempt(config,null,key);
+ const restored=JSON.parse(JSON.stringify(first));
+ assert.deepEqual(createAttempt({...config},restored,key),first);
+ assert.equal(keys,1);
+ assert.notEqual(createAttempt({...config,concurrency:4},restored,key).key,first.key);
+ assert.notEqual(createAttempt(config,null,key).key,first.key);
+});
 
 test('goal defaults upgrade only the previous literal default and preserve custom drafts and limits',()=>{
  const data=new Map();const storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
@@ -10,6 +22,13 @@ test('goal defaults upgrade only the previous literal default and preserve custo
  assert.deepEqual(loadGoalDraft(storage,{}),{objective:defaultObjective,maxTrials:7});
  assert.equal(data.get('phyexp-draft-before-meta-goal-v1'),raw);
  for(const goal of ['自定义目标','']){data.set('phyexp-draft',JSON.stringify({objective:goal}));assert.equal(loadGoalDraft(storage,{}).objective,goal);}
+});
+
+test('saved drafts acquire the new-activity planning policy without replacing chosen limits',()=>{
+ const draft={name:'Saved',reserveSeconds:0,softTokenLimit:null,concurrency:5};
+ const restored=loadGoalDraft({getItem:()=>JSON.stringify(draft)},
+  {resourcePolicy:'meta-resource-planning-v1',reserveSeconds:null,concurrency:1});
+ assert.deepEqual(restored,{resourcePolicy:'meta-resource-planning-v1',...draft});
 });
 
 const valid={name:'Test',tasks:['one'],maxRounds:'4',maxTrials:'4',concurrency:'1',wallTimeSeconds:'14400',trialTimeSeconds:'2700',softTokenLimit:'8000000',reserveSeconds:'1800',reserveTokens:'800000',stopMode:'strict'};
