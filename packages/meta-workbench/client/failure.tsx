@@ -1,5 +1,6 @@
 import React from 'react';
-export const resultLabel=(t:any)=>t.completionLabel||t.resultLabel||(t.score!==null&&t.score!==undefined?'评分 '+t.score:['reserved','launching','running'].includes(t.state)?'运行中，等待评分':'未评分');
+import {trialStage} from './trial-status.mjs';
+export const resultLabel=(t:any)=>trialStage(t).label;
 const scoring:any={not_run:'官方评分未运行',failed:'官方评分器失败',completed:'已有官方评分',unknown:'评分阶段尚不能确认',pending:'等待评分'};
 const stages:any={admission:'平台请求准入',model:'模型请求',execution:'实验执行',verifier:'官方评分',collection:'结果收集',startup:'实验启动',supervision:'执行监督'};
 export function TransportDetail({observed:o}:any){const t=o?.transport;if(!t)return null;
