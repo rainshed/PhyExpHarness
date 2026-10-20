@@ -1,0 +1,115 @@
+"""Failure facts from execution artifacts, independent of platform state.
+
+Never replace a scientific score or infer token usage from output length.
+Only fixed descriptions and safe metadata leave this module; raw errors stay archived.
+"""
+import json
+from pathlib import Path
+
+MESSAGES = {
+    'budget_admission_denied': '当前额度不足以准入下一次模型请求',
+    'accounting_unavailable': '平台用量账本暂时不可用',
+    'accounting_lease_expired': '平台请求凭证已到期或被撤销',
+    'accounting_auth_failed': '平台请求凭证验证失败',
+    'accounting_protocol_error': '平台准入接口返回异常',
+    'invalid_tool_arguments': '工具调用参数格式异常，无法构成合法 JSON',
+    'stream_whitespace': '工具调用参数持续输出空白，触发异常流保护',
+    'stream_repetition': '工具调用参数持续重复，触发异常流保护',
+    'response_size_limit': '单次模型响应超过本地字节上限',
+    'tool_argument_size_limit': '工具调用参数超过本地字节上限',
+    'request_timeout': '单次模型请求达到时间上限',
+    'stream_idle_timeout': '模型连接长时间没有返回数据',
+    'model_output_limit': '模型输出达到提供方上限，执行未正常完成',
+    'model_transport_error': '模型请求传输失败',
+    'model_service_overloaded': '模型服务过载，任务未能恢复',
+    'model_response_error': '模型提供方返回错误',
+    'model_stream_incomplete': '模型响应缺少完整结束回执',
+    'request_cancelled': '模型请求已取消',
+    'startup_failure': '实验启动失败',
+    'supervisor_lost_start_not_repeated': '单次执行监督进程丢失，未自动重复启动',
+    'user_stop': '用户终止了本次实验',
+    'user_stop_invalid_tool_argument_stream': '工具参数异常输出后，由用户终止',
+    'trial_deadline': '单次实验达到截止时间',
+    'campaign_deadline': '活动达到截止时间',
+    'verifier_failed': '官方评分器执行失败',
+    'runtime_failed': '执行进程未正常完成，具体原因尚未确认',
+    'archive_invalid': '结果或归档未通过完整性检查',
+    'unknown_failure': '实验未正常完成，具体原因尚未确认',
+}
+
+
+def read(path):
+    try: return json.loads(Path(path).read_text())
+    except (OSError, ValueError): return {}
+
+
+def public_failure(value):
+    code = value.get('code', 'unknown_failure')
+    if code not in MESSAGES: code = 'unknown_failure'
+    result = {'schemaVersion': 1, 'code': code, 'stage': value.get('stage', 'execution'),
+              'message': MESSAGES[code], 'source': value.get('source', 'execution-artifacts')}
+    if code == 'model_response_error' and (value.get('observed') or {}).get('providerCode') == 'CONTEXT_WINDOW_EXCEEDED':
+        result['message'] = '模型适配器判定上下文容量超限，请检查上下文压缩'
+    for key in ['requestId', 'detectedAt', 'policyVersion', 'termination', 'evidence', 'observed', 'limits', 'secondaryCodes']:
+        if key in value: result[key] = value[key]
+    return result
+
+
+def diagnose(run_dir, stop_reason=None):
+    root = Path(run_dir)
+    runtimes = sorted(root.glob('harbor/*/phyexp/runtime-summary.json'))
+    runtime_file = runtimes[0] if len(runtimes) == 1 else None
+    runtime = read(runtime_file) if runtime_file else {}
+    trial_files = sorted(root.glob('harbor/*/result.json'))
+    trial = read(trial_files[0]) if len(trial_files) == 1 else {}
+    verifier = trial.get('verifier_result')
+    exception = trial.get('exception_info') or {}
+    scoring = 'failed' if 'Verifier' in exception.get('exception_type', '') else ('completed' if verifier else 'unknown')
+    result = None
+    if runtime_file:
+        failure_file = runtime_file.with_name('failure.json')
+        stored = read(failure_file)
+        if runtime.get('failureContract') == 'request-failure-v2':
+            raw = runtime.get('failure')
+        elif stored.get('failureContract') == 'request-failure-v2':
+            raw = stored.get('failure')
+        else:
+            raw = stored or runtime.get('failure')
+        if raw:
+            result = public_failure(raw)
+            result['evidence'] = str(failure_file.relative_to(root)) if failure_file.exists() else str(runtime_file.relative_to(root))
+        if not result:
+            reason = runtime.get('turnEnd') or {}
+            code = 'model_output_limit' if reason.get('kind') == 'max-tokens' else None
+            error = reason.get('error') or {}
+            if reason.get('kind') == 'error':
+                code = 'model_transport_error' if error.get('code') == 'TRANSPORT' or 'fetch failed' in error.get('message', '') else 'model_response_error'
+            if code: result = public_failure({'code': code, 'stage': 'model', 'evidence': str(runtime_file.relative_to(root))})
+    stop = stop_reason or read(root/'process.json').get('stopReason') or read(root/'summary.json').get('stopReason')
+    if not verifier and scoring != 'failed' and runtime and (runtime.get('status') == 'error' or runtime.get('error') or result):
+        scoring = 'not_run'
+    if result and result['code'] in ['request_cancelled', 'runtime_failed'] and stop in MESSAGES:
+        result = {**result, **public_failure({**result, 'code': stop})}
+    if not result:
+        code = stop if stop in MESSAGES else 'verifier_failed' if scoring == 'failed' else 'runtime_failed' if runtime else 'unknown_failure'
+        result = public_failure({'code': code, 'stage': 'verifier' if scoring == 'failed' else 'model' if code.startswith('model_') else 'execution',
+                                 'evidence': str(runtime_file.relative_to(root)) if runtime_file else 'summary.json'})
+    if stop in MESSAGES: result['termination'] = stop
+    result['scoringStatus'] = scoring
+    # Distinguish causal failure from cleanup/collector errors without exposing raw text.
+    result['secondaryCodes'] = list(dict.fromkeys(result.get('secondaryCodes', []) +
+        (['runtime_exit'] if runtime.get('error') else []) + (['harbor_exception'] if exception else [])))
+    return result
+
+
+def failed_result(run_dir, error, stop_reason=None):
+    failure = diagnose(run_dir, stop_reason)
+    if failure['code'] == 'unknown_failure' and isinstance(error, (ValueError, FileNotFoundError)):
+        failure = {**failure, **public_failure({'code': 'archive_invalid', 'stage': 'collection'}), 'scoringStatus': failure['scoringStatus']}
+    runtime_files = list(Path(run_dir).glob('harbor/*/phyexp/runtime-summary.json'))
+    runtime = read(runtime_files[0]) if len(runtime_files) == 1 else {}
+    return {'status': 'infrastructure_error', 'pipelineStatus': 'failed', 'officialReward': None,
+            'sciencePassed': None, 'error': str(error), 'stopReason': stop_reason or failure['code'],
+            'failure': failure, 'scoringStatus': failure['scoringStatus'],
+            **({k:runtime.get(k) for k in ['failureContract','requestRecovery']} if runtime.get('failureContract') else {}),
+            'usage': runtime.get('usage', {}), 'accounting': runtime.get('accounting', {})}

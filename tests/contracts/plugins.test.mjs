@@ -1,17 +1,39 @@
 import test from 'node:test';import assert from 'node:assert/strict';
+import fs from 'node:fs';import path from 'node:path';import {fileURLToPath,pathToFileURL} from 'node:url';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import {Context} from '@deepseek-ai/cordis';import {ToolRuntime} from '@deepseek-ai/dsh-tools';
 import * as meta from '../../packages/meta-harness/index.mjs';
-import {apply as workbench} from '../../packages/meta-workbench/host/index.mjs';
+import {apply as workbench} from '../../packages/meta-workbench-bridge/index.mjs';
+test('Markdown tool example returns structured values, rejects invalid calls and unloads',async()=>{
+ const guide=fs.readFileSync(new URL('../../knowledge/plugin-sdk/guides/tools.md',import.meta.url),'utf8');
+ const source=guide.match(/```js\n([\s\S]*?)\n```/)[1];
+ const manifest=JSON.parse(guide.match(/```json\n([\s\S]*?)\n```/)[1]);
+ const dir=fs.mkdtempSync(fileURLToPath(new URL('../../node_modules/.guide-example-',import.meta.url)));
+ const ctx=new Context();
+ try{
+  fs.writeFileSync(path.join(dir,manifest.entry),source);
+  await ctx.plugin(SystemPrompt).await();await ctx.plugin(ToolRuntime).await();
+  const plugin=ctx.plugin(await import(pathToFileURL(path.join(dir,manifest.entry)).href));await plugin.await();
+  assert.deepEqual(ctx.tools.schemas().map(t=>t.name),manifest.tools);
+  const execute=(args,signal=new AbortController().signal)=>ctx.tools.execute({callId:'guide',name:'summarize_numbers',arguments:args,signal});
+  for(const [values,expected] of [[[1,2,3],{count:3,sum:6}],[[],{count:0,sum:0}]]){
+   const result=await execute({values});assert.equal(result.isError,false);assert.deepEqual(result.value,expected);
+   assert.deepEqual(JSON.parse(result.content[0].text),expected);
+  }
+  for(const args of [{},{values:['bad']},{values:[Number.MAX_VALUE,Number.MAX_VALUE]}])assert.equal((await execute(args)).isError,true);
+  assert.equal((await execute({values:[1]},AbortSignal.abort())).isError,true);
+  await plugin.dispose();assert.equal(ctx.tools.schemas().length,0);
+ }finally{await ctx.fiber.dispose();fs.rmSync(dir,{recursive:true,force:true});}
+});
 test('Meta tool registration and disposal use native Cordis scopes',async()=>{
- const ctx=new Context();await ctx.plugin(SystemPrompt).await();await ctx.plugin(ToolRuntime).await();const plugin=ctx.plugin(meta);await plugin.await();
+ const ctx=new Context();await ctx.plugin(SystemPrompt).await();await ctx.plugin(ToolRuntime).await();const plugin=ctx.plugin(meta,{systemPrompt:'Fixed controller fixture: exercise tool registration and permissions.'});await plugin.await();
  assert.equal(ctx.tools.schemas().length,Object.keys(meta.operations).length+2);
  assert.ok(ctx.tools.schemas().some(t=>t.name==='sdk_inspect'));
  await plugin.dispose();assert.equal(ctx.tools.schemas().length,0);await ctx.fiber.dispose();
 });
 test('workbench owns only its route; refuses cross-origin and path traversal',async()=>{
  process.env.PHYEXP_CONTROL_URL='http://127.0.0.1:18402';process.env.PHYEXP_USER_TOKEN='m0-user';let route,removed=false,dispose;
- workbench({effect:fn=>{dispose=fn();},webServer:{register:r=>{route=r;return()=>{removed=true;};}}});
+ workbench({connection:{requestRejection:()=>undefined},effect:fn=>{dispose=fn();},webServer:{register:r=>{route=r;return()=>{removed=true;};}}});
  const response=()=>({status:0,text:'',writeHead(code){this.status=code;return this;},end(text){this.text=text;return this;}});
  for(const req of [{method:'POST',url:'/phyexp/api/campaigns',headers:{origin:'https://outside.example',host:'127.0.0.1:18401'}},
  {method:'POST',url:'/phyexp/api/campaigns',headers:{host:'127.0.0.1:18401'}},
@@ -33,7 +55,7 @@ test('public context and result policy work and disappear on dependency removal'
 });
 
 test('native inspect tools expose only execution declarations, with no client or credential registry',async()=>{
- const ctx=new Context();await ctx.plugin(SystemPrompt).await();await ctx.plugin(ToolRuntime).await();await ctx.plugin(meta).await();
+ const ctx=new Context();await ctx.plugin(SystemPrompt).await();await ctx.plugin(ToolRuntime).await();await ctx.plugin(meta,{systemPrompt:'Fixed controller fixture: exercise tool registration and permissions.'}).await();
  const signal=new AbortController().signal;
  const result=await ctx.tools.execute({callId:'list',name:'cordis_inspect_list',arguments:{},signal});
  assert.equal(result.value.providers.length,1);assert.equal(result.value.providers[0].id,'execution-sdk');

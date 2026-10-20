@@ -1,0 +1,8 @@
+import React from 'react';
+import {TaskEvaluation} from './outcomes';
+
+export function SelectionDecisions({decisions=[],tables,readEvidence}:any){
+ const names=new Map((tables?.versions||[]).map((v:any)=>[v.id,v.displayName]));
+ if(!decisions.length)return null;
+ return <section className="mh-card"><h3>Meta 版本选择与依据</h3><p className="mh-muted">选定代表 Meta 的取舍；平台核验证据并标注比较限制，不认证稳定性或因果提升。以下记录为决策当时的快照。</p>{[...decisions].reverse().map((d:any,i:number)=><details key={d.id} open={i===0}><summary>{new Date(d.createdAt*1000).toLocaleString('zh-CN',{hour12:false})} · {names.get(d.candidateId)||d.candidateId}{i===0?' · 最近决定':''}</summary><p>此前保留：{names.get(d.previousCandidateId)||d.previousCandidateId||'尚未选择'}；本次选定：{names.get(d.candidateId)||d.candidateId}。</p>{d.assessment.taskEvaluation&&<><p>参考版本：</p><TaskEvaluation value={d.assessment.taskEvaluation.reference} details/><p>选定版本：</p><TaskEvaluation value={d.assessment.taskEvaluation.candidate} details/></>}<p><strong>选择理由：</strong>{d.reason}</p><p><strong>权衡：</strong>{d.tradeoffs}</p><p><strong>Meta 声明的局限：</strong>{d.limitations.length?d.limitations.join('；'):'未另行声明，请同时阅读平台提示。'}</p><p><strong>重新考虑的条件：</strong>{d.reconsiderWhen}</p><p><strong>平台比较限制：</strong></p><ul>{d.assessment.comparisonLimitations.map((s:string,j:number)=><li key={j}>{s}</li>)}</ul><p>引用证据内容摘要已核验；事实与自由文本判断分别保存。</p>{d.evidenceRefs.map((ref:string,j:number)=><button key={ref} onClick={()=>readEvidence(ref)}>选择证据 {j+1} ↗</button>)}<details><summary>决策身份与全部尝试快照</summary><pre>{JSON.stringify(d,null,2)}</pre></details></details>)}</section>;
+}

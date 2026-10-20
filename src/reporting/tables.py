@@ -7,6 +7,7 @@ import re
 import hashlib
 import json
 from pathlib import Path
+from src.evidence.outcomes import outcome_summary
 
 
 def stable(value):
@@ -84,6 +85,8 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
     campaign, annotations = campaign or {}, annotations or {}
     candidates = sorted(candidates, key=lambda c: (c.get('createdAt', 0), c['id']))
     batches = sorted(batches, key=lambda b: b['round'])
+    batch_candidates={b['id']:b['candidateId'] for b in batches}
+    trials=[{**t,'candidateId':t.get('candidateId',batch_candidates.get(t.get('batchId')))} for t in trials]
     labels = {c['id']: f'H{i}' for i, c in enumerate(candidates)}
     lookup = {c['id']: c for c in candidates}
     if batch_id:
@@ -118,7 +121,8 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
             'displayName': labels[c['id']]+' · '+(c.get('displayName') or ('原始基线' if not members else '、'.join(plugin_rows[m['pluginId']]['displayName'] for m in members)+'版')),
             'bundleId': c['bundleId'], 'parentId': parent, 'parentLabel': labels.get(parent), 'plugins': members,
             'final': c['id'] == campaign.get('finalCandidateId'), 'retained': c['id'] == campaign.get('retainedCandidateId'),
-            'assemblyStatus': c.get('check', {}).get('status', 'unknown')})
+            'assemblyStatus': c.get('check', {}).get('status', 'unknown'),
+            'taskEvaluation':outcome_summary([t for t in trials if t['candidateId']==c['id'] and (not batch_id or t['batchId'] in {b['id'] for b in batches})],campaign.get('config',{}).get('tasks'),campaign.get('config'))})
     names={v['id']:v['displayName'] for v in version_rows}
     previous = None
     for b in batches:
@@ -126,7 +130,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         previous_candidate = lookup.get(previous['candidateId']) if previous else None
         changes = plugin_changes(previous_candidate, selected) if previous else [
             {'kind': 'initial', 'label': '首轮，无上一轮比较对象', 'pluginKeys': []}]
-        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext']}
+        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings']}
                    for t in trials if t['batchId'] == b['id']]
         round_rows.append({'id': b['id'], 'round': b['round'], 'candidateId': b['candidateId'],
             'versionName': names.get(b['candidateId'],'版本缺失'), 'testSettings':b.get('testSettings'),
@@ -134,7 +138,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
             'previousCandidateId': previous['candidateId'] if previous else None,
             'previousVersionLabel': labels.get(previous['candidateId']) if previous else None,
             'changes': changes, 'tasks': b['tasks'], 'repeats': b['repeats'], 'state': b['state'],
-            'results': results, 'focus': b['id'] == batch_id})
+            'results': results, 'focus': b['id'] == batch_id,'taskEvaluation':outcome_summary(results,b['tasks'],campaign.get('config'))})
         previous = b
     return {'schemaVersion': 2, 'plugins': list(plugin_rows.values()), 'versions': version_rows, 'rounds': round_rows,
             'groups': group_rounds(round_rows), 'focusBatchId': batch_id, 'comparisonBasis': '按受理轮次与上一轮比较；版本父子关系单独记录。',
@@ -147,6 +151,17 @@ def cell(value):
     for a, b in [('&', '&amp;'), ('<', '&lt;'), ('>', '&gt;'), ('|', '&#124;'), ('[', '&#91;'), (']', '&#93;'), ('`', '&#96;')]:
         text = text.replace(a, b)
     return text.replace('\n', '<br>').replace('\r', '')
+
+
+def completion_lines(stats):
+    rate=lambda value:'待定' if value is None else f'{value:.1%}'
+    total=stats['total']
+    lines=[f"所选任务等权成功率：{rate(stats['macroSuccessRate'])}；覆盖 {stats['coveredTasks']}/{stats['taskCount']} 个任务。",
+           f"逐次通过 {total['passed']}/{total['eligible']}，其中按规则计 0：{total['derivedFailures']} 次；未计分外部故障 {total['external_failure']}，取消 {total['cancelled']}，待定 {total['pending']}，待归因 {total['unresolved']}。"]
+    for task,row in stats['byTask'].items():
+        lines.append(f"- {task}：成功率 {rate(row['successRate'])}（{row['passed']}/{row['eligible']}）；按规则计 0 {row['derivedFailures']}；未计分外部故障 {row['external_failure']}；取消 {row['cancelled']}；待定 {row['pending']}；待归因 {row['unresolved']}。")
+    if total['unresolved']:lines.append('待归因按失败计的逐次保守成功率：'+rate(total['conservativeSuccessRate'])+'。')
+    return lines
 
 
 def group_rounds(rounds):
@@ -202,12 +217,12 @@ def markdown_tables(tables):
         parent=versions.get(v['parentId'],{}).get('displayName','起点' if not v['parentId'] else '来源记录缺失')
         lines.append(f"| <a id=\"{v['label']}\"></a>{cell(v['displayName'])} | {cell(parent)} | {members} | {'最终版本' if v['final'] else '当前保留' if v['retained'] else '候选'} |")
     lines+=['','## 实验轮次表','','连续同版本、可比条件的复测合并展示；所有评分保留。','',
-        '| 轮次 | 执行版本 | 插件变化 | 测试安排 | 官方评分（逐次） |','|---|---|---|---|---|']
+        '| 轮次 | 执行版本 | 插件变化 | 测试安排 | 任务完成与官方评分（逐次） |','|---|---|---|---|---|']
     for g in tables.get('groups',group_rounds(tables['rounds'])):
         first=g['rounds'][0];span=str(g['firstRound']) if g['firstRound']==g['lastRound'] else f"{g['firstRound']}–{g['lastRound']}"
         changes='；'.join(cell(d['label']) for d in g['changes'])
         if len(g['rounds'])>1:changes+=f"；随后复测 {len(g['rounds'])-1} 轮"
-        scores='；'.join(f"第 {r['round']} 轮："+' / '.join(cell(t['task'])+': '+('未评分' if t['score'] is None else cell(t['score'])) for t in r['results']) for r in g['rounds'])
+        scores='；'.join(f"第 {r['round']} 轮："+' / '.join(cell(t['task'])+': '+cell(t.get('completionLabel') or t.get('resultLabel') or ('未评分' if t['score'] is None else t['score'])) for t in r['results']) for r in g['rounds'])
         lines.append(f"| 第 {span} 轮 | {cell(g['versionName'])} | {changes} | {len(first['tasks'])} 任务 × {first['repeats']} 次 / 轮 | {scores or '尚无结果'} |")
     lines+=['','### 插件配置','']
     for v in tables['versions']:

@@ -1,4 +1,4 @@
-// dsh-llm-pi-ai 0.2.1-rc.2 omits zero cache counters and reports uncached input.
+// Native DeepSeek and pi-ai adapters report uncached input; zero cache counters may be omitted.
 // Keep provider total authoritative and expose aggregate prompt tokens for Harbor.
 export function summarizeUsage(events) {
   const samples = events.filter(e => e.type === 'assistant/message').map(e => e.data.usage);
@@ -9,6 +9,6 @@ export function summarizeUsage(events) {
     cacheWriteTokens: samples.reduce((total, u) => total + (u?.cacheWriteTokens || 0), 0) };
   usage.promptTokens = usage.totalTokens !== null && usage.outputTokens !== null
     ? usage.totalTokens - usage.outputTokens : null;
-  usage.accounting = 'pi-ai: inputTokens excludes cache; promptTokens includes cache; totalTokens includes prompt and output';
+  usage.accounting = 'inputTokens excludes cache; promptTokens includes cache; totalTokens includes prompt and output';
   return usage;
 }

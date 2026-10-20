@@ -6,6 +6,33 @@ import os from 'node:os';
 import path from 'node:path';
 import { ModelGateway, providerRuntime } from '../../src/execution/host/model_gateway.mjs';
 const model={provider:'openai-codex',model:'gpt-6-sol',reasoningEffort:'medium',maxTokens:8192};
+test('native compaction inherits fixed reasoning and still enforces route, cap and accounting',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-compact-gateway-'));const seen=[],reserved=[],settled=[];
+ const gateway=new ModelGateway({model,deadline:Date.now()+10000,audit:path.join(dir,'audit.jsonl'),
+  reserve:async(id,request)=>reserved.push({id,request}),settle:async(id,result)=>settled.push({id,result}),
+  adapter:{async *stream(request){seen.push(request);yield {type:'usage',usage:{inputTokens:10,outputTokens:2,totalTokens:12}};yield {type:'finish',reason:{kind:'stop'}};}}});
+ try{
+  const request={provider:model.provider,model:model.model,maxTokens:model.maxTokens,purpose:'compaction',sessionId:'native-session',messages:[]};
+  for await(const _ of gateway.stream(request)){}
+  assert.equal(seen[0].reasoningEffort,model.reasoningEffort);assert.equal(seen[0].sessionId,'native-session');
+  assert.equal(request.reasoningEffort,undefined);assert.equal(reserved[0].request.reasoningEffort,model.reasoningEffort);
+  assert.equal(settled[0].id,reserved[0].id);assert.equal(settled[0].result.usage.totalTokens,12);
+  for(const key of ['provider','model','reasoningEffort','maxTokens'])await assert.rejects(async()=>{
+   for await(const _ of gateway.stream({...request,[key]:key==='maxTokens'?65536:'other'})){}
+  },/mismatch/);
+  assert.equal(seen.length,1);assert.equal(reserved.length,1);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('context overflow retains a typed safe diagnostic instead of an undifferentiated provider error',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-context-failure-'));
+ const gateway=new ModelGateway({model,deadline:Date.now()+10000,audit:path.join(dir,'audit.jsonl'),adapter:{async *stream(){
+  yield {type:'finish',reason:{kind:'error',failure:{code:'CONTEXT_WINDOW_EXCEEDED',message:'raw adapter detail'}}};
+ }}});
+ try{for await(const _ of gateway.stream(model)){}
+  assert.equal(gateway.firstFailure.code,'model_response_error');assert.equal(gateway.firstFailure.observed.providerCode,'CONTEXT_WINDOW_EXCEEDED');
+  assert.ok(!JSON.stringify(gateway.firstFailure).includes('raw adapter detail'));
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
 test('gateway enforces fixed route before provider use, records partial calls as unknown',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-gateway-'));let invoked=0,entries=[];
  const gateway=new ModelGateway({model,deadline:Date.now()+10000,audit:path.join(dir,'audit.jsonl'),
@@ -36,8 +63,10 @@ test('every extra call is reserved and settled; deadline and cancellation keep u
  gateway.deadline=Date.now()-1; // Admission test uses an unambiguously expired clock, independent of timer rounding.
  await assert.rejects(async()=>{for await(const c of gateway.stream(model)){}},/deadline/);
  assert.equal(reserves,1);assert.equal(gateway.active.size,0);
- gateway.deadline=Date.now()+10000;const controller=new AbortController();
- const running=(async()=>{for await(const c of gateway.stream(model,controller.signal)){} })();
+ // A failed gateway must not admit another request; cancellation is tested on a fresh run.
+ gateway.deadline=Date.now()+10000;await assert.rejects(async()=>{for await(const c of gateway.stream(model)){}},/trial_deadline/);
+ const fresh=new ModelGateway({model,deadline:Date.now()+10000,audit:path.join(dir,'fresh.jsonl'),reserve:async()=>reserves++,settle:async(_,r)=>settled.push(r),adapter:gateway.adapter});const controller=new AbortController();
+ const running=(async()=>{for await(const c of fresh.stream(model,controller.signal)){} })();
  controller.abort();await assert.rejects(running,/cancel/);assert.equal(reserves,2);assert.equal(settled.length,2);
  fs.rmSync(dir,{recursive:true,force:true});
 });

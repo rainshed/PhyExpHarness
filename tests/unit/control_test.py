@@ -1,4 +1,5 @@
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from src.control.service import ControlService
 from src.control.server import make_app
-from src.control.store import Refused
+from src.control.store import Refused,RETENTION_RULE
 from src.evidence.library import feedback
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -26,6 +27,16 @@ class ControlTests(unittest.TestCase):
         self.c=self.service.store.create(self.config,'setup')['id'];self.service.store.control(self.c,'start','start')
     def tearDown(self):
         self.service.pool.shutdown(wait=True);self.client.close();self.temp.cleanup()
+    def test_model_catalog_is_available_to_user_and_denied_to_meta(self):
+        response=self.client.get('/models')
+        self.assertEqual(response.status_code,200)
+        catalog=response.json()['models']
+        self.assertEqual(catalog[-1]['model'],'deepseek-flash')
+        self.assertEqual(catalog[-1]['reasoningEfforts'],['off','low','high','max'])
+        _,token=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        self.assertEqual(self.client.get('/models').status_code,403)
+
     def test_user_meta_and_solver_identities_cannot_cross_authority(self):
         self.assertEqual(self.client.get('/health').status_code,200)
         lease,token=self.service.lease(self.c,'meta',time.time()+60)
@@ -51,6 +62,7 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(self.client.post('/meta/'+self.c,json={'operation':'materials_list','input':{}}).status_code,403)
         self.assertEqual(self.client.post('/accounting/'+lease['id']+'/settle',json={'id':'request','confirmedTokens':0,'unknown':False}).status_code,403)
     def test_meta_retention_api_compares_scored_results_and_explains_failures(self):
+        c=self.service.store.get('campaigns',self.c);c['config']['retentionRule']=RETENTION_RULE;self.service.store.put('campaigns',c)
         store=self.service.store;task=self.config['tasks'][0]
         ids=[store.candidate(self.c,{'id':name,'path':'/fixture','plugins':[]},name)['id'] for name in ['H0','H1','H2']]
         e=self.service.evidence.add(self.c,'fixture','official-result','{}',{'fixture':True})
@@ -69,6 +81,60 @@ class ControlTests(unittest.TestCase):
         response=self.client.post('/meta/'+self.c,json=body)
         self.assertEqual(response.status_code,403);self.assertIn('completion rate regression',response.text)
         self.assertEqual(store.status(self.c)['retainedCandidateId'],ids[1])
+
+    def test_meta_selects_without_score_veto_and_checks_bundle_evidence_and_authority(self):
+        from src.execution.bundle.freeze import canonical,digest
+        store=self.service.store;folder=self.data/'frozen';folder.mkdir()
+        (folder/'plugin.mjs').write_text('export const fixture=true;')
+        manifest={'files':{'plugin.mjs':digest((folder/'plugin.mjs').read_bytes())}}
+        manifest['id']=digest(canonical(manifest));(folder/'bundle.json').write_text(json.dumps(manifest))
+        candidate=store.candidate(self.c,{'id':manifest['id'],'path':str(folder),'plugins':[]},'Fixture',check={'status':'passed'})
+        e=self.service.evidence.add(self.c,'fixture','official-result','{}',{})
+        body={'operation':'candidate_retain','input':{'candidateId':candidate['id'],'reason':'Choose baseline pending evidence',
+            'evidenceRefs':[e['id']],'tradeoffs':'No scientific result yet','limitations':['Unscored'],
+            'reconsiderWhen':'Reassess after the pending experiment'}}
+        _,solver=self.service.lease(self.c,'solver',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+solver
+        self.assertEqual(self.client.post('/meta/'+self.c,json=body).status_code,403)
+        _,meta=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+meta
+        response=self.client.post('/meta/'+self.c,json=body)
+        self.assertEqual(response.status_code,200,response.text)
+        status=self.client.post('/meta/'+self.c,json={'operation':'campaign_status','input':{'view':'full'}}).json()
+        self.assertEqual(status['retainedCandidateId'],candidate['id'])
+        self.assertEqual(len(status['selectionDecisions']),1)
+        self.assertIn('缺少有效官方评分',';'.join(status['selectionDecision']['assessment']['comparisonLimitations']))
+        summary=self.client.post('/meta/'+self.c,json={'operation':'campaign_status','input':{}}).json()
+        self.assertEqual(summary['selectionDecision']['reason'],body['input']['reason'])
+        self.assertIn('comparisonLimitations',summary['selectionDecision'])
+        before=store.get('campaigns',self.c)
+        (folder/'plugin.mjs').write_text('tampered')
+        r=self.client.post('/meta/'+self.c,json=body)
+        self.assertEqual(r.status_code,403);self.assertIn('integrity',r.text)
+        (folder/'plugin.mjs').write_text('export const fixture=true;')
+        Path(e['path']).chmod(0o644);Path(e['path']).write_text('tampered')
+        r=self.client.post('/meta/'+self.c,json=body)
+        self.assertEqual(r.status_code,403);self.assertIn('integrity',r.text)
+        self.assertEqual(store.get('campaigns',self.c),before)
+        self.assertEqual(len(store.list('selection_decisions',self.c)),1)
+
+    def test_collecting_official_result_does_not_automatically_select_for_new_rule(self):
+        store=self.service.store
+        candidate=store.candidate(self.c,{'id':'fixture','path':'/fixture','plugins':[]},'Fixture',check={'status':'passed'})
+        batch=store.submit(self.c,candidate['id'],self.config['tasks'],1,'fixture');trial=store.claim(self.c)
+        folder=self.data/'trial';folder.mkdir()
+        text=json.dumps({'pipelineStatus':'completed','officialReward':1,'usage':{},'bundleId':'fixture'})
+        (folder/'summary.json').write_text(text)
+        (folder/'archive-manifest.json').write_text(json.dumps({'files':{'summary.json':{
+            'bytes':len(text.encode()),'sha256':hashlib.sha256(text.encode()).hexdigest()}}}))
+        trial=store.trial_update(trial['id'],output=str(folder))
+        self.service._collect(trial)
+        self.assertEqual(store.get('trials',trial['id'])['score'],1)
+        self.assertIsNone(store.status(self.c)['retainedCandidateId'])
+        self.assertEqual(store.list('selection_decisions',self.c),[])
+        c=store.get('campaigns',self.c);c['config']['retentionRule']=RETENTION_RULE;store.put('campaigns',c)
+        self.service._collect(trial)
+        self.assertEqual(store.status(self.c)['retainedCandidateId'],candidate['id'])
 
     def test_filtered_evidence_and_reports_never_publish_unknown_score_fields(self):
         score={'reward_binary':0,'secret':'hidden','result':{'linf':.3,'coefficients_true':[1,2,3]}}
@@ -146,3 +212,18 @@ class ControlTests(unittest.TestCase):
             restarted.pool.shutdown(wait=True)
             for proc in started:
                 if proc.poll() is None:proc.terminate();proc.wait(timeout=3)
+    def test_single_trial_stop_requires_user_and_does_not_close_campaign(self):
+        from unittest.mock import patch
+        candidate=self.service.store.candidate(self.c,{'id':'stop-fixture','path':'/fixture','plugins':[]},'H0',check={'status':'passed'})
+        self.service.store.submit(self.c,candidate['id'],self.config['tasks'],1,'stop-fixture')
+        trial=self.service.store.claim(self.c)
+        trial=self.service.store.trial_update(trial['id'],state='running',pid=123,output='/fixture')
+        lease,token=self.service.lease(self.c,'meta',time.time()+60)
+        user=self.client.headers['Authorization'];self.client.headers['Authorization']='Bearer '+token
+        self.assertEqual(self.client.post('/trials/'+trial['id']+'/stop').status_code,403)
+        self.client.headers['Authorization']=user
+        with patch.object(self.service,'_process_alive',return_value=False):
+            first=self.client.post('/trials/'+trial['id']+'/stop').json();second=self.client.post('/trials/'+trial['id']+'/stop').json()
+        self.assertEqual(first['stopRequestedAt'],second['stopRequestedAt'])
+        self.assertEqual(self.service.store.get('campaigns',self.c)['state'],'running')
+        self.assertEqual(first['stopReason'],'user_stop')

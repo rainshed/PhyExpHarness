@@ -17,7 +17,7 @@ const server = http.createServer(async (req, res) => {
     const payload = mcpName ? {name:mcpName,method:req.method,headers:req.headers,body:data} : JSON.parse(data);
     if(!mcpName)res.writeHead(200, { 'content-type': 'application/x-ndjson' });
     pending.set(id, row => {
-      if (row.error) { if(mcpName&&!res.headersSent) res.writeHead(502); res.write(JSON.stringify({ error: row.error }) + '\n'); }
+      if (row.error) { if(mcpName&&!res.headersSent) res.writeHead(502); res.write(JSON.stringify({ error: row.error, ...(row.failure?{failure:row.failure}:{}) }) + '\n'); }
       if (row.result !== undefined) {
         if(mcpName){if(row.result.status)res.writeHead(row.result.status,row.result.headers);if(row.result.bytes)res.write(Buffer.from(row.result.bytes,'base64'));}
         else res.write(JSON.stringify({ result: row.result }) + '\n');
@@ -32,6 +32,9 @@ fs.mkdirSync('/tmp/home', { recursive: true });
 fs.mkdirSync('/tmp/work', { recursive: true });
 const plugin = '/opt/phyexp/src/execution/runner/gateway_plugin.mjs';
 const patch = [ { id: 'llm-deepseek', disabled: true }, { insert: [{ id: 'fixed-gateway', name: plugin }] },
+  // The native compactor defaults to 65536 output tokens independently of the
+  // session. Its summaries must obey the same frozen model cap as ordinary calls.
+  ...(config.fixedModel?.maxTokens !== undefined ? [{ id:'compaction-basic', config:{maxTokens:config.fixedModel.maxTokens} }] : []),
   ...(config.disableLocalTools ? ['persistent-bash','persistent-pwsh','terminal-bash','terminal-pwsh','tool-fs','tool-working-directory'].map(id => ({ id, disabled: true })) : []),
   ...(config.plugins?.length ? [{ insert: config.plugins }] : []) ];
 fs.writeFileSync('/tmp/gateway.patch.json', JSON.stringify(patch));

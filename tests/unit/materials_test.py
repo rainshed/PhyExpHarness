@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -67,6 +68,43 @@ class MaterialTests(unittest.TestCase):
         self.assertIn('materials_search',after['materials']['tools'])
         self.assertEqual(after['state']['solver'],MODEL)
 
+    def test_plugin_guides_are_readable_through_meta_sdk_and_materials(self):
+        declared=self.service.meta_call(self.c,'sdk_inspect',{'name':'agent/request-error'})
+        self.assertEqual(declared['availability'],'declared-in-execution-sdk')
+        declaration=self.service.meta_call(self.c,'sdk_read',{'id':declared['document'],'limit':32000})
+        self.assertIn('agent/request-error',declaration['text'])
+        for name in ['README.md','plugin-design.md','tools.md','subagents.md','request-recovery.md','resource-planning.md']:
+            id='guides/'+name
+            item=self.service.meta_call(self.c,'sdk_read',{'id':id})
+            self.assertEqual(item['text'],(ROOT/'knowledge/plugin-sdk'/id).read_text())
+            self.assertEqual(item['source'],'knowledge/plugin-sdk/'+id)
+            self.assertEqual(item['sha256'],hashlib.sha256(item['text'].encode()).hexdigest())
+            self.assertEqual(self.materials.read(self.c,f'sdk:{item["packId"]}:{id}')['text'],item['text'])
+        index=self.service.meta_call(self.c,'sdk_read',{'id':'guides/README.md'})
+        for target in re.findall(r'\]\(([^)]+\.md)\)',index['text']):
+            self.service.meta_call(self.c,'sdk_read',{'id':'guides/'+target})
+        matches=self.service.meta_call(self.c,'sdk_search',{'query':'任务委派'})['matches']
+        self.assertIn('guides/subagents.md',[m['id'] for m in matches])
+        self.assertIn('guides/README.md',system_prompt(self.config)['text'])
+        self.assertRaises(ValueError,self.service.meta_call,self.c,'sdk_read',{'id':'guides/../../AGENTS.md'})
+
+    def test_old_pack_without_guides_keeps_its_overview_and_does_not_fallback(self):
+        original=self.service.knowledge_for(self.c)
+        manifest=json.loads(json.dumps(original.manifest))
+        manifest['documents']={k:v for k,v in manifest['documents'].items() if not k.startswith('guides/')}
+        manifest.pop('id')
+        manifest['id']=hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()
+        archived=self.service.data/'knowledge-packs'/manifest['id']
+        shutil.copytree(original.path,archived)
+        shutil.rmtree(archived/'guides')
+        (archived/'manifest.json').write_text(json.dumps(manifest))
+        c=self.store.get('campaigns',self.c)
+        c['config']['knowledgePackId']=manifest['id'];self.store.put('campaigns',c)
+        item=self.service.meta_call(self.c,'sdk_read',{'id':'overview'})
+        self.assertEqual(item['packId'],manifest['id'])
+        self.assertEqual(item['text'],original.read('overview')['text'])
+        self.assertRaises(ValueError,self.service.meta_call,self.c,'sdk_read',{'id':'guides/README.md'})
+
     def test_driver_archives_rendered_prompt_on_each_new_session_without_model_call(self):
         driver=MetaDriver(self.service)
         with patch('src.control.meta.subprocess.Popen') as process:
@@ -130,6 +168,7 @@ class MaterialTests(unittest.TestCase):
                       [{'path':draft}],self.service.knowledge.manifest)
         c=self.store.candidate(self.c,bundle,'中文版本说明',check={'status':'passed'})
         (draft/'index.mjs').write_text('changed draft')
+        self.store.update_plan(self.c,{'parallelism':1,'defaultTrialTimeSeconds':3600,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'Fixture execution plan','plan',0,source='operator')
         batch=self.store.submit(self.c,c['id'],[TASK],1,'batch')
         return c,batch
 
@@ -168,7 +207,9 @@ class MaterialTests(unittest.TestCase):
 
     def test_meta_finish_reason_is_persisted_without_claiming_verified_success(self):
         self.assertRaises(Refused,self.service.meta_call,self.c,'campaign_finish',{})
-        result=self.service.meta_call(self.c,'campaign_finish',{'reason':'已有尝试显示当前方向收益有限；仍有剩余预算，稳定性未证实。'})
+        self.assertRaises(Refused,self.service.meta_call,self.c,'campaign_finish',{'reason':'No independent review'})
+        legacy=self.store.create(self.config,'legacy-finish')['id'];self.store.control(legacy,'start','start')
+        result=self.service.meta_call(legacy,'campaign_finish',{'reason':'已有尝试显示当前方向收益有限；仍有剩余预算，稳定性未证实。'})
         self.assertEqual(result['finishAssessment']['source'],'meta-analysis')
         self.assertEqual(result['stopReason'],'meta_finished')
         self.assertEqual(self.store.status(self.c)['counts']['trials'],0)

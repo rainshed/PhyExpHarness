@@ -4,6 +4,8 @@
 
 目标：DeepSeek Harness 0.2.1-rc.2，sdk-minimal，隔离执行扩展面 v2。`reference/manifest.json` 给出来源、版本、内容摘要和 profile 指纹；不与开发机上的 UI 服务等同。
 
+按需教程见[插件开发索引](guides/README.md)，可用 `sdk_read` 读取 `guides/README.md`；包括插件设计、完整工具示例和子代理参考。
+
 源码采用 ESM，入口导出 `name`、`inject`、`apply(ctx, config)`。工具、结果处理和公开上下文 API 的准确类型见 tools、system-prompt 文档。`examples/echo.mjs` 是通过原生 Cordis 生命周期检查的技术例子。作用域销毁会移除工具、事件和上下文。使用 `tools/post-execute` 返回合法 decision；不要直接修改已冻结的 `tools/result`。
 
 资料查询：`sdk_search` 搜索、`sdk_read` 分页读取、`sdk_inspect` 查询声明。原生 `cordis_inspect_list/query` 也只提供 execution-sdk 的只读查询。接口不存在、版本或 profile 不匹配时明确失败；查询结果不承诺额外依赖已装配。客户端、凭据、数据库及 UI 宿主服务不属于执行扩展面。
@@ -12,7 +14,7 @@
 
 冻结时传入包含 `plugin.json` 的目录路径。清单 `dependencies` 表示本次组合中其他插件的名称和顺序；Cordis 服务依赖写在源码的 `inject` 中，例如 `inject = ['systemPrompt']`，不要将服务名放进清单的插件依赖。`capabilities` 使用清单 schema 中的已有枚举，`observes` / `intervenes` 用来说明接触的事件、工具或上下文。声明是装配审查信息，外部 Runner、网关和工具隔离执行真实权限边界；不能因声明为空就认为任意源码无副作用。
 
-额外模型调用可读取 Runner 的 `PHYEXP_FIXED_MODEL`（JSON：provider/model/reasoningEffort/maxTokens），并通过 `ctx.llm.stream` 使用同一固定设置。每次调用都会独立计量；没有自动重试。插件清单 schema 的资料 ID 为 `plugin-manifest`。可选 `packageDependencies` 只能引用执行锁中已装配的准确版本；不可假定开发宿主上的库也存在。
+额外模型调用可读取 Runner 的 `PHYEXP_FIXED_MODEL`（JSON：provider/model/reasoningEffort/maxTokens），并通过 `ctx.llm.stream` 使用同一固定设置。每次调用都会独立计量；默认没有自动重试。新基础设施允许执行插件在 `agent/request-error` 原生接口恢复过载或连接故障，见 `guides/request-recovery.md`；不开放网关或记账权限。插件清单 schema 的资料 ID 为 `plugin-manifest`。可选 `packageDependencies` 只能引用执行锁中已装配的准确版本；不可假定开发宿主上的库也存在。
 
 批次与冻结操作立即返回 ID；完成通知由后台持久推送。等待时可以结束当前回复，后续通知会继续同一会话，无需反复查询状态。报告应引用工具返回的稳定 evidence ID，区分观察、解释、反证与尚未验证之处。
 

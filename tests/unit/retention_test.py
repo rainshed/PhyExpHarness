@@ -15,7 +15,7 @@ class RetentionTests(unittest.TestCase):
         self.task='adaptive_clustered_clbcs_h2o'
         self.config={'solver':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},
             'meta':{'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'},
-            'tasks':[self.task],'wallTimeSeconds':12600,'concurrency':3}
+            'retentionRule':RETENTION_RULE,'tasks':[self.task],'wallTimeSeconds':12600,'concurrency':3}
         self.c=self.store.create(self.config,'setup')['id'];self.store.control(self.c,'start','start')
         self.h0=self.store.candidate(self.c,{'id':'h0','path':'/fixture','plugins':[]},'H0')['id']
         self.h1=self.store.candidate(self.c,{'id':'h1','path':'/fixture','plugins':[]},'H1')['id']

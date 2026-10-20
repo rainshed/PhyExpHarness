@@ -86,6 +86,7 @@ def collect(run_dir):
         'qsimActions': sorted({e['action'] for e in experiment_events if 'action' in e}),
         'completedProbeBatches': sum(e.get('action') == 'probe_batch_result' for e in experiment_events),
         'score': score, 'runtime': runtime,
+        **({k:runtime.get(k) for k in ['failureContract','requestRecovery']} if runtime.get('failureContract') else {}),
         'taskDigest': read_json(base / 'lock.json')['task']['digest'],
         'evidence': {'harborResult': rel(trials[0]), 'officialReward': rel(reward_path),
                      'officialScore': rel(score_path), 'qsimExperiments': rel(experiments),

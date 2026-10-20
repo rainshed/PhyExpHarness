@@ -1,4 +1,4 @@
-"""Use operator-frozen images with Harbor's unchanged mounts, network and verifier lifecycle."""
+"""Use Campaign-frozen images with Harbor's unchanged mounts, network and verifier lifecycle."""
 import json
 import re
 import subprocess
@@ -19,23 +19,36 @@ class PinnedDockerEnvironment(DockerEnvironment):
         self._pin_dir = tempfile.TemporaryDirectory(prefix='phyexp-image-lock-')
         config = task_env_config.model_copy(update={'docker_image': image})
         super().__init__(*args, task_env_config=config, **kwargs)
-        if not verifier:
-            # Compose up reuses these exact images; no source build or mutable tag resolution.
-            overlay = Path(self._pin_dir.name) / 'images.json'
-            overlay.write_text(json.dumps({'services': {
-                'main': {'image': image, 'pull_policy': 'never'},
-                'qsim': {'image': pinned_images['qsim'], 'pull_policy': 'never'},
-            }}))
-            self.extra_docker_compose_paths.append(overlay)
+        # Task build declarations remain, but up --no-build --pull never below
+        # prevents fallback execution. Apply the overlay to separate verifiers too.
+        overlay = Path(self._pin_dir.name) / 'images.json'
+        overlay.write_text(json.dumps({'services': {
+            role: {'image': expected, 'pull_policy': 'never'} for role, expected in self._expected_images.items()
+        }}))
+        self.extra_docker_compose_paths.append(overlay)
+
+    async def _run_docker_compose_command(self, command, *args, **kwargs):
+        command = list(command)
+        if command[0] in ('build', 'pull'):
+            raise ValueError('Frozen task images cannot be built or pulled within a Trial')
+        if command[0] == 'up':
+            command += ['--no-build', '--pull', 'never']
+        if command[0] == 'down' and '--rmi' in command:
+            index = command.index('--rmi')
+            del command[index:index+2]  # Keep shared images; containers and volumes are still removed.
+        return await super()._run_docker_compose_command(command, *args, **kwargs)
 
     async def start(self, force_build=False):
         if force_build:
             raise ValueError('Frozen task images cannot be rebuilt within a Trial')
+        for role, expected in self._expected_images.items():
+            actual = subprocess.check_output(['docker', 'image', 'inspect', expected, '--format', '{{.Id}}'], text=True).strip()
+            if actual != expected: raise ValueError('Frozen task image is unavailable: '+role)
         await super().start(force_build=False)
         project = self.session_id.lower()
         if not re.match(r'^[a-z0-9]', project): project = '0'+project
         project = re.sub(r'[^a-z0-9_-]', '-', project)
-        actual = {}
+        actual, resources = {}, {}
         for role, expected in self._expected_images.items():
             containers = subprocess.check_output(['docker', 'ps', '-q', '--filter', 'label=com.docker.compose.project='+project,
                 '--filter', 'label=com.docker.compose.service='+role], text=True).split()
@@ -43,9 +56,12 @@ class PinnedDockerEnvironment(DockerEnvironment):
             image = subprocess.check_output(['docker', 'inspect', containers[0], '--format', '{{.Image}}'], text=True).strip()
             if image != expected: raise ValueError('Running task image differs from frozen identity: '+role)
             actual[role] = image
+            mounts = json.loads(subprocess.check_output(['docker', 'inspect', containers[0], '--format', '{{json .Mounts}}'], text=True))
+            resources[role] = {'container': containers[0], 'volumes': sorted(m['Name'] for m in mounts if m['Type']=='volume')}
         evidence = self.trial_paths.trial_dir / 'phyexp'
         evidence.mkdir(exist_ok=True)
         (evidence / ('pinned-images-'+self._pin_role+'.json')).write_text(json.dumps(actual, indent=2)+'\n')
+        (evidence / ('pinned-resources-'+self._pin_role+'.json')).write_text(json.dumps(resources, indent=2)+'\n')
 
     async def stop(self, delete=True):
         try:

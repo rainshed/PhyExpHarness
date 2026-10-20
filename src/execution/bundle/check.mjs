@@ -3,16 +3,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {isolatedSession} from '../host/isolation.mjs';
 import {ModelGateway} from '../host/model_gateway.mjs';
+import {providerRoute} from '../host/providers.mjs';
 const [root,logs]=process.argv.slice(2);
 const bundle=JSON.parse(fs.readFileSync(path.join(root,'bundle.json')));
 const recipe=JSON.parse(fs.readFileSync(path.join(root,'recipe.json')));
+// The response is synthetic, but native session validation must use the frozen model's capabilities.
+// Resolving this route is local and does not load credentials or contact the provider.
+const entry=providerRoute(recipe).models[0];
+const modelInfo={provider:recipe.provider,id:entry.id,name:entry.name??entry.id,
+ context:{contextWindow:entry.contextWindow??272000},
+ ...(entry.reasoningEfforts?{reasoning:{efforts:Object.keys(entry.reasoningEfforts).map(id=>({id,name:id}))}}:{})};
 let receipt;let calls=0;
 const gateway=new ModelGateway({model:recipe,deadline:Date.now()+20000,audit:path.join(logs,'check-gateway.jsonl'),adapter:{async *stream(){
  calls++;yield {type:'block-start',index:0,blockType:'text'};yield {type:'block-end',index:0,block:{type:'text',text:'Technical assembly check.'}};
  yield {type:'usage',usage:{inputTokens:1,outputTokens:1,totalTokens:2}};yield {type:'finish',reason:{kind:'stop'}};
 }}});
 const session=isolatedSession({executionRoot:path.join(root,'src/execution'),logs,gateway,image:bundle.runnerImage,
- config:{disableLocalTools:true,modelInfo:{provider:recipe.provider,id:recipe.model,name:recipe.model,context:{contextWindow:272000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}},
+ config:{disableLocalTools:true,modelInfo,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),
  plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},
  ...bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}))]},
  mounts:bundle.plugins.length?[`type=bind,source=${path.join(root,'plugins')},target=/opt/phyexp/plugins,readonly`]:[],

@@ -1,0 +1,13 @@
+{
+  "version": "stream-protection-v1",
+  "serverOutputTokenLimit": null,
+  "serverOutputTokenLimitSupported": false,
+  "requestTimeoutMs": 600000,
+  "streamIdleTimeoutMs": 180000,
+  "maxResponseBytes": 262144,
+  "maxToolArgumentBytes": 131072,
+  "whitespaceMinBytes": 4096,
+  "whitespaceMinMs": 30000,
+  "repetitionWarningBytes": 4096,
+  "cleanupGraceMs": 1500
+}

@@ -23,7 +23,7 @@ npm test
 python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
 ```
 
-`npm run build` 先从锁文件对应的已安装 SDK、资料源文件和执行资产生成 `knowledge/plugin-sdk/reference/`，再生成工作台的 `packages/meta-workbench/lib/client.js`。两个目录均不提交；不要从其他活动的冻结资料包复制文件来补齐。更新依赖、资料或工作台源码后，在启动前重新构建。直接运行 Python 检查或 H0 入口前也须完成该步骤；`npm test` 会自动重建资料包。
+`npm run build` 先从锁文件对应的已安装 SDK、资料源文件和执行资产生成 `knowledge/plugin-sdk/reference/`，再生成经典与新工作台的 `packages/meta-workbench/lib/client.js`、`packages/meta-workbench-studio/lib/client.js`。这些生成目录均不提交；不要从其他活动的冻结资料包复制文件来补齐。更新依赖、资料或工作台源码后，在启动前重新构建。直接运行 Python 检查或 H0 入口前也须完成该步骤；`npm test` 会自动重建资料包。
 
 另开一个终端，在本项目目录运行：
 
@@ -31,11 +31,56 @@ python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
 node scripts/workbench.mjs
 ```
 
-打开 `http://127.0.0.1:18401`，在 DeepSeek 侧栏选择「进化工作台」（◈）。宿主的首次账号提示可关闭；工作台由自己的后台连接管理，执行模型使用现有 Codex 登录。工作台不要求把模型凭据填入网页。
+使用终端输出的启动链接完成本机登录，之后可访问 `http://127.0.0.1:18401`。在 DeepSeek 侧栏选择「研究工作台」（φ，新 UI）或「进化工作台」（◈，经典 UI）。宿主的首次账号提示可关闭；进化工作台使用独立后台管理模型。通过「供应商与模型」入口配置，或从新建活动的「管理供应商与模型」进入。Codex 订阅沿用宿主登录；API Key 可在此页面保存，也可继续使用后台环境变量。不要将进化活动的配置填入 DeepSeek 宿主自己的模型设置页。
 
 默认控制服务为 `127.0.0.1:18402`，只监听本机。默认数据目录在 macOS 为 `~/Library/Application Support/PhyExpHarness/`，应使用仓库外、非同步的本地目录。自定义位置时，两个终端都设置同一个 `PHYEXP_DATA_DIR`；后台也支持 `--data-dir`。工作台启动器从该目录读取仅当前用户可读的 `user-token`，不会把它放进浏览器。可用 `PHYEXP_CONTROL_URL`、`PHYEXP_UI_PORT`、`PHYEXP_UI_HOME` 指定连接和 UI 宿主位置。
 
 不要在同一数据目录启动第二个后台。服务用文件锁保证单一所有者。更换数据目录等于打开另一组活动，不会迁移或删除旧数据。
+
+### 新旧 UI 插件切换
+
+默认同时加载共享 API 桥、经典 UI 和新 UI。两个面板从同一后台读取数据；活动选择和新建草稿共用，视图切换不会启动或停止实验。新 UI 的结构和功能约定见[设计文档](../design/meta-workbench-studio.md)。
+
+```sh
+# 默认并存，使用宿主侧栏或新界面的“切换经典界面”切换
+PHYEXP_UI_VARIANT=both node scripts/workbench.mjs
+# 只装配新 UI
+PHYEXP_UI_VARIANT=studio node scripts/workbench.mjs
+# 只装配经典 UI，方便回退
+PHYEXP_UI_VARIANT=classic node scripts/workbench.mjs
+```
+
+更改此环境变量前关闭对应 UI 宿主，再以相同 UI 目录启动；不要停止控制后台。它是宿主装配选择，不是向后台发送活动控制命令。修改客户端源码后先 `npm run build:workbench`，再重新加载插件或重启 UI 宿主；不承诺源码自动热更新。
+
+使用包名 profile 手工安装时，须同时安装 `@phyexp/meta-workbench-bridge`，再选择一个或两个 UI 包。原来由经典插件拥有的 `/phyexp/api` 已迁入共享桥，不能只保留旧的单 UI profile。参考 `profiles/meta-workbench/cordis.patch.yml`。新 UI 依赖经典包内的共享客户端源文件，但构建包不要求经典面板同时加载。
+
+卸载 UI 只清理其面板和读取轮询。共享桥始终单独装配，不能随旧 UI 一起删除。未保存的供应商配置应先保存或取消；密钥草稿不跨面板保存。宿主插件管理器的启用/停用和页面切换是不同操作，后台状态均以重新读取后的结果为准。
+
+### 使用 Tailscale 从手机访问
+
+电脑和手机连接同一 Tailscale 网络后，可用 Tailscale Serve 将 HTTPS 入口代理到工作台的 `127.0.0.1:18401`。UI 和控制后台仍绑定回环地址，不开放控制端口。远程入口的访问范围由 Tailscale 网络策略决定；浏览器还必须完成 dsh 宿主认证。工作台的 `/phyexp/api` 接口复用宿主的会话和可信域名校验，不能只凭同源请求操作后台。
+
+将以下配置保存为 UI 宿主目录下的 `workbench-access.json`（默认位于数据目录的 `ui/`），替换为电脑实际的 Tailscale DNS 名称：
+
+```json
+{"publicUrl":"https://your-computer.your-tailnet.ts.net:18443/"}
+```
+
+重新启动 UI：`node scripts/workbench.mjs`。启动器只信任配置中的准确域名与端口；也可用 `PHYEXP_UI_PUBLIC_URL` 覆盖文件配置，空字符串表示禁用远程域名配置。只接受无路径、查询参数、凭据和 fragment 的 HTTPS 根地址。只重启 UI 不停止控制后台或实验。
+
+随后添加独立入口（先检查该端口没有其他 Serve 服务）：
+
+```sh
+tailscale serve --bg --https=18443 http://127.0.0.1:18401
+```
+
+手机首次打开启动终端打印的完整 HTTPS 登录链接（带 `token`），宿主会写入浏览器会话并跳转到不带令牌的地址；以后收藏干净地址即可。该链接授予此 UI 宿主的访问权，只通过可信渠道传给自己的设备，不写入仓库或公开文档。宿主重启后生成新的启动令牌，已有有效浏览器会话由同一 UI 数据目录保留。默认首屏需从侧栏选择「研究工作台」（新 UI）或「进化工作台」（经典 UI）。
+
+手机使用完整浏览器打开 HTTPS 启动链接。若聊天应用把链接转成「文件预览」，长按复制链接后粘贴到 Chrome 等浏览器的地址栏；文件预览的抓取器可能不保留登录跳转的会话 Cookie，从而得到 401 或抓取异常。`127.0.0.1` 仅用于工作台所在电脑，不能作为手机浏览器的访问地址。
+
+使用 Serve 的私有网络模式，不启用 Funnel。电脑需保持联网、唤醒且 UI 与后台进程运行；本配置不负责开机自启。关闭此入口用 `tailscale serve --https=18443 off`，不使用会清除其他转发的 `reset`。远程入口撤销后可删除配置文件中的 `publicUrl` 并重启 UI。
+
+若 HTTPS 直连成功而浏览器显示连接被关闭，检查系统或浏览器代理是否接管了 Tailscale 域名。将工作台的准确域名加入代理绕过列表并保留原有条目，让该地址走 Tailscale；不要关闭浏览器认证或证书校验。手机也需保持 Tailscale 已连接。
 
 ## 检查与实验入口
 
@@ -56,17 +101,23 @@ node scripts/workbench.mjs
 
 H0 使用 `sdk-minimal` 原生循环和上下文压缩，默认配方为 [gpt-6-sol / medium](../../recipes/h0-sol.json)。任务原文与公开环境信息交给 Solver，不追加科学算法提示、答案修复或失败后追问。[Luna 配方](../../recipes/h0-luna.json)与对应计划保留供显式选择。
 
-模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与未评分记录，不自动重试或把未评分补成零分。架构边界见[实现方案](../design/meta-harness-implementation.md)。
+模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与官方未评分记录；默认不自动重试，执行插件可恢复模型过载或连接故障。派生任务完成分按活动绑定规则计算。架构边界见[实现方案](../design/meta-harness-implementation.md)。
 
 ## 创建和运行
 
-新建活动时选择两模型与开发任务，主要填写总运行小时数、可选轮次/用量上限及最高并发。轮次、实验总数和用量可不限；单次时限与收尾可自动。高级设置可覆盖自动值；具体有效规则在启动前展示。创建只做基线冻结和无模型装配检查；点击「启动进化」才开始计时和真实实验。
+新建活动时选择两模型与开发任务，主要填写总运行小时数、可选轮次/用量上限及最高并发。轮次、实验总数和用量可不限；单次时限和收尾留空时由 Meta 规划，不再自动扣固定比例预留。高级设置中填写的单次时限是上限，收尾值是最低预留。创建时自动准备所选任务的固定镜像，再做基线冻结和无模型装配检查；点击「启动进化」开始计时，Meta 先提交运行计划，后台再受理 H0 基线。
+
+基线及候选装配检查从冻结配方的模型路由读取支持的推理强度，保留用户所选档位；非推理模型不注入推理选项。检查仅使用模拟响应，不读取模型凭据或调用真实模型。回归入口为 `node --test tests/contracts/assembly.test.mjs`，需要 Docker 及匹配依赖锁的 Runner 镜像。修复前因推理强度声明不匹配而失败的准备记录会保留，更新后新建活动使用修复后的检查。
 
 参数只能直接输入或通过右侧上下按钮调整，滚轮及键盘上下键不会更改数值。未提交配置保存在当前浏览器，切换面板或刷新后仍可继续填写。选择的任务数不能超过实验次数上限：每个任务的 H0 至少占一次；不一致时，创建按钮附近会说明原因并保留配置。提交期间显示进度并阻止重复点击。
 
 一次受理的批次计一轮；任务数乘重复次数是计划实验次数。开始过的失败也占次数，没有自动重试。工具查询、代码检查和未通过的候选装配不消耗实验次数，但 Meta 自身的模型请求计入 token。
 
-新活动采用版本保留规则 v2：逐任务的有效官方评分均值及有效评分完成率均不得低于当前保留版本。未评分不当作零分，但失败计入完成率分母；比较双方的在途试验结束后才能选择。未评分记录不再导致比较永久失效，缺少有效样本时可以补充证据。旧活动保持原规则、选择和报告，修改预算不会升级规则。通过此检查仅表示符合开发阶段的保留约束，不代表提升显著或泛化已验证。
+新活动默认采用 `meta-selection-v1`：由 Meta 主动选择、维持或回退已通过装配检查的冻结版本，平台不再自动将首个有评分版本设为参考。Meta 提交选择理由、证据引用、性能/可靠性/成本取舍、自述局限和重新考虑的条件。平台核验候选内容身份与本活动证据摘要，保存每次决定及此前版本，并展示全部尝试、逐任务均分、有效评分完成率与比较限制。缺分、在途试验、镜像差异和指标退步只提示，不否决选择；未评分仍为 null，不填零，失败不删除。无评分的基线也可有依据地选定。未主动选择时显示“尚未选择”，不自动兜底。
+
+工作台与报告中的“Meta 版本选择与依据”分别展示模型判断与平台比较限制，提供原始证据入口。决策快照包含当时的所有相关尝试、证据 ID/摘要、用量及决策链；后续实验或再次选择只追加新记录，不改写旧决定。选定表示 Meta 的取舍，不代表平台认证稳定性、因果收益或泛化；环境身份不同也不等于已证明物理环境发生变化。
+
+已有活动继续沿用其创建时绑定的 v1/v2 规则和历史选择；修改预算、重启后台或部署本次更新均不升级旧活动，也不自动将旧 H3 改为保留版本。需要使用自主选择规则时创建新活动。已结束活动的最终选择仍被冻结。任务镜像按下文的独立准备流程固定；版本选择规则与镜像准备分别记录。
 
 总 token 数包含输入、缓存输入和输出。当前订阅接入只提供软停止阈值，不能保证单个请求绝不越过阈值；`maxTokens=8192` 不被当作服务端硬上限。每个模型请求预留 300,000 token，结束后以真实回执结算；断流、传输错误和缺失回执保留未知预留，SDK 返回的合成零值不能证明无消耗。
 
@@ -82,15 +133,123 @@ H0 使用 `sdk-minimal` 原生循环和上下文压缩，默认配方为 [gpt-6-
 
 Meta 可通过 materials_list/search/read 按需读取允许的任务原文、SDK、冻结插件与版本、实验、证据和历史报告。新活动保存任务原文快照并绑定资料包，旧活动读取原归档；缺失材料明确不可用。原始日志和报告仍保留，查询不启动实验。新会话的 context.json 记录实际系统提示词及摘要，旧会话输入保持原样。
 
+插件教程源文件位于 `knowledge/plugin-sdk/guides/`，Meta 通过 `sdk_read` 的 `id: "guides/README.md"` 读取索引。修改后运行 `npm run build:knowledge`，重新启动控制后台后新建活动使用新资料包；已有活动继续读取原归档。旧资料包没有教程入口时可读取 `overview`。子代理教程仅说明接口与接入前提，不启用执行能力。
+
+## 资源计划与准入诊断
+
+新活动使用 `meta-resource-planning-v1`。两套工作台共用“资源计划与实际条件”视图，展示来源、计划版本、有效并发及运行任务启动时条件；用户可填写理由覆盖计划。Meta 使用 `campaign_plan_update` 调整未来批次的资源分配，已受理批次保持快照。未指定的 token 上限保持不限；总 token 包含缓存用量，持续如实计量。
+
+单次时长包含启动、Solver、官方评分和清理。执行层原有的固定评分与清理预留为 330 秒，由 `executionTimePolicy` 公开；计划和批次不能分配不大于该预留的时长，启动还会占用部分时间。工作台同时解释这项执行条件与 Meta 活动收尾预留的区别，运行条件保存整次截止和 Solver 截止。计划预留或 token 容量阻止待执行任务启动时，后台发送明确通知；次数上限关闭新批次后，已有任务的计划仍可调整。
+
+用户提高活动上限时，已启动进程不会自动获得延期或提高启动时 token 上限；界面显示这些任务的实际条件。待启动任务因排队需要缩短时间时，Meta 通过 `trial_conditions_accept` 明确接受，实际分配进入比较记录。严格结束与有限延时收尾分别执行，不用较早的启动截止覆盖已允许的额外执行时间。
+
+准入审计区分等待、拒绝与模型调用。`budget_inflight_wait` 等待在途结算，`budget_plan_wait` 提醒 Meta 调整预留；二者不会自动重试模型。`budget_admission_denied` 表示余额无法满足准入估算，不能理解为实际消耗已精确到达总量。账本不可用、凭证过期和协议异常分别保留平台原因。新活动的 `task-completion-v3` 为这些停止原因单列分类，不改写旧活动或官方空值。
+
+后端接口、兼容和验收见[专项计划](../plans/meta-resource-planning.md)，Meta 参数示例见[资源规划资料](../../knowledge/plugin-sdk/guides/resource-planning.md)。旧活动继续使用冻结时规则。实时延期与动态 token 预留估计尚未实现。
+
 ## 网络与认证
 
 模型调用由固定宿主执行，隔离 Runner 没有外网、登录文件或平台令牌。宿主启用已配置的 HTTP(S) 代理，控制/工具的本机连接绕过代理。首次启动活动前用不带认证的 HEAD 请求检查网络可达性，不调用模型、不占实验名额。可达性检查通过不代表模型调用一定成功。
 
 认证读取 `~/.codex/auth.json`，也可通过 `PHYEXP_CODEX_AUTH_FILE` 指定。只复制当前有效 access token 到短期 0600 文件；不复制 refresh token，也不修改原登录文件。失效时由用户正常更新 Codex 登录，再启动新的活动；平台不自动换模型或免费重试。
 
+### 配置供应商与模型目录
+
+不指定配置文件时，保留现有三个 GPT 订阅模型及 DeepSeek V4.1 Flash 1017；默认仍为 Solver `gpt-6-sol / medium`、Meta `gpt-6-astra / medium`。自定义文件只需列出新增或修改的供应商；内置选项按 provider 和 model id 合并保留。部署文件在后台启动时读取一次，手工修改文件后需要重启后台。UI 保存立即更新目录，无需重启；既有活动不追溯更新。
+
+工作台中的完整流程：
+
+1. 打开「供应商与模型」，选择已有连接或「添加供应商」。填写固定供应商 ID、显示名称、端点和 API 协议，添加模型 ID。内置 Codex 的登录方式和订阅端点不可更改。
+2. 输入 API Key 并保存；留空保留已保存的密钥，否则使用后台环境变量。保存后输入框清空，不回显已有密钥。自定义连接自动使用 `PHYEXP_PROVIDER_<ID>_API_KEY` 引用，连字符转下划线。
+3. 展开模型能力配置上下文、最大输出、文字/图片输入、推理等级及默认值；通用协议还可编辑等级映射和经过 schema 校验的协议兼容 JSON。未编辑的版本和模型兼容字段保留。第一版手动管理目录，不自动查询远端模型列表。
+4. 保存后可选择模型和推理等级执行「测试调用」。最多两次固定诊断请求，验证流式响应、固定工具参数、工具结果回传与用量回执；总调用时限 45 秒，每次输出参数最多 512 token，不承诺远端费用硬上限。会产生实际模型费用；测试不创建实验，不占活动额度，结果和已知/未知用量单独留存。认证失败、超时或重启不自动重试。仅地址可达或已配置密钥不表示测试通过。
+5. 返回原活动草稿，从更新后的目录分别选择 Solver 与 Meta；无推理模型不显示推理强度。创建时保存目录修订和完整路由快照。后续更改端点、模型能力、移除目录项或停用供应商不会改变既有活动。重复提交同一创建请求也沿用首次快照。
+
+控制后台将 UI 配置、凭据和诊断记录保存在数据目录下的 `provider-settings.sqlite`（0600，数据目录 0700）。配置与凭据使用独立表，保存事务同时提交；配置查询、测试结果、活动、Bundle 和导出不含密钥值。不要将此数据库加入版本控制或作为普通配置导出。有效目录优先级是内置目录 → 启动时的部署文件合并 → UI 按供应商完整覆盖；UI 移除模型不会被内置合并自动补回。停用只隐藏新活动的选择，保留路由和凭据。
+
+认证优先级是该供应商/引用下保存的密钥 → 后台环境变量。后台仅向相应的可信 Meta/Solver 宿主子进程传递所选密钥，继续使用现有认证桥，不修改旧 Bundle 的代码或路由；Runner 不获得密钥。更新密钥供后续启动的宿主进程使用，已经启动的宿主继续使用其已有凭据。仍有未结束活动引用密钥时不能删除；删除不清除操作系统环境变量，也不删除历史配置。作为凭据使用的引用不得覆盖 PATH、NODE_OPTIONS 等宿主运行设置。
+
+所有管理、测试和读取接口仅限用户身份。保存携带修订号，其他窗口先保存时返回冲突并保留当前草稿；重新读取后核对并保存，或取消编辑加载后台版本。网页不把密钥写入 localStorage。测试按钮使用已保存配置，修改草稿后需先保存；最近测试会标明其配置版本，配置修改后应重新测试。
+
+复制 [配置样例](../../profiles/model-providers.example.json) 到本机仓库外的位置，保留需要的供应商，将示例端点、模型 id、能力参数和密钥环境变量名改为服务商实际提供的值。样例不是可直接调用的真实服务。
+
+```sh
+python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor --model-config /absolute/path/to/models.json
+```
+
+也可用 `PHYEXP_MODEL_CONFIG=/absolute/path/to/models.json` 指定，命令行 `--model-config` 优先。 更新模型目录相关代码后，除了重新构建工作台，也必须重启控制后台；构建不会自动重载已运行的 Python 进程。前端兼容旧版仅含 GPT 名称的目录，并显示后台更新提示，不能因此认为新供应商已生效。工作台只连接后台，两个角色都从同一目录选择模型，按供应商分组显示；无需在工作台宿主重复设置目录或密钥。
+
+| 配置字段 | 含义 |
+|---|---|
+| `schemaVersion` | 当前为 `1` |
+| `providers` 的键 | 供应商路由 id，小写字母开头，可含小写字母、数字、连字符 |
+| `adapter` | `pi-ai` 为通用适配器；`deepseek` 为 `deepseek-official` 原生适配器 |
+| `api` | 通用路由需声明 `openai-completions`、`openai-responses` 或 `anthropic-messages`；原生 DeepSeek 不填 |
+| `baseURL` | 服务端协议根地址，HTTPS 或本机回环 HTTP；禁止在地址中嵌入用户名、密码、查询参数及 fragment |
+| `auth` | API Key 路由使用 `{"type":"api-key","env":"YOUR_MODEL_API_KEY"}`，只写环境变量名；内置 GPT 订阅为 `{"type":"codex"}` |
+| `preflightURL` | 可选，无认证 HEAD 连通性检查地址；缺省检查 `baseURL`。可达不代表模型和密钥有效 |
+| `models` | 模型列表；`id` 必填，`name` 可选，`contextWindow` 和 `maxTokens` 按实际能力填写 |
+| `reasoningEfforts` | 模型必填；非推理模型填 `false`，界面不显示推理选项；推理模型填“界面等级 → 服务端值”的映射，例如 `{"off":null,"max":"high"}` |
+| `defaultReasoningEffort` | 推理模型必填且须出现在映射键中；非推理模型不填 |
+| `compat` | pi-ai 路由或模型的协议兼容选项，例如 `supportsReasoningEffort`、`thinkingFormat`、`maxTokensField`；允许字段见共享 schema，按服务商真实协议设置 |
+| `transport` | pi-ai 可选 `auto / sse / websocket`，省略保持适配器原行为；实际支持取决于协议 |
+
+通用推理等级可用 `off / minimal / low / medium / high / xhigh / max`。只有 `off` 可以映射为 `null`；这表示省略协议推理字段，并不保证远端禁用推理。原生 DeepSeek 仅支持 `off / low / high / max` 的同名映射。`maxTokens` 作为活动每次请求的输出参数，未配置时仍为 8192；它不构成已经验证的费用或 token 硬额度。当前初版只支持 Codex 订阅登录与已保存 API Key／环境变量认证，不提供其他 OAuth、云厂商签名认证或任意自定义请求头。
+
+Chat Completions 和 Responses 的 `baseURL` 通常带 `/v1`；Anthropic Messages 的 SDK 会追加 `/v1/messages`，通常应填协议根地址（如样例不带 `/v1`）。网关若使用自定义前缀，按其文档配置。原生 DeepSeek 默认是 `https://api.deepseek.com/anthropic`。不要把仅支持 Chat Completions 的地址声明为 Messages。
+
+密钥也可继续在**启动控制后台的终端**配置。例如样例使用的环境变量可以这样设置：
+
+```sh
+read -rs "EXAMPLE_MODEL_API_KEY?Model API Key: "
+echo
+export EXAMPLE_MODEL_API_KEY
+```
+
+配置文件、活动和冻结项目只记录密钥引用名，不存实际值。不要将 Key 写进 JSON，也不会自动读取 `.env`。其他服务的密钥不会替代原 GPT 订阅登录：`openai-codex` 保持 Codex OAuth、原始端点和认证方式，配置不能将它改为 API Key 或其他端点；如需 OpenAI API/代理，新增不同路由 id。
+
+创建活动时，后台校验两角色配置并保存各自单模型路由快照；Solver Bundle 和 Meta 会话使用这份快照，预算调整和恢复也沿用它。后续修改或移除外部文件不会改变已创建活动。导出 `recipe.json` 自带所选路由，迁移后仅需按其中 `auth.env` 配置密钥，不需要原配置文件；旧冻结包保持原件。模型生成插件不能通过提交路由、端点或认证配置绕过后台签发的固定模型。
+
+配置错误在后台启动时拒绝；不支持的模型/推理等级在创建时拒绝。协议兼容、工具调用与用量回执仍须针对真实服务验证；目录里出现一个名称不代表该服务已完成实测。完整契约见 `src/execution/host/provider-config.schema.json`。
+
+### DeepSeek V4.1 Flash 1017
+
+Solver 和 Meta 均可独立选择「DeepSeek V4.1 Flash 1017」，也可与 GPT 混用。默认仍为 Solver `gpt-6-sol / medium`、Meta `gpt-6-astra / medium`。模型和推理选项来自后台的统一目录；DeepSeek 可选 `off / low / high / max`，选中时默认 `high`，GPT 的选项保持不变。
+
+可在工作台「供应商与模型 → DeepSeek 官方」保存 API Key，立即供后续请求宿主使用；也可在**启动控制后台的终端**设置 `DEEPSEEK_API_KEY`。例如 macOS 默认 zsh 下，可以用隐藏输入避免把密钥写进命令历史：
+
+```sh
+read -rs "DEEPSEEK_API_KEY?DeepSeek API Key: "
+echo
+export DEEPSEEK_API_KEY
+python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
+```
+
+此前先激活项目 Python 环境，并在代码更新后执行 `npm run build`。工作台宿主仍按上文在另一终端启动。已有后台进程不会读取另一个终端新设置的变量；需要在现有活动妥善停止后，从配置了变量的终端重新启动后台与工作台宿主，再刷新页面。纯 DeepSeek 活动不需要 Codex 登录；混合活动需要两种凭据。缺少 DeepSeek Key 时，启动检查会给出错误，不会改用其他模型。
+
+宿主复用锁定 SDK 的 `deepseek-official` 原生 Messages adapter，默认端点为 `https://api.deepseek.com/anthropic`；需要换端点时须由用户在供应商配置中显式设置。运行时不接受 `DEEPSEEK_BASE_URL` 重定向。保存的密钥位于独立后台凭据表；调用时仍通过宿主短期 0600 文件提供给适配器，并在进程正常结束时清理。浏览器只持有用户当前输入的密钥，保存后清空，读取接口不返回已有值；密钥不进入冻结 Bundle、导出项目或无外网 Runner。不要把密钥放进仓库配置。
+
+请求模型名为 `deepseek-flash`，官方当前将其映射至 `DeepSeek-V4.1-Flash-1017`；这是滚动别名，并非固定快照承诺。活动保存请求配置，冻结执行项目保存所选供应商路由快照（含预期版本、别名性质和端点），审计保存调用时间与请求名；不能据此认定远端未来始终是 1017。[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)。已创建活动和已有冻结版本保持原配置，选择新模型须创建新活动。
+
+DeepSeek 沿用现有软 token 阈值、未知用量保留和无自动重试规则；当前仍不提供经过验证的美元硬额度。离线合成流验证不代表真实 API Key、远端模型响应或实验评分已验证。
+
+## 任务成功率与官方评分
+
+工作台、报告、Meta 的状态查询、候选列表及新版本选择快照共用活动绑定的规则：新活动随资源计划采用 `task-completion-v3`，已有活动保留绑定版本，缺少版本字段时为 `task-completion-v1`。v3 继承 v2 的连接故障计零规则，并将预算准入不足及平台账本、凭证故障排除在成功率分母之外。官方 `score/officialReward` 不改写；`taskAssessment` 给出每次的派生任务完成分、原因、是否进入分母，`taskEvaluation` 给出逐任务、逐版本统计。
+
+- 官方通过（reward=1）计任务完成分 1，其余有效官方评分计 0。已记录的有效官方评分优先于后续清理故障。
+- 已结束的工具参数空白/非法/异常重复、响应或参数长度超限、输出额度耗尽、明确未提交或无效提交，计任务完成分 0。单次工具报错后恢复并完成任务不因此判零。
+- 模型请求达到约定时限计 0；记录显示没有收到模型内容（`responseBytes=0`）时暂列待归因，这不等于没有协议事件。v2/v3 将最终未恢复的模型服务过载、传输中断和不完整响应计 0；v1 将其单列。连接空闲超时和未细分提供方错误仍单列，不凭泛化错误文字自动判零。
+- 单次执行用满创建时约定的时限计 0；后台记录领取时的 `taskTimeLimitSeconds`。被活动截止截短的执行、用户停止、活动截止取消单列；历史限额无法核实时不冒充完整预算失败。
+- Docker/启动、评分器、归档和监督故障单列为外部故障。缺少失败依据的结束记录列待归因，不推断未提交；仍在执行或排队列待定。
+
+逐任务成功率为通过次数 /（通过 + 官方失败 + 按规则计 0 的失败）；未计分外部故障、取消、待定、待归因始终显示数量。计零的连接故障仍保留原因。待归因另显示按失败计的保守成功率。总体使用所选任务等权平均；任一任务尚无计入尝试则总体待定，显示覆盖任务数。逐次汇总仅作辅助，不能用多跑容易任务改变等权总体结果。
+
+新报告及选择记录保存规则版本与当时结果快照；历史报告的页面和下载按原报告快照及其绑定规则补充统计并标明来源，不引入后续试验，不覆盖历史文件、分析、官方分数或选择。旧 v1/v2 选择门槛保持原契约，当前展示和 Meta 自主选择的比较口径使用任务成功率。重试永不覆盖原尝试。
+
 ## 阅读报告和证据
 
-「进度与结果」展示全部尝试；官方零分和未评分分别显示。「执行版本」记录插件版本、配置、父候选、内容摘要以及当前/最终保留版本。最新候选不自动成为最终版本。
+「进度与结果」展示全部尝试；官方零分和未评分分别显示。「执行版本」记录插件版本、配置、父候选、内容摘要以及当前/最终保留版本。最新候选不自动成为最终版本。新活动由 Meta 明确选定，选定与证据验证程度分别展示。
 
 报告将系统事实与 Meta 分析分开。分析修订保留旧版本，每次引用必须指向本活动允许的证据。最终结论应解释关键变化、负结果和局限。Meta 结束后系统刷新最终用量、停止原因等事实，不重写其分析结论。
 
@@ -112,22 +271,49 @@ Meta 可通过 materials_list/search/read 按需读取允许的任务原文、SD
 
 重启时沿用同一数据目录和外部任务目录。后台按稳定启动 ID、进程身份和归档核实已有工作，不重新提交不确定的实验；中断的构建操作标记失败，可重新发起检查。重启不能恢复已经中断的模型请求为原请求；未知用量保留到可信宿主审计可核实为止。
 
+后台每次巡检都会非阻塞回收自己启动的 Solver 监督进程和 Meta 子进程，即使对应活动已经结束。进程退出且结果处理完成后才移除内存中的管理记录；归档或结果收集失败时保留退出状态供后续重试。结果文件先写完、进程稍后退出的情况也会继续回收。此清理不改变历史评分、失败记录或用量，不凭重启前保存的 PID 回收非本后台的子进程。
+
 后台自身错误保存在 `supervisor-errors.jsonl`，实验监督日志在 `trials/<launch-id>.supervisor.log`，模型及工具审计在各实验的 `harbor/<trial>/phyexp/`。Meta 轨迹在 `campaigns/<campaign-id>/meta-sessions/`。排查时先读页面的停止原因和报告，原始日志用于进一步定位。
 
 ## 固定任务环境以便比较
 
-Harbor 默认重复构建的镜像可能包含每次运行的 Compose 标识。需要严格对照时，先在创建活动前用官方 Dockerfile 准备镜像，不改任务文本、公开材料、实验服务或评分器：
+平台在 `runner-runtime-locks/` 保存 Runner 构建输入与镜像 ID 的准备回执。不同插件候选共享相同构建输入时复用镜像，按共享镜像标签跨进程加锁，不再为每个候选重复构建。构建或恢复标签前，为旧镜像和已准备镜像保存 `phyexp-runner:retained-<镜像摘要>` 引用，防止 Docker 标签更新使已被实验选定的旧 ID 消失。此逻辑只属于平台准备阶段，不修改冻结执行代码和 Quantum-Harbor。
+
+Runner 缓存缺失时重新准备；Docker 不可访问或检查异常时明确失败，不把连接故障当作缓存缺失。平台不会自动清理这些保留引用；有活动或独立执行仍使用对应镜像时不要删除。独立项目自己的安装命令仍沿用导出时的行为，历史 Bundle 与原始证据不改写。
+
+镜像生命周期的真实 Docker 回归可用 `python3 tests/smoke/runner_images.py --output /absolute/path/to/new-check-directory` 执行。它只构建独立的最小测试镜像，检查跨进程复用、标签重建后的旧 ID 可用性与缓存恢复，不调用模型或官方任务，并清理自己的测试镜像。
+
+新活动创建后，后台自动准备全部所选公开任务的镜像，再检查 H0。5 个公开任务均受支持；只选部分任务时只准备这些任务。所有任务就绪后才能启动活动，准备过程不调用模型，也不占活动计时和实验次数。
+
+main 按各任务的官方 Dockerfile 构建；qsim 按官方 Dockerfile 构建一次并在所选任务间共享。基础 agent 镜像和各任务声明的独立 verifier 镜像须先按 Quantum-Harbor 官方安装流程准备；后台解析它们当时的实际镜像 ID，不自行替换评分器的构建材料。缺少依赖或构建失败时显示准备失败，详细日志位于数据目录的 `campaigns/<campaign-id>/checks/task-images.log`；排除问题后创建新活动。
+
+后台把每个任务的 main、qsim、verifier 镜像 ID 和任务/构建源码摘要作为整套快照保存到活动。准备缓存位于 `task-runtime-locks/`，源码和基础镜像相同时可复用已验证的缓存；缓存更新只影响以后新建的活动。活动启动、恢复和每次实验运行前检查对应快照；缺失、源码变更或身份不匹配时明确失败，实验不会自动构建或拉取替代镜像。启动容器后再次核对实际镜像并保存回执。
+
+Docker Desktop 必须处于引擎就绪状态。无法连接引擎时，启动检查会提示先启动 Docker 并检查 context/权限，不把它当成镜像缺失；恢复引擎后可直接重试原活动。若引擎正常而某个固定 `sha256` 确实不存在，须恢复该精确镜像或切回保存它的 Docker context，不能用最新标签替换已有活动的快照。
+
+每次实验仍使用全新的容器、数据卷和 Solver 会话，沿用官方随机采样。清理时删除该实验的容器和卷，保留活动共享的镜像。固定镜像不等于固定随机样本或保证科学结果一致。旧活动和冻结 Bundle 保持创建时的行为，不追溯补锁或重写证据。
+
+通常无需手工准备。可在创建活动前预热全部 5 个任务，或为独立运行导出锁文件：
 
 ```sh
 python3 scripts/prepare-task-images.py \
   --quantum-harbor /absolute/path/to/Quantum-Harbor \
-  --task adaptive_clustered_clbcs_h2o \
-  --output "$HOME/Library/Application Support/PhyExpHarness/task-runtime-locks/adaptive_clustered_clbcs_h2o.json"
+  --all \
+  --cache "$HOME/Library/Application Support/PhyExpHarness/task-runtime-locks" \
+  --output /absolute/path/to/task-locks
 ```
 
-后台把准备好的 main、qsim、独立 verifier 镜像身份及任务源码摘要冻结到新活动。运行前验证源码未变、镜像仍存在；启动后再次核对实际容器镜像。缺失或不匹配会明确失败，不会静默重建或更换。原有活动不被追溯修改，每次实验仍创建全新的容器、卷和 Solver 会话。此准备步骤不调用模型。
+单个任务使用 `--task <task-id> --output /absolute/path/to/lock.json`。独立执行入口通过 `--task-image-lock /absolute/path/to/lock.json` 使用同一固定环境；镜像和任务目录仍由使用者提供，不打包进执行项目。源码更新后创建新活动，后台准备对应的新快照。
 
-独立执行入口可通过 `--task-image-lock /absolute/path/to/lock.json` 使用同一外部环境配置；镜像和任务环境仍由使用者提供，不打包进执行项目。源码更新后先重新准备环境，再建立新活动和 H0。
+无模型验收会让 5 个任务各用 `nop` 执行两次，检查 main/qsim/verifier 身份、全新容器与卷、清理后镜像保留及缓存复用。空操作通常得到官方零分；Shadow 的官方评分器会因没有提交且证据为空而拒绝产出分数，验收保留该未评分诊断，不补零。该检查只验环境与生命周期：
+
+```sh
+python3 tests/smoke/harbor/pinned_images.py \
+  --quantum-harbor /absolute/path/to/Quantum-Harbor \
+  --locks /absolute/path/to/task-locks \
+  --cache "$HOME/Library/Application Support/PhyExpHarness/task-runtime-locks" \
+  --output /absolute/path/to/new-check-directory
+```
 
 ## 插件、执行版本与实验轮次三表
 
@@ -148,3 +334,50 @@ python3 -m src.reporting.refresh --all-finished --record /absolute/path/to/migra
 插件「查看代码」浏览精确冻结文件；「打开所在文件夹」与复制路径供本地检查，不能把草稿当成旧实验源码。预览只读，直接修改冻结目录会导致完整性核验失败，应在草稿中开发新版本。
 
 「获取 Harness」默认最终保留版本，可下载项目、打开项目目录、下载匹配任务的运行说明。旧 ZIP 原件不变；新的说明作为附件提供。文件检查、独立装配、独立真实实验状态分别显示，后者不因下载而执行。
+
+## 模型请求保护与故障诊断
+
+新冻结执行版本携带 `src/execution/host/stream-policy.json`（`stream-protection-v1`）。Meta 与 Solver 的固定网关均执行保护：单请求最长 10 分钟；连续 180 秒无数据终止，包含等待首次响应；单响应可见内容最多 256 KiB，单工具参数最多 128 KiB。工具参数连续空白同时达到 4096 字节和 30 秒，或增量 JSON 语法已确定无效时终止。尚未生成完的 JSON 不算错误。重复内容先告警，由参数字节和请求时间上限兜底，避免误杀合法重复数据。计量按 UTF-8 字节；结束块不重复计量。服务端输出 token 硬上限不可用，`maxTokens=8192` 不保证后端限制；本地取消也不是计费硬上限，隐藏推理和在途消耗仍以可信回执为准。
+
+保护先保存 `failure.json`，再取消当前请求；不执行半条命令、不补写答案、不自动重试。宿主有限等待迟到回执，没有完整可信回执时保留未知用量。失败仍占已启动次数。执行版本、导出包和活动查询都保留保护版本；旧 Bundle 不热修改，新基础设施须建立新 H0。Meta 只能调整执行插件，不能修改固定保护。
+
+原生上下文压缩也经过同一模型网关和用量账本。Runner 将压缩摘要的输出上限配置为该会话的固定上限；SDK 的压缩请求省略推理等级时，宿主补入已选等级，显式改用其他模型、等级或上限仍会被拒绝。排查上下文溢出时同时查看 `compaction/end` 事件：若摘要请求被拒绝，不能将后续容量溢出解释为模型解题失败。此兼容修复只随新冻结版本生效，不改写已有执行包或活动。
+
+实验表、阅读报告和 Meta 材料查询使用同一故障摘要，区分运行中等待评分、未评分和官方零分。故障记录含阶段、原因代码、触发时间、请求 ID、阈值、归档依据和后续清理事件；外层退出码不覆盖先前原因。单次终止按钮经用户身份接口 `POST /trials/{id}/stop` 执行，不停止整个活动。完成事件可唤醒 Meta；同一次读取中的批次完成事件合并对应单次完成事件，游标避免重复通知。
+
+新冻结版本增加 `model-transport-v1` 诊断。受信宿主通过 Node 的 Undici 诊断通道观察原生 WebSocket 与 HTTP/SSE；不修改第三方依赖、传输选择、恢复次数或请求内容。`gateway-audit.jsonl` 的 `type=transport` 事件关联网关请求 ID，记录连接 ID、连接年龄与累计请求数、发送字节、实际传输、首个/最后协议事件、关闭码及是否正常关闭。底层错误的 `name/code/message/cause`、关闭原因和传输回退保存在脱敏审计中；不采集请求头、认证字段或响应正文。复用连接按每次发送重新关联请求，关闭事件迟于请求结束时标注 `afterRequestEnd`，不据此把已成功任务改判失败。
+
+故障摘要的 `observed.transport` 只投影结构化事实，原始错误文本不进入公开摘要。`responseContentBytes` 表示模型文本、推理及工具参数的内容字节数；旧字段 `responseBytes` 作为同义兼容字段保留，`responseBytesMeaning=model-content-not-wire` 明确其含义。内容为 0 不代表没有收到协议事件。`protocolStarted` 为 `true` 表示观察到响应事件，为 `false` 表示可观察的传输尚未出现响应开始，为 `null` 表示缺少这项观测；旧归档缺失字段不能补成 `false`。SSE 缺少 Content-Type 时可通过合法的 `data:` 协议事件识别；HTTP 内容编码或非 Undici 传输可能使部分观测不可用，不能据此反推根因。
+
+WebSocket 的错误、异常关闭（包括 `WebSocket closed 1012`）及连接建立超时归为可恢复的模型传输故障。v2/v3 只在任务最终未恢复而终止时派生任务完成分 0，官方缺失评分保持 `null`；单次请求失败、成功恢复、用户取消及平台账本/环境/评分器故障仍按各自规则处理。界面并列展示任务完成分、官方评分状态和故障原因。诊断增强不更改冻结的历史 Bundle、评分或统计规则。
+
+历史诊断与回放均不调用模型：
+
+```sh
+python3 scripts/diagnose-history.py --data-dir /absolute/local/data
+python3 -m src.reporting.refresh --all-finished --data-dir /absolute/local/data --record /absolute/local/output/history-refresh.json
+node scripts/replay-model-streams.mjs /absolute/local/data /absolute/local/output/replay.json
+```
+
+回放可追加第三个参数，指定先前回放的 JSON；只读取其中列出的历史日志，并验证输入摘要不变，便于在新活动运行时复核相同的离线样本。
+
+历史诊断先核对归档清单，在数据目录追加 `failure-diagnoses.json`，不重写旧 Trial、旧报告事实和分析。报告展示更新另建修订。回放按日志原始时间与分块运行同一保护器，保存输入摘要、正常请求误报情况和假设终止时间；这是工程检查，不能当成真实科学评分或实际节省的 token。
+
+## Meta 插件组合与停止审查
+
+新创建的活动绑定 `meta-composition-v1` 和 `stop-review-v1`。默认组合文件为 `packages/meta-harness/composition.json`；插件源码修改只影响以后创建的活动。创建配置可显式指定 `metaCompositionConfig` 研究另一组本地受信模块，不能指向插件包之外的源码。完整接口与关闭规则见[组合设计](../design/meta-harness-composition.md#11-首期配置与接口约定)。本期不提供跨活动比较、重复调度或自动消融功能。
+
+活动在 `meta-compositions/<摘要>/` 保存代码、原生组合、上下文、依赖锁及 Runner 镜像身份；备份应包含此目录。恢复使用这一份资产，校验失败会拒绝启动，不回退到当前同名预设。宿主 Node 依赖仍由安装环境提供，必须保留/恢复匹配的依赖锁与安装；原生 Runner 使用冻结镜像 ID。不要删掉仍被活动引用的镜像。
+
+Meta 普通回合结束不会结束活动；无在途实验/构建时，后台继续提醒其推进；等待实验时按已有事件通知。申请“充分尝试后不值得继续”会触发原生只读审查子会话，默认继承 Meta 模型与推理等级，共用 6 小时等用户设置的原额度，并没有独立赠送预算。审查有 300 秒技术超时，没有自动重试。超时或非法结果不批准，也不会污染主会话的模型通道。
+
+停止审查在后台留存请求、候选、证据快照、实际子会话、结果与用量。拒绝或证据不足时继续；相同证据快照不能通过重复改写理由取得多次投票。相关证据、候选或限制变化会使旧批准失效。第一条稳定停止要求创建时提供明确的 `stabilityRule`，未设置时不宣称稳定；资源上限及用户停止不等待审查。旧活动继续沿用创建时的契约与原记录。
+
+工作台概览与新报告展示同一份组合和审查记录。触发次数只是运行事实，不能当作插件提升效果的证据。审查用量是 Meta 总量中的子集，不能再相加。原始子会话请求审计在 `campaigns/<活动>/meta-sessions/<会话>/review-sessions/`；主会话与子会话都保留已知及未知用量。
+
+
+### 请求恢复诊断
+
+新网关的过载和连接故障只结束当前请求；默认没有自动恢复，Meta 可开发恢复插件。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是失败历史与明确恢复的请求关联。网关审计保留每次请求、失败、结算及恢复记录；未知用量不清零。旧失败文件继续兼容读取。
+
+本次改动仅对新冻结执行版本生效，旧 Bundle 不热修改。模型保护、预算和用户停止仍由宿主执行。详见[修改计划与验收](../plans/model-request-recovery.md)及[插件恢复接口](../../knowledge/plugin-sdk/guides/request-recovery.md)。

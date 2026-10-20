@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {createChatGPTCredentials} from '../../host/chatgpt_auth.mjs';
+import {createProviderCredentials} from '../../host/provider_auth.mjs';
 import {ModelGateway,providerRuntime} from '../../host/model_gateway.mjs';
 import {isolatedSession} from '../../host/isolation.mjs';
 import {forwardMcp,callContainer} from '../../host/capabilities.mjs';
@@ -22,9 +22,10 @@ const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.jso
 const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,usage:{},toolCalls:0};
 const budget=budgetGate({deadline,softTokenLimit:Number(process.env.PHYEXP_RUN_TOKEN_LIMIT)||Infinity,
  url:process.env.PHYEXP_ACCOUNTING_URL,token:process.env.PHYEXP_ACCOUNTING_TOKEN,purpose:'solver'});
-let session,credentials,provider,checkpoint,watchdog;let terminating=false;
+let gateway,session,credentials,provider,checkpoint,watchdog;let terminating=false;
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
+ if(gateway)Object.assign(summary,['completed','error','cancelled'].includes(summary.status)?gateway.persistFinal(summary):gateway.diagnostics(summary));
  const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
  summary.toolCalls=events.filter(e=>e.type==='tool/call').length;
  summary.modelResponses=events.filter(e=>e.type==='assistant/message').length;
@@ -34,9 +35,9 @@ function save(){
 }
 async function stop(){if(terminating)return;terminating=true;summary.status='cancelled';save();await session?.dispose();credentials?.dispose();process.exit(143);}
 try{
- credentials=createChatGPTCredentials({minimumValidityMs:Math.max(120000,deadline-Date.now()+120000)});
+ credentials=createProviderCredentials(recipe,{minimumValidityMs:Math.max(120000,deadline-Date.now()+120000)});
  provider=await providerRuntime({model:recipe,credentialFile:credentials.credentialFile});
- const gateway=new ModelGateway({model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle});
+ gateway=new ModelGateway({model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
  const plugins=bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}));
  session=isolatedSession({executionRoot:path.join(bundleRoot,'src/execution'),logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
   config:{disableLocalTools:true,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),modelInfo:provider.info,mcpConnections:connections,
@@ -70,7 +71,7 @@ try{
   yield*stream(request,signal);
  };
  const events=await session.prompt('solver-'+crypto.randomUUID(),prompt,Math.max(1,deadline-Date.now()));
- summary.exit=await session.shutdown();summary.turnEnd=events.filter(e=>e.type==='turn/end').at(-1)?.data.reason;
+ summary.turnEnd=events.filter(e=>e.type==='turn/end').at(-1)?.data.reason;summary.exit=await session.shutdown();
  if(summary.exit.code!==0||summary.turnEnd?.kind!=='completed')throw new Error('Runtime did not finish a completed turn');
  summary.status='completed';summary.finalText=events.filter(e=>e.type==='assistant/message').at(-1)?.data.message.content.filter(c=>c.type==='text').map(c=>c.text).join('')||'';
  summary.authentication=credentials.description;

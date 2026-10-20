@@ -33,3 +33,14 @@ test('native dsh runs a tool loop inside credential-free network-none runner', {
  }catch(error){throw new Error(error.stack+'\n'+fs.readFileSync(path.join(dir,'stderr.log'),'utf8'));}
  finally{await session.dispose();console.log('Isolation evidence: '+dir);}
 });
+
+test('native SDK exits on guarded malformed arguments without executing a tool or retrying',{timeout:45000},async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-guard-native-'));let requests=0,tools=0;const settled=[];
+ const gateway=new ModelGateway({model,deadline:Date.now()+30000,audit:path.join(dir,'gateway.jsonl'),settle:async(id,r)=>settled.push(r),
+  adapter:{async *stream(){requests++;yield {type:'block-start',index:0,blockType:'tool-call'};yield {type:'tool-call-delta',index:0,id:'bad',name:'bash',argumentsDelta:'{"command":}'};}}});
+ const session=isolatedSession({executionRoot:'src/execution',logs:dir,gateway,config:{disableLocalTools:true,modelInfo:{provider:model.provider,id:model.model,name:model.model,context:{contextWindow:272000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}}},async *handler(op){if(op==='receipt'){yield {ok:true};return;}tools++;throw new Error('Unexpected tool');}});
+ try{await session.request('initialize',{...model,cwd:'/tmp/work'});const events=await session.prompt('failure-fixture','Fixture.',20000);
+  assert.notEqual(events.filter(e=>e.type==='turn/end').at(-1).data.reason.kind,'completed');assert.equal(requests,1);assert.equal(tools,0);assert.equal(settled.length,1);
+  assert.equal(gateway.firstFailure.code,'invalid_tool_arguments');assert.equal(settled[0].usage,null);await session.shutdown();
+ }finally{await session.dispose();}
+});

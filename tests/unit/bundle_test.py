@@ -31,6 +31,18 @@ class BundleTests(unittest.TestCase):
         self.assertNotEqual((p/'plugins/technical-echo/index.mjs').read_text(),(self.plugin/'index.mjs').read_text())
         asset=p/'recipe.json';asset.chmod(0o644);asset.write_text('{}')
         self.assertRaises(ValueError,verify,p)
+    def test_deepseek_export_carries_catalog_and_native_adapter_dependency_without_credentials(self):
+        self.recipe.update(provider='deepseek-official',model='deepseek-flash',reasoningEffort='high')
+        bundle=self.freeze()
+        exported=export_project(bundle['path'],self.base/'deepseek export')
+        project=Path(exported['path'])
+        self.assertEqual(verify(project)['id'],bundle['id'])
+        self.assertEqual(json.loads((project/'recipe.json').read_text())['provider'],'deepseek-official')
+        self.assertIn('@deepseek-ai/dsh-llm-deepseek-api-key',json.loads((project/'package.json').read_text())['dependencies'])
+        catalog=json.loads((project/'src/execution/host/model-catalog.json').read_text())
+        self.assertEqual(catalog['providers']['deepseek-official']['models'][0]['versionPolicy'],'rolling-alias')
+        self.assertFalse(list(project.rglob('credentials.json')))
+
     def test_invalid_dependencies_capabilities_configuration_and_assets_rejected(self):
         for key,value in [('dependencies',['missing']),('capabilities',['credentials']),('entry','../escape.mjs'),('tools',['bash'])]:
             m={**self.manifest,key:value};(self.plugin/'plugin.json').write_text(json.dumps(m))

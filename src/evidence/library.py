@@ -36,7 +36,7 @@ class EvidenceLibrary:
     def ingest(self,trial):
         folder=Path(trial['output']);summary=json.loads((folder/'summary.json').read_text());items=[]
         safe={k:summary.get(k) for k in ['fixture','status','pipelineStatus','taskOutcome','officialReward','sciencePassed','submissionPresent',
-            'scientificAssessmentPresent','wallTimeSeconds','stopReason','error','usage','bundleId']}
+            'scientificAssessmentPresent','wallTimeSeconds','stopReason','error','usage','bundleId','failure','scoringStatus','accounting','failureContract','requestRecovery']}
         safe['score']=feedback(trial['task'],summary.get('score'))
         items.append(self.add(trial['campaignId'],trial['id'],'official-result',json.dumps(safe,ensure_ascii=False,indent=2),
             {'archive':'summary.json','official':summary.get('evidence',{}).get('officialScore')}))

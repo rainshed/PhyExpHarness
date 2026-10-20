@@ -5,8 +5,10 @@ import re
 from pathlib import Path
 from .defaults import DEFAULTS, effective_objective
 from .store import retention_rule_description
+from src.evidence.diagnostics import trial_diagnostics
+from src.evidence.outcomes import evaluation
 
-PROMPT_VERSION = 'meta-system-v1'
+PROMPT_VERSION = 'meta-system-v5'
 TEMPLATE = Path(__file__).with_name('prompts') / 'meta-system.md'
 LIMIT_KEYS = ('maxRounds', 'maxTrials', 'concurrency', 'wallTimeSeconds', 'trialTimeSeconds',
               'softTokenLimit', 'reserveSeconds', 'reserveTokens', 'stopMode', 'drainGraceSeconds')
@@ -14,24 +16,35 @@ LIMIT_KEYS = ('maxRounds', 'maxTrials', 'concurrency', 'wallTimeSeconds', 'trial
 
 def system_prompt(config):
     values = {'活动目标': effective_objective(config),
-              'Solver配置': json.dumps(config['solver'], ensure_ascii=False, sort_keys=True)}
+              'Solver配置': json.dumps(config['solver'], ensure_ascii=False, sort_keys=True),
+              '版本选择规则':retention_rule_description(config)}
     # Single-pass replacement; user text is never interpreted as template syntax.
-    text = re.sub(r'\{\{(活动目标|Solver配置)\}\}', lambda m: values[m[1]], TEMPLATE.read_text())
-    return {'version': PROMPT_VERSION, 'text': text,
+    template=TEMPLATE if config.get('stopPolicy')=='stop-review-v1' else TEMPLATE.with_name('meta-system-legacy.md')
+    text = re.sub(r'\{\{(活动目标|Solver配置|版本选择规则)\}\}', lambda m: values[m[1]], template.read_text())
+    return {'version': 'meta-system-v6' if config.get('stopPolicy')=='stop-review-v1' else PROMPT_VERSION, 'text': text,
             'sha256': hashlib.sha256(text.encode()).hexdigest()}
 
 
 def activity_state(service, campaign):
     c = service.store.status(campaign)
     config = c['config']
+    trials=trial_diagnostics(service.store.list('trials',campaign),service.data,config)
     return {'source': '固定控制后台的当前配置与账本', 'observedAt': service.store.clock(),
             **{k: c.get(k) for k in ('id', 'revision', 'state', 'deadline', 'stopReason',
                 'retainedCandidateId', 'finalCandidateId', 'explorationClosed', 'counts',
                 'usage', 'remainingSeconds', 'elapsedSeconds', 'finishAssessment')},
             'objective': effective_objective(config), 'solver': config['solver'], 'meta': config['meta'],
-            'tasks': config['tasks'], 'limits': {k: config.get(k) for k in LIMIT_KEYS},
+            'tasks': config['tasks'], 'executionProtection':service.execution_policy(campaign), 'limits': {k: config.get(k) for k in LIMIT_KEYS},
+            'resourcePlanning':c.get('resourcePlanning'),
+            'pendingConditions':[{k:t.get(k) for k in ('id','task','executionSettings','conditionsRequired')} for t in trials if t.get('conditionsRequired') and t['state']=='reserved'],
+            'stopPolicy':config.get('stopPolicy','legacy'), 'metaComposition':config.get('metaComposition'),
+            'stopReviews':[{k:r.get(k) for k in ['id','state','request','result','failure','snapshotSha256']} for r in service.store.list('stop_reviews',campaign)],
+            'stabilityRule':config.get('stabilityRule'),
             'stabilityCriteria': config.get('stabilityCriteria') or DEFAULTS['stabilityGuidance'],
-            'retentionRule': retention_rule_description(config)}
+            'retentionRule': retention_rule_description(config),
+            'taskEvaluation':evaluation(trials,config['tasks'],service.store.list('candidates',campaign),config),
+            'selectionDecision':{k:v for k,v in c.get('selectionDecision',{}).items() if k!='assessment'}|
+                ({'comparisonLimitations':c['selectionDecision']['assessment']['comparisonLimitations']} if c.get('selectionDecision') else {})}
 
 
 def startup_context(service, campaign):

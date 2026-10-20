@@ -2,7 +2,7 @@ import concurrent.futures
 import tempfile
 import unittest
 from pathlib import Path
-from src.control.store import Store,Conflict,Refused,PUBLIC_TASKS
+from src.control.store import Store,Conflict,Refused,PUBLIC_TASKS,RETENTION_RULE
 
 class LedgerTests(unittest.TestCase):
     def setUp(self):
@@ -27,6 +27,12 @@ class LedgerTests(unittest.TestCase):
         first=self.submit();self.assertEqual(first,self.submit())
         self.assertRaises(Conflict,self.submit,'batch',[PUBLIC_TASKS[1]])
         self.assertEqual(self.store.status(self.c)['counts']['rounds'],1)
+    def test_task_evaluation_rule_binds_at_creation_and_replays_without_migration(self):
+        self.assertEqual(self.store.get('campaigns',self.c)['config']['taskEvaluationRule'],'task-completion-v2')
+        old=self.store.create({**self.config,'taskEvaluationRule':'task-completion-v1'},'v1')
+        self.assertEqual(self.store.create({**self.config,'taskEvaluationRule':'task-completion-v1'},'v1'),old)
+        self.assertEqual(self.store.get('campaigns',old['id'])['config']['taskEvaluationRule'],'task-completion-v1')
+        self.assertRaises(Refused,self.store.create,{**self.config,'taskEvaluationRule':'unknown'},'invalid-rule')
     def test_simultaneous_last_round_admission_is_atomic(self):
         self.store.control(self.c,'limits','limit',changes={'maxRounds':1})
         def work(i):
@@ -60,6 +66,7 @@ class LedgerTests(unittest.TestCase):
         self.assertRaises(Refused,self.store.create,{**self.config,'hardTokenLimit':1},'hard')
         self.assertRaises(Refused,self.store.control,self.c,'limits','change-model',changes={'solver':{}})
     def test_retention_compares_each_task_and_refuses_changed_environment_or_regression(self):
+        c=self.store.get('campaigns',self.c);c['config']['retentionRule']=RETENTION_RULE;self.store.put('campaigns',c)
         other=self.store.candidate(self.c,{'id':'candidate-hash','path':'/fixture','plugins':[]},'H1',check={'status':'passed'})['id']
         self.store.put('evidence',{'id':'e','campaignId':self.c})
         for candidate in [self.candidate,other]:

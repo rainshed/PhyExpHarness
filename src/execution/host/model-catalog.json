@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "openai-codex": {
+      "adapter": "pi-ai",
+      "auth": {
+        "type": "codex"
+      },
+      "preflightURL": "https://chatgpt.com/backend-api/codex/responses",
+      "models": [
+        {
+          "name": "gpt-6-sol",
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh"
+          },
+          "defaultReasoningEffort": "medium",
+          "id": "gpt-6-sol"
+        },
+        {
+          "name": "gpt-6-astra",
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh"
+          },
+          "defaultReasoningEffort": "medium",
+          "id": "gpt-6-astra"
+        },
+        {
+          "name": "gpt-6-luna",
+          "reasoningEfforts": {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh"
+          },
+          "defaultReasoningEffort": "medium",
+          "id": "gpt-6-luna"
+        }
+      ]
+    },
+    "deepseek-official": {
+      "adapter": "deepseek",
+      "auth": {
+        "type": "api-key",
+        "env": "DEEPSEEK_API_KEY"
+      },
+      "models": [
+        {
+          "name": "DeepSeek V4.1 Flash 1017",
+          "reasoningEfforts": {
+            "off": "off",
+            "low": "low",
+            "high": "high",
+            "max": "max"
+          },
+          "defaultReasoningEffort": "high",
+          "version": "DeepSeek-V4.1-Flash-1017",
+          "versionPolicy": "rolling-alias",
+          "id": "deepseek-flash",
+          "contextWindow": 1000000
+        }
+      ],
+      "baseURL": "https://api.deepseek.com/anthropic"
+    }
+  }
+}

@@ -7,7 +7,7 @@ export function isolatedSession({ executionRoot, logs, config, gateway, handler,
   const id = 'phyexp-runner-' + crypto.randomUUID();
   fs.mkdirSync(logs, { recursive: true });
   const configDir = path.join(logs,'runner-config'); fs.mkdirSync(configDir);
-  fs.writeFileSync(path.join(configDir,'runner.json'), JSON.stringify(config));
+  fs.writeFileSync(path.join(configDir,'runner.json'), JSON.stringify(config),{mode:0o600});
   const args = ['run','--rm','-i','--init','--name',id,'--network','none','--read-only','--cap-drop','ALL',
     '--security-opt','no-new-privileges','--pids-limit','128','--memory','1g','--cpus','2',
     '--tmpfs','/tmp:rw,exec,nosuid,size=256m,mode=1777', '--tmpfs','/work:rw,nosuid,size=256m,mode=1777',

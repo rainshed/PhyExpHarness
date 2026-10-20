@@ -6,14 +6,40 @@ from datetime import datetime, timezone
 from pathlib import Path
 from src.control.store import Refused,identity,encoded,comparison_issues,retention_rule_description
 from .tables import build_tables, read_annotations
+from src.evidence.diagnostics import trial_diagnostics
+from src.evidence.outcomes import evaluation, outcome_summary
 from .reading import project, render_reading, PRESENTATION_VERSION
 
 class Reports:
     def __init__(self,store,data):self.store=store;self.root=Path(data)/'reports'
     def tables(self,campaign,batch_id=None,context=None):
+        context=context or self.store.status(campaign)
         return build_tables(self.store.list('candidates',campaign), self.store.list('batches',campaign),
-            self.store.list('trials',campaign), context or self.store.status(campaign),
+            trial_diagnostics(self.store.list('trials',campaign),self.root.parent,context['config']), context,
             read_annotations(self.root.parent), batch_id)
+    def view(self,report):
+        """Assess only the report's frozen attempts; no later outcomes or DB writes."""
+        value=copy.deepcopy(report);config=value['facts']['campaign']['config']
+        trials=trial_diagnostics(value['facts']['trials'],self.root.parent,config)
+        value['taskEvaluation']=evaluation(trials,config['tasks'],value['facts'].get('candidates',[]),config)
+        lookup={t['id']:t for t in trials}
+        tables=value.get('tables') or build_tables(value['facts'].get('candidates',[]),value['facts'].get('batches',[]),trials,value['facts']['campaign'])
+        value['tables']=tables
+        for v in tables['versions']:v.setdefault('displayName',v.get('label',v['id']))
+        names={v['id']:v['displayName'] for v in tables['versions']}
+        for r in tables['rounds']:
+            r.setdefault('versionName',names.get(r['candidateId'],r.get('versionLabel','版本缺失')))
+            r['results']=trial_diagnostics([{**t,**lookup.get(t['id'],{})} for t in r['results']],self.root.parent,config)
+            r['taskEvaluation']=outcome_summary(r['results'],r['tasks'],config)
+        from .tables import group_rounds
+        tables['groups']=group_rounds(tables['rounds'])
+        for v in tables['versions']:
+            v['taskEvaluation']=outcome_summary([t for r in tables['rounds'] if r['candidateId']==v['id'] for t in r['results']],config['tasks'],config)
+        value['reading']=value.get('reading') or project(value,self.root.parent)
+        if 'taskEvaluation' not in value['facts']:
+            value['evaluationNotice']='按 '+value['taskEvaluation']['rule']+' 补充本报告快照的任务完成统计；原始评分、分析、事实快照和历史选择不变。'
+        value['markdown']=render_reading(value)
+        return value
     def refresh_presentation(self,report_id):
         """Append a display revision; never replace the original analysis or fact snapshot."""
         old=self.store.get('reports',report_id)
@@ -43,17 +69,24 @@ class Reports:
             if 'taskSources' in t.get('comparisonContext',{}):
                 context=t['comparisonContext'];context['taskSourcesDigest']=hashlib.sha256(encoded(context.pop('taskSources')).encode()).hexdigest()
             requests=[r for r in usage if r['leaseId']==t.get('leaseId')]
-            t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests)}
-        trials=[{k:v for k,v in t.items() if k!='summary'} for t in trials]
+            t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
+        trials=trial_diagnostics(trials,self.root.parent,c['config'])
+        for t in trials:t.pop('summary',None)
         candidates=[candidate for candidate in self.store.list('candidates',campaign)
             if not batch_id or any(t['candidateId']==candidate['id'] for t in trials)]
         roles={lease['id']:lease['role'] for lease in self.store.list('leases',campaign)}
+        decisions=self.store.list('selection_decisions',campaign)
+        decision_refs={ref for d in decisions for ref in d['evidenceRefs']}
         by_role={role:{'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in usage if roles.get(r['leaseId'])==role),
             'unknownReservedTokens':sum(r['reservedTokens'] for r in usage if roles.get(r['leaseId'])==role and r['status']=='unknown')}
             for role in ['solver','meta']}
-        return {'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
+        return {'stopReviews':self.store.list('stop_reviews',campaign),'metaObservations':self.store.list('meta_observations',campaign),
+            'metaSessions':self.store.list('meta_sessions',campaign),'metaComposition':c['config'].get('metaComposition'),
+            'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
+            'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
             'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
-            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if any(e['trialId']==t['id'] for t in trials)],
+            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs or any(e['trialId']==t['id'] for t in trials)],
+            'selectionDecisions':decisions,
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
             'comparisonRule':retention_rule_description(c['config'])}
     def save(self,campaign,analysis,batch_id=None,author='meta'):

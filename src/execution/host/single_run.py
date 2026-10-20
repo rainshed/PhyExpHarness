@@ -14,6 +14,8 @@ from ..bundle.freeze import verify
 from .network import provider_environment
 from ..adapters.quantum_harbor.results import collect, archive_manifest, verify_manifest
 
+TRIAL_CLOSEOUT_RESERVE_SECONDS = 330
+
 
 def write_json(path, value):
     path = Path(path)
@@ -34,6 +36,15 @@ def source_hashes(root, paths):
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def task_image_sources(root, version=2):
+    if version not in (1, 2):
+        raise ValueError('Unsupported task image lock version')
+    paths = ['src', 'configs', 'docker', 'harbor_tasks']
+    if version == 2:
+        paths += ['pyproject.toml', 'README.md', '.dockerignore', 'uv.lock']
+    return source_hashes(root, paths)
 
 
 def validate_task_image_lock(lock, task, sources):
@@ -87,19 +98,21 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     previous = signal.signal(signal.SIGTERM, stop)
     provenance = {'schemaVersion':1, 'startedAt':now(), 'bundleId':bundle['id'], 'bundleRoot':str(bundle_root),
         'recipe':recipe, 'deadline':deadline, 'task':task_name, 'softTokenLimit':soft_token_limit,
+        'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS,
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
     write_json(output / 'provenance.json', provenance)
     write_json(output / 'supervisor.json', {'pid':os.getpid(), 'startedAt':now(), 'deadline':deadline, 'state':'starting'})
     try:
         remaining = deadline - time.time()
-        if remaining <= 330:
+        if remaining <= TRIAL_CLOSEOUT_RESERVE_SECONDS:
             raise TimeoutError('Insufficient time for startup and official verification')
         # No generated plugin is loaded during this host preflight.
-        auth = "import {createChatGPTCredentials} from './src/execution/host/chatgpt_auth.mjs';const c=createChatGPTCredentials({minimumValidityMs:Number(process.argv[1])});c.dispose();"
+        auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync('recipe.json')),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
         subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000))], cwd=bundle_root, check=True)
         image = subprocess.run(['docker', 'image', 'inspect', bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
         provenance['runnerImageId'] = image
-        solver_deadline = min(deadline - 330, time.time() + recipe['agentTimeoutSec'])
+        solver_deadline = min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
+        provenance['solverDeadline']=solver_deadline
         config = {'job_name':'harbor', 'jobs_dir':str(output), 'n_attempts':1, 'n_concurrent_trials':1,
             'retry':{'max_retries':0}, 'environment':{'type':'docker','delete':True,'force_build':False},
             'agents':[{'import_path':bundle['agentEntry'], 'model_name':f'{recipe["provider"]}/{recipe["model"]}',
@@ -108,7 +121,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
             'tasks':[{'path':str(task)}], 'verifier':{'disable':False}}
         if task_image_lock:
             lock = json.loads(Path(task_image_lock).read_text())
-            images = validate_task_image_lock(lock, task_name, provenance['quantumHarbor']['sourceHashes'])
+            images = validate_task_image_lock(lock, task_name, task_image_sources(quantum_harbor, lock.get('schemaVersion', 1)))
             for role in ['main', 'qsim', 'verifier']:
                 actual = subprocess.check_output(['docker', 'image', 'inspect', images[role], '--format', '{{.Id}}'], text=True).strip()
                 if actual != images[role]: raise ValueError('Frozen task image is unavailable: '+role)
@@ -140,8 +153,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         write_json(output/'process.json', {'harborExitCode':process.returncode,'stopReason':stopped['reason']})
         result = collect(output)
     except Exception as error:
-        result = {'status':'infrastructure_error','pipelineStatus':'failed','officialReward':None,'sciencePassed':None,
-            'error':str(error),'stopReason':stopped['reason'] or type(error).__name__}
+        from .failure import failed_result
+        result = failed_result(output, error, stopped['reason'])
     finally:
         signal.signal(signal.SIGTERM, previous)
         if process and process.poll() is None:

@@ -2,6 +2,102 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "phyexp:contracts:v1",
   "$defs": {
+    "ResourcePlanSettings": {
+      "type": "object",
+      "required": [
+        "parallelism",
+        "defaultTrialTimeSeconds",
+        "closeoutReserveSeconds",
+        "closeoutReserveTokens"
+      ],
+      "properties": {
+        "parallelism": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultTrialTimeSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "closeoutReserveSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "closeoutReserveTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourcePlanUpdate": {
+      "type": "object",
+      "required": [
+        "changes",
+        "reason",
+        "expectedPlanRevision",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "changes": {
+          "$ref": "#/$defs/ResourcePlanSettings"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "expectedPlanRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdmissionDecision": {
+      "type": "object",
+      "required": [
+        "status",
+        "requestId"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "granted",
+            "waiting",
+            "denied"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "boundary": {
+          "type": "string"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "userLimitsRevision": {
+          "type": "integer"
+        },
+        "resourcePlanRevision": {
+          "type": "integer"
+        },
+        "observed": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
     "Campaign": {
       "type": "object",
       "required": [
@@ -31,6 +127,12 @@
         "revision": {
           "type": "integer",
           "minimum": 1
+        },
+        "selectionDecisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": true
@@ -155,6 +257,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 80
+        },
+        "taskEvaluation": {
+          "$ref": "#/$defs/TaskEvaluation"
         }
       },
       "additionalProperties": true
@@ -222,6 +327,19 @@
         },
         "usage": {
           "type": "object"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taskAssessment": {
+          "$ref": "#/$defs/TaskAssessment"
         }
       },
       "additionalProperties": true
@@ -312,6 +430,9 @@
         },
         "evidenceRefs": {
           "type": "array"
+        },
+        "taskEvaluation": {
+          "$ref": "#/$defs/TaskEvaluation"
         }
       },
       "additionalProperties": true
@@ -389,6 +510,453 @@
         }
       },
       "additionalProperties": true
+    },
+    "Failure": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "code",
+        "stage",
+        "message",
+        "source"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "code": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "responseContentBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "responseBytesMeaning": {
+              "const": "model-content-not-wire"
+            },
+            "transport": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "const": "model-transport-v1"
+                },
+                "actualTransport": {
+                  "enum": ["websocket", "sse", "http", null]
+                },
+                "protocolStarted": {
+                  "type": ["boolean", "null"]
+                },
+                "connectionId": {
+                  "type": "string"
+                },
+                "closeCode": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "limits": {
+          "type": "object"
+        },
+        "scoringStatus": {
+          "enum": [
+            "pending",
+            "not_run",
+            "failed",
+            "completed",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "SelectionDecision": {
+      "type": "object",
+      "required": [
+        "id",
+        "campaignId",
+        "candidateId",
+        "bundleId",
+        "previousCandidateId",
+        "previousDecisionId",
+        "createdAt",
+        "source",
+        "rule",
+        "reason",
+        "tradeoffs",
+        "limitations",
+        "reconsiderWhen",
+        "evidenceRefs",
+        "verifiedEvidence",
+        "assessment",
+        "usage",
+        "counts",
+        "context"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "campaignId": {
+          "type": "string"
+        },
+        "candidateId": {
+          "type": "string"
+        },
+        "bundleId": {
+          "type": "string"
+        },
+        "previousCandidateId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previousDecisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "source": {
+          "const": "meta-analysis"
+        },
+        "rule": {
+          "const": "meta-selection-v1"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "tradeoffs": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "reconsiderWhen": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "verifiedEvidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "sha256",
+              "trialId",
+              "kind"
+            ]
+          }
+        },
+        "assessment": {
+          "type": "object",
+          "required": [
+            "rule",
+            "source",
+            "certification",
+            "reference",
+            "candidate",
+            "comparisonLimitations",
+            "trials"
+          ],
+          "properties": {
+            "certification": {
+              "const": "not_certified"
+            },
+            "comparisonLimitations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "usage": {
+          "type": "object"
+        },
+        "counts": {
+          "type": "object"
+        },
+        "context": {
+          "type": "object",
+          "required": [
+            "campaignRevision",
+            "state",
+            "deadline",
+            "remainingSeconds",
+            "limits"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "TaskAssessment": {
+      "type": "object",
+      "required": [
+        "rule",
+        "category",
+        "score",
+        "included",
+        "reason",
+        "basis",
+        "label"
+      ],
+      "properties": {
+        "rule": {
+          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3"]
+        },
+        "category": {
+          "enum": [
+            "passed",
+            "failed",
+            "external_failure",
+            "cancelled",
+            "pending",
+            "unresolved"
+          ]
+        },
+        "score": {
+          "enum": [
+            0,
+            1,
+            null
+          ]
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "basis": {
+          "enum": [
+            "rule",
+            "official_score"
+          ]
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TaskEvaluation": {
+      "type": "object",
+      "required": [
+        "rule",
+        "total",
+        "byTask",
+        "macroSuccessRate",
+        "taskCount",
+        "coveredTasks"
+      ],
+      "properties": {
+        "rule": {
+          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3"]
+        },
+        "total": {
+          "type": "object"
+        },
+        "byTask": {
+          "type": "object"
+        },
+        "macroSuccessRate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "taskCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coveredTasks": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "MetaComposition": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "preset",
+        "plugins",
+        "runnerImage",
+        "lockSha256",
+        "stopPolicy"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "version": {
+          "const": "meta-composition-v1"
+        },
+        "stopPolicy": {
+          "const": "stop-review-v1"
+        },
+        "preset": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "scope",
+              "module",
+              "enabled",
+              "config"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "host",
+                  "meta",
+                  "reviewer"
+                ]
+              },
+              "module": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "config": {
+                "type": "object"
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "provides": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "runnerImage": {
+          "type": "string"
+        },
+        "lockSha256": {
+          "type": "string"
+        }
+      }
+    },
+    "StopReview": {
+      "type": "object",
+      "required": [
+        "id",
+        "campaignId",
+        "sessionId",
+        "policy",
+        "request",
+        "snapshotSha256",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "campaignId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "childId": {
+          "type": "string"
+        },
+        "policy": {
+          "const": "stop-review-v1"
+        },
+        "request": {
+          "type": "object"
+        },
+        "snapshotSha256": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "approved",
+            "continue",
+            "insufficient_evidence",
+            "failed",
+            "consumed"
+          ]
+        },
+        "result": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "usage": {
+          "type": "object"
+        }
+      }
     }
   }
 }

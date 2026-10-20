@@ -35,3 +35,29 @@ test('optional caps preserve null while blank custom inputs remain invalid',()=>
  assert.ok(configError({...config,maxRounds:''}));
  assert.ok(configError({...config,wallTimeSeconds:null}));
 });
+
+
+test('old backend catalog names preserve selectable GPT subscriptions during an upgrade',async()=>{
+ const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ const result=readModelCatalog({models:['gpt-6-sol','gpt-6-astra','gpt-6-luna'],provider:'openai-codex'});
+ for(const id of ['gpt-6-sol','gpt-6-astra','gpt-6-luna']){
+  const model=result.models.find(m=>m.provider==='openai-codex'&&m.model===id);
+  assert.ok(model);assert.equal(model.defaultReasoningEffort,'medium');assert.ok(model.reasoningEfforts.includes('medium'));
+ }
+ assert.match(result.note,/重启后台/);
+});
+
+test('new catalog retains custom capabilities and rejects malformed rows before draft matching',async()=>{
+ const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ const model={provider:'custom',model:'fixture',name:'Custom',reasoningEfforts:[],defaultReasoningEffort:null};
+ assert.deepEqual(readModelCatalog({models:[model]}),{models:[model],note:''});
+ const thinking={...model,reasoningEfforts:['off','high'],defaultReasoningEffort:'high'};
+ assert.deepEqual(readModelCatalog({models:[thinking]}).models,[thinking]);
+ for(const payload of [{models:[]},{models:['unknown'],provider:'custom'},{models:['gpt-6-sol',model]},
+                      {models:[{...model,reasoningEfforts:['high']}]},{models:[model,model]}])assert.throws(()=>readModelCatalog(payload),/后台/);
+});
+
+test('an explicitly versioned empty directory is usable after all providers are disabled',async()=>{
+ const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ assert.deepEqual(readModelCatalog({schemaVersion:2,models:[]}),{models:[],note:''});
+});

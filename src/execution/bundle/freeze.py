@@ -59,6 +59,11 @@ def verify(root):
 
 
 def freeze(source_root, store, recipe, plugins=(), knowledge=None):
+    from src.execution.host.models import provider_route,validate_provider_config,supported_model
+    recipe=dict(recipe)
+    if 'providerConfig' not in recipe:recipe['providerConfig']=provider_route(recipe)
+    model_config=validate_provider_config({'schemaVersion':1,'providers':{recipe['provider']:recipe['providerConfig']}})
+    if not supported_model(recipe,model_config):raise ValueError('Recipe does not match its frozen model route')
     source_root, store = Path(source_root).resolve(), Path(store).resolve()
     if recipe['profile'] != 'sdk-minimal' or recipe['dshVersion'] != '0.2.1-rc.2':
         raise ValueError('Unsupported execution profile')

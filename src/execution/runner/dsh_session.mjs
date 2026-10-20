@@ -45,7 +45,7 @@ export class DshSession {
           if (!handleRequest) throw new Error('Gateway unavailable');
           for await (const result of handleRequest(operation, payload, abort.signal)) send({result});
           send({done:true});
-        } catch(error) { send({error:error.message}); }
+        } catch(error) { send({error:error.gatewayFailure?.message||error.message,...(error.gatewayFailure?{failure:error.gatewayFailure}:{})}); }
         finally { this.bridgeCalls.delete(id); } })();
         return;
       }

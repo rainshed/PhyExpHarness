@@ -1,5 +1,9 @@
-# Package-name template for a host where @phyexp/meta-workbench is installed.
-# For this checkout use node scripts/workbench.mjs; it resolves an absolute entry for a fresh DSH_HOME.
+# Install all three packages; the bridge is independent of both UI plugins.
+# For this checkout use node scripts/workbench.mjs.
 - insert:
+    - id: phyexp-meta-workbench-bridge
+      name: '@phyexp/meta-workbench-bridge'
     - id: phyexp-meta-workbench
       name: '@phyexp/meta-workbench'
+    - id: phyexp-meta-workbench-studio
+      name: '@phyexp/meta-workbench-studio'

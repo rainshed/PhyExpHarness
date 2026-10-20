@@ -45,9 +45,15 @@ def export_guide(service,id):
     tables=service.reports.tables(c['id']);v=next(v for v in tables['versions'] if v['id']==row['candidateId'])
     plugins={p['id']:p for p in tables['plugins']}
     model=c['config']['solver'];task=c['config']['tasks'][0]
+    from src.execution.host.models import campaign_route
+    route=campaign_route(c['config'],'solver')
+    auth=route['auth']
+    auth_guide=('默认读取本机 ~/.codex/auth.json；也可用 PHYEXP_CODEX_AUTH_FILE 指定有效登录文件，勿复制进项目。'
+                if auth['type']=='codex' else
+                f"在启动独立项目的终端配置 {auth['env']}；密钥仅在宿主使用，勿写入项目。")
     text=f"""# {v['displayName']} · 运行说明
 
-固定执行模型：{model['model']} / {model['reasoningEffort']}。
+固定执行模型：{model['model']} / {model.get('reasoningEffort','无')}。
 本说明对应所选冻结项目；下载不会触发模型调用。
 
 ## 1. 准备环境
@@ -68,7 +74,7 @@ node install-runner.mjs
 ```
 
 verify 只检查文件完整性，不调用模型。
-默认读取本机 ~/.codex/auth.json；也可用 PHYEXP_CODEX_AUTH_FILE 指定有效登录文件，勿复制进项目。
+{auth_guide}
 
 ## 3. 选择任务并运行
 

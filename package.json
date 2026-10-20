@@ -16,7 +16,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",
-    "esbuild": "0.25.12"
+    "ajv": "8.20.0",
+    "esbuild": "0.25.12",
+    "ws": "8.22.0"
   },
   "workspaces": [
     "packages/*"

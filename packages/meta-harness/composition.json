@@ -1,0 +1,14 @@
+{
+  "version": "meta-composition-v1",
+  "id": "meta-default-v1",
+  "parentId": null,
+  "plugins": [
+    {"id":"control","scope":"host","module":"control.mjs","provides":["metaControl"],"requires":[],"enabled":true,"config":{}},
+    {"id":"context","scope":"meta","module":"context.mjs","requires":["systemPrompt"],"enabled":true,"config":{}},
+    {"id":"queries","scope":"meta","module":"queries.mjs","requires":["metaControl","tools"],"enabled":true,"config":{}},
+    {"id":"actions","scope":"meta","module":"actions.mjs","requires":["metaControl","tools"],"enabled":true,"config":{}},
+    {"id":"stop-review","scope":"meta","module":"stop-review.mjs","requires":["metaControl","subagents","queries","actions"],"enabled":true,"config":{"timeoutSeconds":300}},
+    {"id":"review-context","scope":"reviewer","module":"context.mjs","requires":["systemPrompt"],"enabled":true,"config":{}},
+    {"id":"review-queries","scope":"reviewer","module":"queries.mjs","requires":["metaControl","tools"],"enabled":true,"config":{}}
+  ]
+}

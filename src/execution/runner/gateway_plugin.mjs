@@ -1,4 +1,4 @@
-import { LlmAdapter, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
+import { LlmAdapter, LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
 export const name = 'phyexp-model-gateway';
 export const inject = ['llm'];
 export async function* requestHost(operation, payload, signal) {
@@ -13,7 +13,7 @@ export async function* requestHost(operation, payload, signal) {
     let end;
     while ((end = buffer.indexOf('\n')) >= 0) {
       const row = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
-      if (row.error) throw new Error(row.error);
+      if (row.error) throw row.failure?new LlmError(row.failure.message,row.failure.code,row.failure):new Error(row.error);
       yield row.result;
     }
   }

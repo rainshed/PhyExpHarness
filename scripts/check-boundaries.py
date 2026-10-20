@@ -38,7 +38,7 @@ def violations(root):
         return next((p for p in [target,target+'.py',target+'.mjs',target+'.js',target+'/index.mjs'] if p in graph),None)
     for origin in graph:
         execution=origin.startswith('src/execution/')
-        plugin=origin.startswith(('packages/meta-harness/','packages/meta-workbench/'))
+        plugin=origin.startswith(('packages/meta-harness/','packages/meta-workbench/','packages/meta-workbench-studio/','packages/meta-workbench-bridge/'))
         if not (execution or plugin): continue
         todo=[origin]; seen=set()
         while todo:
