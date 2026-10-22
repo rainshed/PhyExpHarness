@@ -89,16 +89,21 @@ class MetaDriver:
             if row['state'] in ['starting','running','waiting'] and not row.get('stopRequestedAt'):
                 if self.service._process_alive(row.get('pid'),row['output']):os.kill(row['pid'],signal.SIGTERM)
                 row.update(stopReason=reason,stopRequestedAt=time.time());self._save_session(row)
+    def closeout_ready(self,campaign):
+        c=self.store.status(campaign)
+        if c['state']!='closing' or c['counts']['activeTrials'] or c['counts']['reservedTrials']:return False
+        if any(o['state']=='running' for o in self.store.list('operations',campaign)):return False
+        reports=self.store.list('reports',campaign)
+        return any(r['kind']=='final' and r['status']=='analysis' for r in reports) and all(
+            any(r['kind']=='round' and r['batchId']==b['id'] and r['status']=='analysis' for r in reports)
+            for b in self.store.list('batches',campaign))
     def notifications(self,id,after):
         row=self.store.get('meta_sessions',id);campaign=row['campaignId'];c=self.store.status(campaign)
         events=self.store.events(campaign,after);cursor=max([after,*[e['seq'] for e in events]])
         finished_batches={e.get('batchId') for e in events if e['type']=='batch_finished'}
         selected=[e for e in events if e['type'] in ['batch_finished','operation_finished','closing','resume','resource_plan_updated','resource_plan_waiting','trial_conditions_required','admission_waiting','admission_denied','limits_changed','meta_question_answered'] or
                   (e['type']=='trial_finished' and e.get('batchId') not in finished_batches)]
-        reports=self.store.list('reports',campaign);batches=self.store.list('batches',campaign)
-        report_complete=any(r['kind']=='final' and r['status']=='analysis' for r in reports) and all(
-            any(r['batchId']==b['id'] and r['status']=='analysis' for r in reports) for b in batches)
-        finish=c['state']=='closing' and not c['counts']['activeTrials'] and not c['counts']['reservedTrials'] and report_complete
+        finish=self.closeout_ready(campaign)
         if native_config(c):
             if after!=row.get('cursor',0):raise Refused('Notification cursor must equal acknowledged position')
             self.service.meta_api.files.refresh(campaign)
@@ -175,6 +180,11 @@ class MetaDriver:
         c=self.store.status(campaign)
         if active or c['state'] in ['draft','paused','finished','failed']:return
         if native_config(c):
+            # Committed closeout artifacts do not require one more model response.
+            # Keep the session failure and its accounting; only finish the activity.
+            if self.closeout_ready(campaign):
+                self.store.finalize(campaign)
+                return
             latest=self.store.list('meta_sessions',campaign)
             last=latest[-1] if latest else None
             if time.time()<c['deadline'] and last:

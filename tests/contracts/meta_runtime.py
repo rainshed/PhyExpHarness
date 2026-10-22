@@ -12,6 +12,8 @@ PLANNING='--resource-planning' in sys.argv
 NATIVE='--native' in sys.argv
 RECOVERY='--recover' in sys.argv
 FINAL_FIRST='--final-first' in sys.argv
+CLOSEOUT_DENIAL='--closeout-budget-denial' in sys.argv
+if CLOSEOUT_DENIAL:assert NATIVE and not (RECOVERY or FINAL_FIRST or PLANNING)
 PLAN={'parallelism':1,'defaultTrialTimeSeconds':600,'closeoutReserveSeconds':0,'closeoutReserveTokens':0}
 
 class Provider(BaseHTTPRequestHandler):
@@ -71,6 +73,9 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
     cfg={'meta':model,'solver':{**model,'model':'gpt-6-sol'},'tasks':['time_budgeted_hamlearn_10q'],'concurrency':1,'wallTimeSeconds':120,'reserveSeconds':5,
          'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
     if NATIVE:cfg.pop('metaCompositionConfig')
+    # Seven responses (including two reviewer responses) commit both reports.
+    # The eighth request cannot reserve 300,000 tokens for the final model reply.
+    if CLOSEOUT_DENIAL:cfg.update(softTokenLimit=300072,reserveTokens=0)
     if PLANNING:cfg.update(resourcePolicy='meta-resource-planning-v1',wallTimeSeconds=1200)
     composition=freeze(ROOT,data,cfg);campaign=service.store.create(cfg,'fixture',defaults={'stopPolicy':'stop-review-v1','metaComposition':composition})
     c=campaign['id'];service.store.control(c,'start','start');candidate=service.store.candidate(c,{'id':'fixture','path':str(data/'nonexistent-bundle'),'plugins':[]},'Synthetic H0',check={'status':'passed'})
@@ -96,24 +101,31 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
             time.sleep(.1)
         if not RECOVERY and process.poll() is None:raise AssertionError('Frozen worker failed to close out')
         session=service.store.list('meta_sessions',c)[-1];summary=json.loads((Path(session['output'])/'summary.json').read_text())
-        assert summary['status']=='completed',summary
+        if CLOSEOUT_DENIAL:
+            assert summary['status']=='error' and summary['failure']['code']=='budget_admission_denied',summary
+        else:assert summary['status']=='completed',summary
         driver.tick(c)
         review=service.store.list('stop_reviews',c)[0];assert review['state']=='consumed',review
         assert review['usage']['confirmedTokens']==24,review['usage']
-        expected_tokens=(108 if FINAL_FIRST else 96) if NATIVE else 84 if PLANNING else 72
+        expected_tokens=84 if CLOSEOUT_DENIAL else (108 if FINAL_FIRST else 96) if NATIVE else 84 if PLANNING else 72
         assert service.store.usage(c)['confirmedTokens']==expected_tokens,service.store.usage(c)
         if PLANNING:
             plan=service.store.get('campaigns',c)['resourcePlan']
             assert plan['revision']==2 and plan['source']=='meta' and plan['defaultTrialTimeSeconds']==500,plan
             assert service.store.get('batches',batch['id'])['testSettings']['trialTimeSeconds']==600
         assert service.store.status(c)['state']=='finished'
+        if CLOSEOUT_DENIAL:
+            assert service.store.get('meta_sessions',session['id'])['state']=='needs_attention'
+            reports=service.store.list('reports',c)
+            assert len(reports)==2 and all(r['status']=='analysis' and r['analysisRevision']==1 for r in reports),reports
+            assert len(provider.calls)==7,provider.calls
         assert len(service.store.get('meta_sessions',session['id'])['agents'])==2
         if RECOVERY:
             sessions=service.store.list('meta_sessions',c);assert len(sessions)==2,[{k:s.get(k) for k in ['id','state','summary']} for s in sessions]
             assert sessions[0]['nativeSessionId']==sessions[1]['nativeSessionId']
             assert summary['resumed'] and sessions[1]['recoveryAttempt']==1
             assert not service.store.get('campaigns',c)['stopReason']=='meta_session_failed'
-        print(json.dumps({'status':'passed','native':NATIVE,'resourcePlanning':PLANNING,'providerCalls':len(provider.calls),'reviewCalls':sum(x['child'] for x in provider.calls),'sharedTokens':expected_tokens,'reviewTokensIncluded':24,'frozenComposition':composition['id'],'externalModelCalls':0}))
+        print(json.dumps({'status':'passed','native':NATIVE,'resourcePlanning':PLANNING,'closeoutBudgetDenial':CLOSEOUT_DENIAL,'providerCalls':len(provider.calls),'reviewCalls':sum(x['child'] for x in provider.calls),'sharedTokens':expected_tokens,'reviewTokensIncluded':24,'frozenComposition':composition['id'],'externalModelCalls':0}))
     finally:
         for process in driver.children.values():
             if process.poll() is None:process.terminate();process.wait(timeout=10)

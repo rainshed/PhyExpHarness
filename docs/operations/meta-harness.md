@@ -508,4 +508,6 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 
 收尾状态摘要会明确缺失报告数量和下一份 batchId；完整清单在状态文件 `data.closeout`。失败实验仍需独立轮报告，总报告不替代它；已关闭探索时无需再次调用 campaign_finish。收尾可暂停/恢复，暂停不会被监督轮询自动撤销，恢复不重新开放实验或增加原预算。新增回归入口：`python3 tests/contracts/meta_runtime.py --native --final-first`。
 
+原生 Meta 进程已退出时，如果活动正在收尾、所有实验和后台操作均已结束，且每轮分析和最终分析均已保存，后台会直接完成活动，不再要求最后一条模型回复。报告提交后发生的额度拒绝或连接故障仍保留在 Meta 会话与用量记录中，不补跑模型、不覆盖报告。暂停中的活动、仍有在途工作或缺少分析的活动不适用此完成条件。回归入口：`python3 -m unittest discover -s tests/unit -p 'meta_closeout_test.py'`。 原生隔离验证：`python3 tests/contracts/meta_runtime.py --native --closeout-budget-denial`，使用本地模拟供应商重现报告提交后最后一次请求被预算拒绝，不调用外部模型。
+
 新旧工作台的活动页面均提供“暂停收尾”。报告文件必须是 `/work/analysis` 内的普通文件；符号链接、目录与管道会被拒绝，修正后用新的幂等键提交。
