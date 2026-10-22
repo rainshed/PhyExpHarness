@@ -8,6 +8,12 @@
 
 平台运行、模型生成插件和导出包真实独立验收分别记录在本地。安装源码不包含历史活动和验收结果，具体活动证据不能由源码版本或离线检查替代。认证续期和用量软阈值的限制见下文。
 
+新建活动使用[插件版本管理与按需导出方案](../design/plugin-versioning-and-export.md)：候选保存小型组合清单和配置，插件、必要适配及锁文件按内容共享；DeepSeek 只保存准确版本引用，安装依赖复用共享缓存。旧 v1 Bundle 继续按原格式读取、运行和导出，不自动转换活动或清理历史。
+
+2026-10-21 已实现 [Meta 通用 Agent 与完整证据访问](../design/meta-agent-and-evidence.md)的核心运行链路。新活动默认绑定 `meta-composition-v2`：六个原生领域插件叠加文件、搜索、编辑、终端、jobs、待办、技能、会话查询与压缩，支持普通研究委派及独立容器中的停止审查。启动只提供导航，完整评分、轨迹、分析和终端输出从只读路径读取；工作文件与原生会话跨 Runner 重启保留。原 `meta-composition-v1` 活动仍按原资产和原语义运行。
+
+当前工程检查使用本地脚本 provider 和真实隔离 Runner；不代表真实模型的研究质量，也不代表完整故障矩阵全部验收。原生压缩后的长历史查询、所有通知崩溃窗口及并发恢复的压力检查仍需扩展。开发区使用宿主文件系统容量，尚无独立磁盘配额；输出捕获器另有明确上限。网络、外部 MCP 和开发依赖范围见下方能力说明。
+
 ## 启动工作台
 
 需要 Node.js 24.13+、Python 3.13、Docker、Harbor 0.18.0，以及显式指定的 Quantum-Harbor checkout。平台使用锁定的 DeepSeek Harness 0.2.1-rc.2。
@@ -137,6 +143,8 @@ H0 使用 `sdk-minimal` 原生循环和上下文压缩，默认配方为 [gpt-6-
 
 Meta 可通过 materials_list/search/read 按需读取允许的任务原文、SDK、冻结插件与版本、实验、证据和历史报告。新活动保存任务原文快照并绑定资料包，旧活动读取原归档；缺失材料明确不可用。原始日志和报告仍保留，查询不启动实验。新会话的 context.json 记录实际系统提示词及摘要，旧会话输入保持原样。
 
+当前分页能继续读取已发布材料，但不能找回发布前被评分字段白名单或轨迹事件筛选排除的内容。通用 Agent 方案将补充原件路径与完整输出入口；实施前不应根据 Meta 可见的简短反馈认定官方报告缺少诊断。
+
 插件教程源文件位于 `knowledge/plugin-sdk/guides/`，Meta 通过 `sdk_read` 的 `id: "guides/README.md"` 读取索引。修改后运行 `npm run build:knowledge`；新建活动会重新读取并完整校验当前资料，原子归档后才保存活动，无需仅因资料更新而重启控制后台。已有活动与创建请求回放继续使用原归档。构建期间读到不完整资料会明确拒绝，此次不创建活动，完成构建后可直接重试。旧资料包没有教程入口时可读取 `overview`。子代理教程仅说明接口与接入前提，不启用执行能力。
 
 旧版后台在启动后重建资料可能出现 `Knowledge pack identity mismatch`：升级并重启后台后再新建；先确认没有运行中的活动，或按正常恢复流程安排重启。旧版失败请求可能已留下未启动草稿，其资料身份不能直接替换成当前版本；保留记录，已有实验仍按原资料读取。不要通过修改摘要、忽略完整性检查或复制另一版本的文件来绕过此错误。
@@ -149,7 +157,7 @@ Meta 可通过 materials_list/search/read 按需读取允许的任务原文、SD
 
 用户提高活动上限时，已启动进程不会自动获得延期或提高启动时 token 上限；界面显示这些任务的实际条件。待启动任务因排队需要缩短时间时，Meta 通过 `trial_conditions_accept` 明确接受，实际分配进入比较记录。严格结束与有限延时收尾分别执行，不用较早的启动截止覆盖已允许的额外执行时间。
 
-准入审计区分等待、拒绝与模型调用。`budget_inflight_wait` 等待在途结算，`budget_plan_wait` 提醒 Meta 调整预留；二者不会自动重试模型。`budget_admission_denied` 表示余额无法满足准入估算，不能理解为实际消耗已精确到达总量。账本不可用、凭证过期和协议异常分别保留平台原因。新活动的 `task-completion-v3` 为这些停止原因单列分类，不改写旧活动或官方空值。
+准入审计区分等待、拒绝与模型调用。`budget_inflight_wait` 等待在途结算，`budget_plan_wait` 提醒 Meta 调整预留；二者不会自动重试模型。`budget_admission_denied` 表示余额无法满足准入估算，不能理解为实际消耗已精确到达总量。账本不可用、凭证过期和协议异常分别保留平台原因。新活动的 `task-completion-v4` 将执行中发生并最终结束的这些故障计失败，尚未执行的拒绝单列；已有 v3 保留原分类，不改写历史或官方空值。
 
 后端接口、兼容和验收见[专项计划](../plans/meta-resource-planning.md)，Meta 参数示例见[资源规划资料](../../knowledge/plugin-sdk/guides/resource-planning.md)。旧活动继续使用冻结时规则。实时延期与动态 token 预留估计尚未实现。
 
@@ -241,17 +249,30 @@ DeepSeek 沿用现有软 token 阈值、未知用量保留和无自动重试规�
 
 ## 任务成功率与官方评分
 
-工作台、报告、Meta 的状态查询、候选列表及新版本选择快照共用活动绑定的规则：新活动随资源计划采用 `task-completion-v3`，已有活动保留绑定版本，缺少版本字段时为 `task-completion-v1`。v3 继承 v2 的连接故障计零规则，并将预算准入不足及平台账本、凭证故障排除在成功率分母之外。官方 `score/officialReward` 不改写；`taskAssessment` 给出每次的派生任务完成分、原因、是否进入分母，`taskEvaluation` 给出逐任务、逐版本统计。
+工作台、报告、Meta 查询和版本选择快照共用活动绑定规则。新活动默认采用 `task-completion-v4`，已有活动保留 v1/v2/v3，缺少绑定字段时按 v1。创建请求幂等回放使用原绑定，不自动升级。详细设计见[任务完成规则 v4](../design/task-completion-v4.md)。
 
-- 官方通过（reward=1）计任务完成分 1，其余有效官方评分计 0。已记录的有效官方评分优先于后续清理故障。
-- 已结束的工具参数空白/非法/异常重复、响应或参数长度超限、输出额度耗尽、明确未提交或无效提交，计任务完成分 0。单次工具报错后恢复并完成任务不因此判零。
-- 模型请求达到约定时限计 0；记录显示没有收到模型内容（`responseBytes=0`）时暂列待归因，这不等于没有协议事件。v2/v3 将最终未恢复的模型服务过载、传输中断和不完整响应计 0；v1 将其单列。连接空闲超时和未细分提供方错误仍单列，不凭泛化错误文字自动判零。
-- 单次执行用满创建时约定的时限计 0；后台记录领取时的 `taskTimeLimitSeconds`。被活动截止截短的执行、用户停止、活动截止取消单列；历史限额无法核实时不冒充完整预算失败。
-- Docker/启动、评分器、归档和监督故障单列为外部故障。缺少失败依据的结束记录列待归因，不推断未提交；仍在执行或排队列待定。
+- 已进入启动尝试且最终结束：只有可信官方通过计 1，其余计 0 并进入分母。模型异常、容器启动/桥接、评分器、收集/归档、执行中额度/凭证故障和自动截止都在此范围；已结束但结果或原因缺失也计零。
+- 尚未启动的拒绝或取消显示“未执行”；明确人工撤销且无先行失败单列“已取消”。异常输出或有证据发生在停止请求之前的故障不会因后续人工停止而免除失败。
+- 排队、启动和运行仍显示待定。unknown 带结束确认时按失败，无结束确认时显示“结束状态待核实”。仍在重试归集的运行记录不会仅因官方缺分而提前结算；本增量不改变进程核实与收集重试策略。
+- 官方 `score/officialReward` 及原件保持不变，没有官方分数仍是 null。主结果显示“失败 · 评分器异常”等，详情显示官方评分状态和派生完成分。先前已记录可信官方结果优先于后续清理故障。
 
-逐任务成功率为通过次数 /（通过 + 官方失败 + 按规则计 0 的失败）；未计分外部故障、取消、待定、待归因始终显示数量。计零的连接故障仍保留原因。待归因另显示按失败计的保守成功率。总体使用所选任务等权平均；任一任务尚无计入尝试则总体待定，显示覆盖任务数。逐次汇总仅作辅助，不能用多跑容易任务改变等权总体结果。
+逐任务成功率为通过次数 / 纳入的已结束尝试次数，跨任务等权。完全未测或没有纳入尝试的任务保持待定，不凭空补零。`taskAssessment` 提供结果、原因、是否计入；`taskEvaluation` 提供逐任务/版本统计和未执行、取消、待定数量。不能把官方均分或有效评分比例当成任务成功率。
 
-新报告及选择记录保存规则版本与当时结果快照；历史报告的页面和下载按原报告快照及其绑定规则补充统计并标明来源，不引入后续试验，不覆盖历史文件、分析、官方分数或选择。旧 v1/v2 选择门槛保持原契约，当前展示和 Meta 自主选择的比较口径使用任务成功率。重试永不覆盖原尝试。
+旧 v1/v2/v3 沿用原故障分类、排除规则和保守统计，报告及选择按原快照投影，不重写原文件、分析、官方分数或选择。新的 v4 标签只用于 v4 活动。重试永不覆盖原尝试。
+
+验证入口：`python3 -m unittest discover -s tests/unit -p 'task_completion_v4_test.py'`；官方结果收集兼容见 `result_collection_test.py`，界面可用 `python3 tests/fixtures/task_completion_workbench.py --data-dir /absolute/new-fixture-directory` 启动合成后台，再按工作台启动说明连接。夹具禁用监督执行，不调用真实模型。
+
+### 官方结果收集与已结束记录恢复
+
+v2 Recipe 不要求人读 `id`，执行身份使用冻结 `bundleId`。收集器校验 Harbor 完成状态、官方 reward、评分报告、任务身份与实验证据后入库；官方 0 是有效评分。`result_collection_failed` 表示官方评分已完成但平台收集失败，`container_transport_error` 表示容器工具桥接故障阻断了评分；二者单列外部故障，不能推断模型零分。
+
+空白命令或越权命令参数在桥接入口被拒绝并作为工具错误返回，允许 Solver 更正；不会执行该命令，也不会因一次已反馈的参数错误而跳过最终 verifier。实际容器传输故障仍按执行异常处理。
+
+早期 v2 冻结适配仍读取 `recipe.id`，可能留下 `error: "'id'"` 和空分。当前控制服务在首次收集这类归档时重新读取官方结果；已入库的结束记录使用用户权限 `POST /trials/{trialId}/recollect` 显式恢复，活动须先暂停或已经结束，目标 Trial 必须已经结束。恢复也可补充已知桥接异常的归因，但没有官方结果时仍保留空分。不调用模型、不重跑 verifier，不重新选择候选或改写预算、时间、原始归档和历史报告。
+
+恢复前校验归档文件摘要、候选冻结身份、任务身份与证据覆盖，未知错误或缺失证据不自动补分。恢复记录包含收集器版本、原摘要/归档摘要及修复原因，数据库事件引用 `result-recoveries/` 中不可变的前后记录，并新增可查询证据；同一归档和收集版本重复请求不重复修改。批量维护前应保留一致性数据库备份，不能用旧数据库覆盖仍有活动的数据目录。
+
+旧候选及旧导出包的适配源码保持原样。控制服务的收集兼容不等于修改旧版本的执行行为；使用修复后的桥接行为须在新活动冻结新适配和基线，不能在旧活动中悄悄替换。
 
 ## 阅读报告和证据
 
@@ -265,7 +286,7 @@ DeepSeek 沿用现有软 token 阈值、未知用量保留和无自动重试规�
 
 ## 导出独立项目
 
-选择已有冻结候选生成项目，再下载 ZIP。导出复制测试使用的同一个 Bundle，包含执行内核、选定插件及配置、Node/Python 依赖锁、启动脚本和 README。工作台、Meta 插件、后台数据库、活动轨迹和模型凭据不进入包。
+选择已有冻结候选生成项目，再下载 ZIP。v2 导出按同一个组合清单收集选中的插件、配置、明确声明的必要适配和 Node/Python 依赖锁，生成完整项目；DeepSeek 本体由接收者按锁安装。`bundle.json` 保留原组合身份，`objects.json` 记录引用的内容摘要，`delivery.json` 说明适配文件职责。ZIP 摘要、导出器版本与三层验收状态在导出记录中分别保存。旧 v1 继续复制原 Bundle。工作台、Meta 插件、数据库、研究历史、凭据和安装缓存均不进入包。
 
 解压后按包内 README 安装依赖、构建 Runner，并显式提供外部任务目录、认证和输出目录。包内 `run.py --verify` 只做内容校验。静态内容检查、无模型搬迁装配和真实独立执行是三个不同的结果；人工验收 A 不等于已经完成 B 的真实搬迁试验。
 
@@ -275,11 +296,40 @@ DeepSeek 沿用现有软 token 阈值、未知用量保留和无自动重试规�
 
 活动数据保存在数据目录的 `control.sqlite`、`campaigns/`、`objects/sha256/`、`trials/`、`evidence/`、`reports/` 和 `exports/`。完整备份应在无活动运行时退出后台后复制整个目录；不要只复制 SQLite 文件而遗漏 WAL 或内容对象。备份包含用户访问令牌和原始实验材料，应保持本机私有权限。
 
+v2 候选目录本身只有 `bundle.json` 和 `recipe.json`，插件与必要适配引用同级内容对象。单独备份候选目录不足以恢复，须连同 `objects/sha256/` 备份。完整独立交付使用导出 ZIP，不直接复制某一个候选目录。
+
+新安装保存在 `cache/dependencies/`，固定适配准备在 `cache/adapters/`。兼容候选共享安装，缓存键包含准确锁及宿主 Node/ABI/系统/架构；缺失或内容损坏时后台按原锁重建，无法取得准确版本则明确失败。修复发布新目录，不覆盖仍可能被进程使用的旧目录。查看候选检查的 `installation.log` 或 `cache/preparation.log` 可定位准备问题。不要对 v2 候选目录执行 `npm ci`；独立导出项目仍按 README 安装。
+
+不提供缓存自动清理。历史重复内容只能按下节的显式迁移流程释放，保留镜像不在整理范围内。确需人工释放 v2 缓存时，先停止使用该数据目录的后台及全部相关进程，并保留完整对象备份；不能在活动运行中删除共享目录。恢复仍需要能获取锁定的外部依赖。
+
 重启时沿用同一数据目录和外部任务目录。后台按稳定启动 ID、进程身份和归档核实已有工作，不重新提交不确定的实验；中断的构建操作标记失败，可重新发起检查。重启不能恢复已经中断的模型请求为原请求；未知用量保留到可信宿主审计可核实为止。
 
 后台每次巡检都会非阻塞回收自己启动的 Solver 监督进程和 Meta 子进程，即使对应活动已经结束。进程退出且结果处理完成后才移除内存中的管理记录；归档或结果收集失败时保留退出状态供后续重试。结果文件先写完、进程稍后退出的情况也会继续回收。此清理不改变历史评分、失败记录或用量，不凭重启前保存的 PID 回收非本后台的子进程。
 
 后台自身错误保存在 `supervisor-errors.jsonl`，实验监督日志在 `trials/<launch-id>.supervisor.log`，模型及工具审计在各实验的 `harbor/<trial>/phyexp/`。Meta 轨迹在 `campaigns/<campaign-id>/meta-sessions/`。排查时先读页面的停止原因和报告，原始日志用于进一步定位。
+
+### 显式整理历史存储
+
+用户要求整理已结束活动时，可使用 `scripts/migrate-history-storage.py`。先运行 `plan` 盘点，`apply` 才执行备份、验证、共享与释放。计划目录必须是新目录，建议放在数据目录的 `development/`，并与对象存储位于同一文件系统：
+
+```sh
+python3 scripts/migrate-history-storage.py plan --data-dir /path/to/data --session /path/to/data/development/history-storage-001
+python3 scripts/migrate-history-storage.py apply --session /path/to/data/development/history-storage-001
+```
+
+`plan.json` 列出纳入和排除对象，`control-before.sqlite` 是一致的数据库快照，`backups/` 保存逐版本冻结文件，`entries/` 是可续做日志，`checks/` 保留原代码的模拟装配回执，`result.json` 汇总结果。异常后重跑相同 `apply`，不另建重复计划；引用或活动状态发生变化时明确拒绝该版本。
+
+运行中、草稿、暂停或其他未结束活动的引用，以及仍有在途 Trial、Meta 会话、操作或直接进程使用的版本均排除。未被候选记录引用的目录也不自动清理。工具不停止服务或活动，不启动真实模型，不改数据库、历史报告/轨迹/导出 ZIP 或 Docker 镜像。
+
+整理后旧目录中的源码是硬链接兼容视图，共享文件正文位于 `objects/blobs/`，插件/适配/锁对象位于 `objects/sha256/`，布局清单位于 `objects/legacy-compositions/`；原 `bundle.json`、路径与内容摘要不变。备份须包含这些对象、迁移计划和 `backups/`。不要编辑硬链接中的源码，否则会影响引用相同内容的版本。旧路径仍可读取与导出，无需为整理重启正在运行的后台。
+
+如需恢复某个版本的独立源码文件：
+
+```sh
+python3 scripts/migrate-history-storage.py restore --session /path/to/data/development/history-storage-001 --bundle <完整旧Bundle摘要>
+```
+
+恢复先核验备份，原 ID、路径及字节内容不变；已验证的共享依赖保留，避免重新制造重复安装。恢复后的版本若要再次去重，应生成新计划。不要将整个数据库快照覆盖回仍在运行的数据目录；它是审计/灾难恢复材料，普通源码恢复不改数据库。
 
 ## 固定任务环境以便比较
 
@@ -371,9 +421,9 @@ node scripts/replay-model-streams.mjs /absolute/local/data /absolute/local/outpu
 
 ## Meta 插件组合与停止审查
 
-新创建的活动绑定 `meta-composition-v1` 和 `stop-review-v1`。默认组合文件为 `packages/meta-harness/composition.json`；插件源码修改只影响以后创建的活动。创建配置可显式指定 `metaCompositionConfig` 研究另一组本地受信模块，不能指向插件包之外的源码。完整接口与关闭规则见[组合设计](../design/meta-harness-composition.md#11-首期配置与接口约定)。本期不提供跨活动比较、重复调度或自动消融功能。
+新创建的活动默认绑定 `meta-composition-v2` 和 `stop-review-v1`。默认组合文件为 `packages/meta-harness/composition-native.json`；插件源码修改只影响以后创建的活动。创建配置可显式指定 `metaCompositionConfig` 研究另一组本地受信模块，不能指向插件包之外的源码。完整接口与关闭规则见[组合设计](../design/meta-harness-composition.md#11-首期配置与接口约定)。本期不提供跨活动比较、重复调度或自动消融功能。
 
-活动在 `meta-compositions/<摘要>/` 保存代码、原生组合、上下文、依赖锁及 Runner 镜像身份；备份应包含此目录。恢复使用这一份资产，校验失败会拒绝启动，不回退到当前同名预设。宿主 Node 依赖仍由安装环境提供，必须保留/恢复匹配的依赖锁与安装；原生 Runner 使用冻结镜像 ID。不要删掉仍被活动引用的镜像。
+新组合在 `meta-compositions/<摘要>/manifest.json` 保存精确框架引用、六插件及必要运行适配的内容引用、配置和镜像身份；内容保存在共享 `meta-objects/sha256/`。`cache/meta-runtimes/` 由校验后的对象物化，不是备份的唯一来源。备份同时覆盖组合、内容对象、活动工作区/会话、证据及账本。旧 v1 仍保留原快照目录，不能删除或自动转换。宿主依赖须匹配冻结的根锁文件；Runner 使用冻结镜像 ID，不要清理仍被引用的镜像。
 
 Meta 普通回合结束不会结束活动；无在途实验/构建时，后台继续提醒其推进；等待实验时按已有事件通知。申请“充分尝试后不值得继续”会触发原生只读审查子会话，默认继承 Meta 模型与推理等级，共用 6 小时等用户设置的原额度，并没有独立赠送预算。审查有 300 秒技术超时，没有自动重试。超时或非法结果不批准，也不会污染主会话的模型通道。
 
@@ -384,7 +434,7 @@ Meta 普通回合结束不会结束活动；无在途实验/构建时，后台�
 
 ### 请求恢复诊断
 
-新网关的过载和连接故障只结束当前请求；默认没有自动恢复，Meta 可开发恢复插件。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是失败历史与明确恢复的请求关联。网关审计保留每次请求、失败、结算及恢复记录；未知用量不清零。旧失败文件继续兼容读取。
+Solver 网关的过载和连接故障只结束当前请求；默认没有自动恢复，Meta 可开发执行侧恢复插件。新 Meta 自身采用下述独立技术恢复策略，不改变 Solver 约定。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是失败历史与明确恢复的请求关联。网关审计保留每次请求、失败、结算及恢复记录；未知用量不清零。旧失败文件继续兼容读取。
 
 本次改动仅对新冻结执行版本生效，旧 Bundle 不热修改。模型保护、预算和用户停止仍由宿主执行。详见[修改计划与验收](../plans/model-request-recovery.md)及[插件恢复接口](../../knowledge/plugin-sdk/guides/request-recovery.md)。
 
@@ -398,3 +448,64 @@ Meta 普通回合结束不会结束活动；无在途实验/构建时，后台�
 “覆盖不足，暂不计算”是统计口径说明：该版本/范围中仍有任务没有可计分结果。即使某版本的所有实验都已结束，只测过部分任务也会覆盖不足。点开逐任务/逐次结果，可分别查看排队、运行和失败原因；排队与运行不计入成功率分母，已有官方评分和任务完成规则不变。
 
 报告、版本选择中的“历史快照”只表示当时的事实，其中“当时运行中”不表示现在仍在运行。历史时长不会增长；报告修订时间不是实验状态更新时间。当前进度应回到实验记录查看。只改展示时运行 `npm run build:workbench` 并重新加载浏览器页面；无需重启控制后台，也无需重建资料包或执行包。
+
+
+## 原生 Meta v2 的实际接口与恢复
+
+六个入口为 `domain-control/campaign/experiments/evidence/reporting/stop-review.mjs`，位于同一个 `packages/meta-harness` 包。固定业务接口见 `contracts.json`，通用能力与限制见 `capabilities.json`；准确依赖由 `runtime-package-lock.json` 固定。业务工具直接接收对象参数，写操作须提供稳定的 `idempotencyKey`。修订冲突、无权限、不可用与参数错误返回明确类别；未知结果保留请求身份，由 `campaign_status.metaRequests` 的文件和未决列表查询，不盲目重发。批次、计划、条件修改及异步检查/冻结可从后台已提交记录恢复原响应。
+
+| Runner 路径 | 内容 |
+|---|---|
+| `/work/plugins` | 可写插件草稿；只有声明源码与资产进入冻结版本 |
+| `/work/analysis`、`/work/checks` | 持久分析脚本与检查文件，不进入 Solver 导出 |
+| `/evidence/index.json` | 完整材料索引、容器内路径、SHA-256、字节数、来源与可用性 |
+| `/materials`、`/sdk`、`/versions` | 只读活动材料、匹配资料和版本文件 |
+| `/outputs/index.json` | 原始终端流与工具结果文件；live、complete、partial 分开 |
+| `/session` | 原生持久会话与长输出 spill；不作为计量或权限依据 |
+
+终端原始 PTY 字节在原生 scrollback/预览裁剪前流式捕获。捕获器每个 Agent 最多保存 256 MiB，超出后停止生产者并保留已有部分，不返回完整成功。普通工具结果另存完整结构；文件和搜索的完整来源仍是被查询文件，终端预览自身不冒充完整 stdout。原生 `bash` 保持会话内 shell 状态；原生终端/jobs 可管理后台任务。OS 进程不跨容器恢复，输出标注中断，模型需核对后决定后续命令。
+
+开发镜像固定 Node 24.13、Python 3.11.2、NumPy 1.24.2、rg 13 与 jq 1.6；Debian arm64/amd64 包及 npm 内容均记录准确版本和摘要，通过宿主共享缓存获取、在无凭据环境安装。仅 arm64 实机验证已完成。每个 Runner 为 2 CPU、1 GiB 内存、128 进程、256 MiB 临时区；主/子代理都没有任意外网，Meta 未配置额外 MCP 服务。可用技能从只读 SDK 与自己的原生技能目录加载；Office UI/渲染不装入此无界面配置。
+
+普通研究子代理和审查者各有独立容器、工作区和会话，不能访问主工作区的可写挂载。研究结果由宿主发布到 `/materials/agents/<id>/index.json`；主 Meta 再审阅或合并，默认不让两个 Agent 写同一插件。子代理最多同时 2 个，发布文件总量上限为 64 MiB；超出时保留原工作区并返回未完整发布原因。角色由宿主通道绑定，Runner 内没有可用于冒充审查者的共享签名密钥。
+
+原生 `ask_user_question` 经 `meta-control` 接到持久后台，主 Meta 可发问，工作台的 Meta 页面提供选择和文字回复。页面离线不回答问题；问题、用户回复和通知分别持久化。当前采用阻塞式原生提问，仍受活动截止限制；重启后未决问题及已有回答进入恢复状态，不能把退出或超时当成用户许可。
+
+新 Meta 出现临时请求/进程故障时，在同一尚未完成回合内最多追加两次技术恢复，间隔 2 秒、10 秒。优先调用原生 `session/resume`，恢复失败时显式记录续接新会话及前序身份。鉴权、预算、权限、完整性与确定性装配错误不自动重试。恢复耗尽显示“需处理”，已受理实验继续受后台监督；排查后可由用户暂停再恢复。通知领取不推进消费游标，只有完成持久会话处理后才 ACK。未知用量保留，恢复不增加原预算和墙钟。
+
+`report_get_facts` 产生不可变事实文件及 `factsId`；`report_save` 接收分析或 `/work/analysis` 中带 SHA-256 的分析文件，并校验预期报告修订。完成时不再覆盖模型引用的事实快照。保留版本同样检查 `expectedSelectionRevision`。
+
+可重复工程验证入口（使用临时数据，不调用付费模型）：
+
+```sh
+npm test
+npm run test:contracts
+npm run build:workbench
+python3 scripts/check-boundaries.py
+python3 tests/contracts/meta_runtime.py --native
+python3 tests/contracts/meta_runtime.py --native --recover
+python3 tests/contracts/meta_runtime.py
+python3 tests/contracts/relocation.py
+python3 tests/contracts/harbor-score-pipeline.py --native-meta \
+  --quantum-harbor /absolute/Quantum-Harbor \
+  --task-image-lock /absolute/prepared-task.lock.json \
+  --output /absolute/new-validation-directory
+```
+
+容器契约依赖 Docker 和可用运行镜像；`PHYEXP_META_TEST_IMAGE` 可指定已准备好的 Meta 镜像。最后一项贯通官方验证器，脚本故意不提交科学答案，正确结果是官方零分及明确的未提交归因。它验证 Meta 能读完整材料、运行 Python、写插件、检查/冻结/提交，再从后台读到第二次官方结果，不用于宣称科学通过。
+
+### Meta v3 业务回执与报告
+
+新活动冻结 `meta-tools-v3`、`meta-tool-receipt-v1` 和 `meta-report-analysis-v1` 及渲染摘要。`evidence_list`、`sdk_read`、`results_compare`、`candidate_retain`、`campaign_status`、`candidate_list`、`report_save` 返回描述、必要状态/计数和完整文件路径，实际模型回执上限 4 KiB。原生 read/grep/bash 仍按请求返回内容；原始终端捕获保留。业务回执归档标为 `business-receipt`，不冒充原始证据全文。
+
+`campaign_status` 和 `candidate_list` 使用空对象，`evidence_list` 可带 batchId/trialId、无分页，`sdk_read` 仅带文档 id，同版本文档导航为 `/sdk/index.json`。状态和通知通过完整快照文件提供历史详情，快照非全库原子事务；写操作仍校验修订。不可用原件保留目录条目及原因。
+
+报告优先先写 `/work/analysis/*.json`，再提交 path/sha256。`report_get_facts` 提供同版本正文 schema 与最小模板；直接 analysis 对象使用同一规则。problems 必须为数组，元素含 status（resolved/unresolved）、description，可附 evidenceRefs。未声明字段拒绝保存；所有已知格式和引用错误进入诊断文件，`rejected/committed=false` 不占未决操作。修正参数必须换幂等键。
+
+同键同参数重放已提交报告时不重新读取后来改变的草稿。报告/保留事务记录请求关联；若已提交但文件发布失败，返回 `committed`，用原参数原键重试修复回执，不能据此创建第二次提交。旧报告、官方评分、轨迹和旧活动协议不回写。
+
+无 `toolContract` 的历史活动仍走 v2，未知版本或摘要不匹配明确拒绝；恢复活动前须恢复对应协议实现，不可自动升级。七工具之外的业务接口仍沿用原有返回，本次未承诺所有工具已精简。测试包括 `python3 -m unittest discover -s tests/unit -p "meta_receipts_test.py"` 及上方原生/评分链路入口。
+
+收尾状态摘要会明确缺失报告数量和下一份 batchId；完整清单在状态文件 `data.closeout`。失败实验仍需独立轮报告，总报告不替代它；已关闭探索时无需再次调用 campaign_finish。收尾可暂停/恢复，暂停不会被监督轮询自动撤销，恢复不重新开放实验或增加原预算。新增回归入口：`python3 tests/contracts/meta_runtime.py --native --final-first`。
+
+新旧工作台的活动页面均提供“暂停收尾”。报告文件必须是 `/work/analysis` 内的普通文件；符号链接、目录与管道会被拒绝，修正后用新的幂等键提交。

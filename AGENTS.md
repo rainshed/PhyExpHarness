@@ -6,7 +6,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| `src/execution/` | 冻结 Bundle、隔离 Runner、模型网关及 Harbor adapter |
+| `src/execution/` | 插件版本与组合解析、隔离 Runner、模型网关及 Harbor adapter |
 | `src/control/` | 独立后台、活动、预算、调度与 Meta 会话 |
 | `src/evidence/`、`src/reporting/`、`src/exporting/` | 证据查询、报告生成与冻结项目导出 |
 | `src/runtime/`、`src/integrations/` | 历史命令与导入的兼容入口 |
@@ -24,12 +24,15 @@
 |---|---|
 | 项目目标与产品要求 | [README](README.md)、[需求文档](docs/requirements/meta-harness.md) |
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
+| 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
+| Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
 | 新 UI、插件并存与切换 | [新工作台设计](docs/design/meta-workbench-studio.md) |
 | 开发推进、验证与验收规则 | [开发任务书](docs/plans/meta-harness-development.md) |
 | 安装、构建、运行、恢复与已知限制 | [运行说明](docs/operations/meta-harness.md) |
 | 模型流保护、失败诊断与离线回放 | [运行说明](docs/operations/meta-harness.md#模型请求保护与故障诊断) |
 | 模型请求恢复与故障零分增量 | [专项计划](docs/plans/model-request-recovery.md) |
+| 已结束未评分尝试计失败与历史计分兼容 | [任务完成规则 v4](docs/design/task-completion-v4.md) |
 | Meta 自主资源规划与限额执行修改 | [专项计划](docs/plans/meta-resource-planning.md) |
 | 执行插件开发接口与样例 | [SDK 资料](knowledge/plugin-sdk/README.md) |
 | Meta 系统职责与默认目标 | [系统模板](src/control/prompts/meta-system.md)、[默认值](schemas/meta-defaults.json) |
