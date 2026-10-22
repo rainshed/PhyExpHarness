@@ -56,8 +56,21 @@ def seed(service):
     service.research.save(c,{**record,'kind':'turning_point','state':'testing','summary':'后续转折：将下一步重点改为验证触发条件。','reportIds':[report['id']],'decisionIds':[selection['selectionDecision']['id']]},2,'turning-ui',r['recordId'])
     return c
 
+def seed_large(service,campaign):
+    """Exercise paging and long Chinese summaries without creating scientific results."""
+    for i in range(25):
+        service.research.save(campaign,{'kind':'motivation','state':'proposed',
+            'summary':f'规模夹具 {i+1}：保存未形成候选的方向，便于核对研究摘要分页。',
+            'problem':'这是一条合成的阅读检查记录。' * 120,
+            'hypothesis':'只验证长中文与分页可用，不主张任何科学效应。',
+            'change':'未修改执行插件。','validation':'翻页并展开原记录。',
+            'limitations':['合成夹具，不是实际研究发现。'],'nextStep':'无科学实验计划。','factAt':0},
+            0,f'scale-{i}')
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--data-dir',type=Path,required=True);p.add_argument('--port',type=int,default=18562);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--data-dir',type=Path,required=True);p.add_argument('--port',type=int,default=18562);p.add_argument('--large',action='store_true');args=p.parse_args()
     service=ControlService(ROOT,args.data_dir,ROOT.parent/'Quantum-Harbor',f'http://127.0.0.1:{args.port}')
-    print(json.dumps({'campaignId':seed(service),'fixture':True,'modelRequests':0}),flush=True)
+    campaign=seed(service)
+    if args.large:seed_large(service,campaign)
+    print(json.dumps({'campaignId':campaign,'fixture':True,'modelRequests':0}),flush=True)
     uvicorn.run(make_app(service,supervise=False),host='127.0.0.1',port=args.port,log_level='warning')
