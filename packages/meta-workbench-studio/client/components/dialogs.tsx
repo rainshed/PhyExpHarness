@@ -1,7 +1,7 @@
 import React,{useEffect,useRef} from 'react';
 import {api,short,number} from './common';
 import {LimitFields} from './fields';
-import {evidenceEnd} from './evidence-text.mjs';
+import {evidenceEnd} from '@phyexp/meta-workbench-client/evidence-text';
 export function WorkbenchDialogs({w,evidenceIntro,allowEvidenceDownload=false}:any){
  const {busy,evidence,setEvidence,limits,setLimits,source,setSource,renaming,setRenaming,setNotice,limitsError,setLimitsError,act,saveLimits,closeDetails,readEvidence,readSource}=w;
  const host=useRef<HTMLDivElement>(null);

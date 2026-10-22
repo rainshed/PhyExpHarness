@@ -1,4 +1,4 @@
-import {reportContext} from '../../meta-workbench/client/trial-status.mjs';
+import {reportContext} from './components/trial-status.mjs';
 // Presentation helpers consume backend assessments; they never re-score trials.
 export const finite = x => typeof x === 'number' && Number.isFinite(x);
 const stable = x => JSON.stringify(x && typeof x === 'object' ? Array.isArray(x) ? x.map(v => JSON.parse(stable(v))) : Object.fromEntries(Object.keys(x).sort().map(k => [k, JSON.parse(stable(x[k] ?? null))])) : x ?? null);
@@ -48,7 +48,7 @@ export function taskMean(v, tasks) {
   const rows = tasks.map(t=>v.taskEvaluation?.byTask?.[t]);
   return rows.length && rows.every(r=>r?.eligible>0 && finite(r.successRate)) ? rows.reduce((sum,r)=>sum+r.successRate,0)/rows.length : null;
 }
-export {outcomeNote} from '../../meta-workbench/client/trial-status.mjs';
+export {outcomeNote} from './components/trial-status.mjs';
 export function versionCost(rows) {
   const usage = rows.map(t=>t.accountedUsage || t.summary?.accounting); // Ledger snapshot or archived accounting receipt, never a guessed token total.
   const recorded = usage.filter(u=>finite(u?.confirmedTokens));

@@ -1,0 +1,27 @@
+{
+  "name": "@phyexp/meta-workbench-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./react": "./react.ts",
+    "./types": "./types.ts",
+    "./form": "./form.mjs",
+    "./goal": "./goal.mjs",
+    "./create-attempt": "./create-attempt.mjs",
+    "./model-catalog": "./model-catalog.mjs",
+    "./evidence-text": "./evidence-text.mjs"
+  },
+  "peerDependencies": {
+    "react": "*"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "phyexpWorkbench": {
+    "kind": "client"
+  }
+}

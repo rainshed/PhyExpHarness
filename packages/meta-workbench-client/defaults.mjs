@@ -1,0 +1,2 @@
+import {defaultObjective} from './goal.mjs';
+export const defaults={resourcePolicy:'meta-resource-planning-v1',name:'我的 Harness 进化实验',objective:defaultObjective,solver:{provider:'openai-codex',model:'gpt-6-sol',reasoningEffort:'medium'},meta:{provider:'openai-codex',model:'gpt-6-astra',reasoningEffort:'medium'},tasks:['time_budgeted_hamlearn_10q'],maxRounds:null,maxTrials:null,concurrency:1,wallTimeSeconds:7200,trialTimeSeconds:null,softTokenLimit:null,reserveSeconds:null,reserveTokens:null,stopMode:'strict',drainGraceSeconds:300,retries:0};

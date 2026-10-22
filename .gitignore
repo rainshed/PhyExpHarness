@@ -17,8 +17,7 @@
 *.db-shm
 
 # Rebuilt from source and pinned dependencies with `npm run build`.
-/packages/meta-workbench/lib/
-/packages/meta-workbench-studio/lib/
+/packages/*/lib/
 /knowledge/plugin-sdk/reference/
 
 # Dependencies, Python bytecode and test/tool caches.

@@ -43,7 +43,7 @@ test('archived accounting receipts support live cost without treating raw model 
 });
 
 test('evidence pagination follows Unicode characters rather than UTF-16 units or bytes',async()=>{
- const {evidenceEnd}=await import('../../packages/meta-workbench/client/evidence-text.mjs');
+ const {evidenceEnd}=await import('@phyexp/meta-workbench-client/evidence-text');
  assert.equal(evidenceEnd({offset:16000,text:'证据🧪α'}),16004);
  assert.equal(evidenceEnd({offset:4,text:''}),4);
 });

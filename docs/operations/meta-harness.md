@@ -29,7 +29,7 @@ npm test
 python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
 ```
 
-`npm run build` 先从锁文件对应的已安装 SDK、资料源文件和执行资产生成 `knowledge/plugin-sdk/reference/`，再生成经典与新工作台的 `packages/meta-workbench/lib/client.js`、`packages/meta-workbench-studio/lib/client.js`。这些生成目录均不提交；不要从其他活动的冻结资料包复制文件来补齐。更新依赖、资料或工作台源码后，在启动前重新构建。直接运行 Python 检查或 H0 入口前也须完成该步骤；`npm test` 会自动重建资料包。
+`npm run build` 先从锁文件对应的已安装 SDK、资料源文件和执行资产生成 `knowledge/plugin-sdk/reference/`，再按 UI 清单生成各 UI 的 `lib/client.js`，当前为 `packages/meta-workbench-studio/lib/client.js`。这些生成目录均不提交；不要从其他活动的冻结资料包复制文件来补齐。更新依赖、资料或工作台源码后，在启动前重新构建。直接运行 Python 检查或 H0 入口前也须完成该步骤；`npm test` 会自动重建资料包。
 
 另开一个终端，在本项目目录运行：
 
@@ -37,34 +37,37 @@ python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
 node scripts/workbench.mjs
 ```
 
-使用终端输出的启动链接完成本机登录，之后可访问 `http://127.0.0.1:18401`。在 DeepSeek 侧栏选择「研究工作台」（φ，新 UI）或「进化工作台」（◈，经典 UI）。宿主的首次账号提示可关闭；进化工作台使用独立后台管理模型。通过「供应商与模型」入口配置，或从新建活动的「管理供应商与模型」进入。Codex 订阅沿用宿主登录；API Key 可在此页面保存，也可继续使用后台环境变量。不要将进化活动的配置填入 DeepSeek 宿主自己的模型设置页。
+使用终端输出的启动链接完成本机登录，之后可访问 `http://127.0.0.1:18401`。在 DeepSeek 侧栏选择「研究工作台」（φ，Studio）。宿主的首次账号提示可关闭；进化工作台使用独立后台管理模型。通过「供应商与模型」入口配置，或从新建活动的「管理供应商与模型」进入。Codex 订阅沿用宿主登录；API Key 可在此页面保存，也可继续使用后台环境变量。不要将进化活动的配置填入 DeepSeek 宿主自己的模型设置页。
 
 默认控制服务为 `127.0.0.1:18402`，只监听本机。默认数据目录在 macOS 为 `~/Library/Application Support/PhyExpHarness/`，应使用仓库外、非同步的本地目录。自定义位置时，两个终端都设置同一个 `PHYEXP_DATA_DIR`；后台也支持 `--data-dir`。工作台启动器从该目录读取仅当前用户可读的 `user-token`，不会把它放进浏览器。可用 `PHYEXP_CONTROL_URL`、`PHYEXP_UI_PORT`、`PHYEXP_UI_HOME` 指定连接和 UI 宿主位置。
 
 不要在同一数据目录启动第二个后台。服务用文件锁保证单一所有者。更换数据目录等于打开另一组活动，不会迁移或删除旧数据。
 
-### 新旧 UI 插件切换
+### UI 版本选择与维护
 
-默认同时加载共享 API 桥、经典 UI 和新 UI。两个面板从同一后台读取数据；活动选择和新建草稿共用，视图切换不会启动或停止实验。新 UI 的结构和功能约定见[设计文档](../design/meta-workbench-studio.md)。
+默认只加载 Studio 和独立 API 桥。经典 UI 已移除，公共客户端位于 `packages/meta-workbench-client/`。版本清单为 `profiles/meta-workbench/uis.json`，包含默认版本和各 UI 对应的包；通用规则见[UI 模块化设计](../design/meta-workbench-modularity.md)，Studio 页面见[设计文档](../design/meta-workbench-studio.md)。
 
-Studio 阅读版的主要入口为「活动概览」「版本对比」「实验记录」「研究报告」。成功率按版本与任务展示，百分比旁保留成功数/分母；条件不同的候选默认排除，可手动加入作为参考，缺失条件会标明待确认。共同可评分任务是明确缩小后的范围，不能代表全任务表现；成本仍按版本全部实验统计，并显示记录是否完整。
-
-轮次默认只显示摘要，展开后查看逐次结果、故障与终止入口。报告先显示结论和任务比较，原始三表、过程与技术记录在附录；「阶段摘要 · 分析未完成」不表示完整分析已完成。从轮次或报告列表进入时读取最新修订，仍可切回旧版。依据从结论和实验结果旁打开，全文可下载；「运行详情」保留高级证据检索。插件源码与版本配置位于「插件与版本详情」，所有创建、控制、运行计划、供应商和导出功能继续使用共享业务。
+Studio 的主要入口为「活动概览」「版本对比」「实验记录」「研究报告」。成功率按版本与任务展示，保留分母、覆盖及可比较性说明；报告与证据继续使用历史快照。
 
 ```sh
-# 默认并存，使用宿主侧栏或新界面的“切换经典界面”切换
-PHYEXP_UI_VARIANT=both node scripts/workbench.mjs
-# 只装配新 UI
+# 构建清单中的全部 UI（当前只有 Studio）
+npm run build:workbench
+# 按清单默认版本启动
+node scripts/workbench.mjs
+# 仅构建或启动指定版本
+PHYEXP_UI_VARIANT=studio npm run build:workbench
 PHYEXP_UI_VARIANT=studio node scripts/workbench.mjs
-# 只装配经典 UI，方便回退
-PHYEXP_UI_VARIANT=classic node scripts/workbench.mjs
+# 加载清单中全部版本
+PHYEXP_UI_VARIANT=all node scripts/workbench.mjs
 ```
 
-更改此环境变量前关闭对应 UI 宿主，再以相同 UI 目录启动；不要停止控制后台。它是宿主装配选择，不是向后台发送活动控制命令。修改客户端源码后先 `npm run build:workbench`，再重新加载插件或重启 UI 宿主；不承诺源码自动热更新。
+新增版本后可用逗号分隔清单内 ID 选择多个版本。旧 `both` 值兼容为 `all`；`classic` 已无对应包，会明确报错。构建不设置选择变量时构建全部版本，启动不设置时使用清单的 `default`。宿主导航只注册实际加载的面板，Studio 不再含硬编码的经典界面按钮。
 
-使用包名 profile 手工安装时，须同时安装 `@phyexp/meta-workbench-bridge`，再选择一个或两个 UI 包。原来由经典插件拥有的 `/phyexp/api` 已迁入共享桥，不能只保留旧的单 UI profile。参考 `profiles/meta-workbench/cordis.patch.yml`。新 UI 依赖经典包内的共享客户端源文件，但构建包不要求经典面板同时加载。
+更改装配前关闭对应 UI 宿主，再以相同 UI 目录启动；不需要停止控制后台。客户端源码变化后重新构建，再重新加载插件或重启 UI 宿主。已运行的旧宿主不会自动采用新的插件清单，不能仅凭文件修改认定已经切换。
 
-卸载 UI 只清理其面板和读取轮询。共享桥始终单独装配，不能随旧 UI 一起删除。未保存的供应商配置应先保存或取消；密钥草稿不跨面板保存。宿主插件管理器的启用/停用和页面切换是不同操作，后台状态均以重新读取后的结果为准。
+包名 profile 须安装 `@phyexp/meta-workbench-bridge` 和选中的 UI 包，公共客户端作为 UI 的构建依赖。示例见 `profiles/meta-workbench/cordis.patch.yml`。新增 UI 时声明独立包入口和 `phyexpWorkbench.kind: "ui"`，加入清单、选择默认版本后构建；移除时删除该包与清单项及依赖，默认版本必须仍有效。依赖与增删检查会拒绝具体 UI 相互引用。
+
+Studio 首次加载将旧草稿、活动选择与待重试创建身份复制到本版存储记录，保留旧键；以后使用自己的命名空间。其他 UI 的状态默认隔离，草稿共享需要明确的兼容或导入。未保存供应商设置须先保存或取消，密钥草稿不跨面板保存。卸载只释放本版读取和监听，桥与后台独立存活。
 
 ### 使用 Tailscale 从手机访问
 
@@ -84,7 +87,7 @@ PHYEXP_UI_VARIANT=classic node scripts/workbench.mjs
 tailscale serve --bg --https=18443 http://127.0.0.1:18401
 ```
 
-手机首次打开启动终端打印的完整 HTTPS 登录链接（带 `token`），宿主会写入浏览器会话并跳转到不带令牌的地址；以后收藏干净地址即可。该链接授予此 UI 宿主的访问权，只通过可信渠道传给自己的设备，不写入仓库或公开文档。宿主重启后生成新的启动令牌，已有有效浏览器会话由同一 UI 数据目录保留。默认首屏需从侧栏选择「研究工作台」（新 UI）或「进化工作台」（经典 UI）。
+手机首次打开启动终端打印的完整 HTTPS 登录链接（带 `token`），宿主会写入浏览器会话并跳转到不带令牌的地址；以后收藏干净地址即可。该链接授予此 UI 宿主的访问权，只通过可信渠道传给自己的设备，不写入仓库或公开文档。宿主重启后生成新的启动令牌，已有有效浏览器会话由同一 UI 数据目录保留。默认首屏从侧栏选择「研究工作台」（Studio）。
 
 手机使用完整浏览器打开 HTTPS 启动链接。若聊天应用把链接转成「文件预览」，长按复制链接后粘贴到 Chrome 等浏览器的地址栏；文件预览的抓取器可能不保留登录跳转的会话 Cookie，从而得到 401 或抓取异常。`127.0.0.1` 仅用于工作台所在电脑，不能作为手机浏览器的访问地址。
 
@@ -151,7 +154,7 @@ Meta 可通过 materials_list/search/read 按需读取允许的任务原文、SD
 
 ## 资源计划与准入诊断
 
-新活动使用 `meta-resource-planning-v1`。两套工作台共用“资源计划与实际条件”视图，展示来源、计划版本、有效并发及运行任务启动时条件；用户可填写理由覆盖计划。Meta 使用 `campaign_plan_update` 调整未来批次的资源分配，已受理批次保持快照。未指定的 token 上限保持不限；总 token 包含缓存用量，持续如实计量。
+新活动使用 `meta-resource-planning-v1`。Studio 的“资源计划与实际条件”视图，展示来源、计划版本、有效并发及运行任务启动时条件；用户可填写理由覆盖计划。Meta 使用 `campaign_plan_update` 调整未来批次的资源分配，已受理批次保持快照。未指定的 token 上限保持不限；总 token 包含缓存用量，持续如实计量。
 
 单次时长包含启动、Solver、官方评分和清理。执行层原有的固定评分与清理预留为 330 秒，由 `executionTimePolicy` 公开；计划和批次不能分配不大于该预留的时长，启动还会占用部分时间。工作台同时解释这项执行条件与 Meta 活动收尾预留的区别，运行条件保存整次截止和 Solver 截止。计划预留或 token 容量阻止待执行任务启动时，后台发送明确通知；次数上限关闭新批次后，已有任务的计划仍可调整。
 
@@ -522,4 +525,4 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 
 原生 Meta 进程已退出时，如果活动正在收尾、所有实验和后台操作均已结束，且每轮分析和最终分析均已保存，后台会直接完成活动，不再要求最后一条模型回复。报告提交后发生的额度拒绝或连接故障仍保留在 Meta 会话与用量记录中，不补跑模型、不覆盖报告。暂停中的活动、仍有在途工作或缺少分析的活动不适用此完成条件。回归入口：`python3 -m unittest discover -s tests/unit -p 'meta_closeout_test.py'`。 原生隔离验证：`python3 tests/contracts/meta_runtime.py --native --closeout-budget-denial`，使用本地模拟供应商重现报告提交后最后一次请求被预算拒绝，不调用外部模型。
 
-新旧工作台的活动页面均提供“暂停收尾”。报告文件必须是 `/work/analysis` 内的普通文件；符号链接、目录与管道会被拒绝，修正后用新的幂等键提交。
+Studio 的活动页面提供“暂停收尾”。报告文件必须是 `/work/analysis` 内的普通文件；符号链接、目录与管道会被拒绝，修正后用新的幂等键提交。

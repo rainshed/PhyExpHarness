@@ -1,9 +1,7 @@
-# Install all three packages; the bridge is independent of both UI plugins.
+# Install Studio and the independent bridge; the client package is a build dependency.
 # For this checkout use node scripts/workbench.mjs.
 - insert:
     - id: phyexp-meta-workbench-bridge
       name: '@phyexp/meta-workbench-bridge'
-    - id: phyexp-meta-workbench
-      name: '@phyexp/meta-workbench'
     - id: phyexp-meta-workbench-studio
       name: '@phyexp/meta-workbench-studio'

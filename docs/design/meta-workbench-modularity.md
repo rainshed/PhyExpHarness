@@ -1,12 +1,12 @@
 # 工作台 UI 模块化与版本管理
 
-日期：2026-10-22 · 状态：设计与迁移已获授权，实施和验收待完成。
+日期：2026-10-22 · 状态：模块化迁移已实施，专项自动检查和隔离宿主 UI 检查通过。全仓容器相关检查仍受本机 Runner 镜像缺失影响，详见本地检查记录。
 
 本文细化[总体实现方案](meta-harness-implementation.md#9-ui-信息架构与交互)的 UI 边界；[Studio 设计](meta-workbench-studio.md)负责该版页面与阅读体验；步骤与验收以[开发任务书](../plans/meta-harness-development.md#22-ui-模块化与经典版移除)为准。
 
 ## 1. 目标与迁移起点
 
-每版 UI 都能独立新增、修改和移除，不成为其他 UI 的基础依赖。当前经典版与 Studio 并存，Studio 从经典目录引用共享源码；运行时独立卸载已验证，源码独立尚未完成。本次先提取公共客户端，让 Studio 独立，再删除经典版专属代码。迁移后默认 Studio，后续可注册其他设计方案。
+每版 UI 都能独立新增、修改和移除，不成为其他 UI 的基础依赖。迁移前经典版与 Studio 并存，Studio 从经典目录引用共享源码。现已提取公共客户端，Studio 使用其公开入口，经典版专属代码和依赖已删除。默认 Studio，后续可注册其他设计方案。
 
 页面和功能模块也允许替换或删除。界面删减不自动删除后台 API、实验或报告；默认工作台仍须满足需求中的完整操作路径。试验版可只提供部分页面，但须明确范围，不把缺失入口解释为后台能力不存在。
 
@@ -16,7 +16,7 @@
 |---|---|
 | 控制后台 | 持久状态、权限、预算、调度、计分和报告事实，不依赖 UI |
 | `meta-workbench-bridge` | 单份宿主 API 桥，独立装配，保留认证和用户身份隔离 |
-| `meta-workbench-client`（待新增） | API、契约、查询、命令、校验、取消及请求身份管理，不含 JSX、DOM、页面导航或样式 |
+| `meta-workbench-client` | API、契约、查询、命令、校验、取消及请求身份管理，不含 JSX、DOM、页面导航或样式 |
 | `meta-workbench-ui`（按需） | 稳定且实际被复用的组件，可选使用，不承载后台规则 |
 | Studio 及未来 UI | 各自宿主/客户端入口、导航、页面、交互、组件与作用域样式 |
 
@@ -62,3 +62,14 @@
 公共客户端验证取消、过期响应、修订、幂等、草稿迁移和错误保留；具体 UI 验证主要操作、模块、样式与键盘。经典包不可访问时仍能构建 Studio。生命周期检查确认面板释放不释放桥、不发送后台停止命令。
 
 旧测试记录仅说明旧结构；迁移不能提前宣称完成。实现状态随检查更新，新运行命令验证后才写入运行说明。
+
+## 7. 已实现入口与维护方式
+
+- `profiles/meta-workbench/uis.json`：`version: 1`、`default` 和 `uis`（每项包含 `id`、`package`）。`scripts/workbench-uis.mjs` 统一解析和选择，未知版本、重复 ID/包和失效默认版本会报错。
+- 新 UI 包声明 `phyexpWorkbench.kind: "ui"`、`host/index.mjs`、`client/index.tsx`，并导出 `.` 和 `./client`。添加自身包与清单项即可；宿主面板、导航和样式标识须唯一。当前库只有 Studio，扩展与删除由临时测试包验证。
+- 公共客户端导出根入口（`api`、`createCommands`、`createDraftStore`、`watchCampaign`）、`/react`（`useCampaignData`、`useResource`）、`/types` 及声明的校验/资料辅助入口。包标识为 `phyexpWorkbench.kind: "client"`；无公共展示组件包，展示组件当前由 Studio 持有。
+- Studio 的 `client/shell/features.tsx` 集中注册各页面；`features/` 实现页面，`components/` 保存本版复用展示，`shell/use-workbench.tsx` 负责导航、焦点和抽屉。删除页面同时处理注册导入和跨页入口；找不到的页面显示明确提示。
+- Studio 使用 `phyexp:ui:studio:state` 的 v1 单一存储记录保存草稿、选中活动与未完成创建请求。首次迁移复制旧 `phyexp-draft`、`phyexp-campaign`、`phyexp-create-attempt`，保留原键。未来 UI 默认使用自己的命名空间；仅在明确兼容时导入其他版本数据。
+- 本次拆分中的关闭详情、切换活动与卸载使用请求取消和过期响应检查；创建身份先持久化再提交。持久化失败不提交创建命令，未知草稿格式保留原内容并显示错误。
+
+构建和启动命令见[运行说明](../operations/meta-harness.md#ui-版本选择与维护)。依赖检查、临时 UI 增删、客户端及页面渲染回归分别位于 `scripts/check-boundaries.py`、`tests/unit/workbench-registry.test.mjs`、`workbench-client.test.mjs`、`workbench-features.test.mjs`；生命周期与认证契约仍位于 `tests/contracts/workbench-*.test.mjs`。

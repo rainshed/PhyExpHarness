@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {trialStage,waitingReason,trialTiming,pendingSummary,outcomeNote,coverageLabel,contextTrials,reportContext,activityProgress} from '../../packages/meta-workbench/client/trial-status.mjs';
+import {trialStage,waitingReason,trialTiming,pendingSummary,outcomeNote,coverageLabel,contextTrials,reportContext,activityProgress} from '../../packages/meta-workbench-studio/client/components/trial-status.mjs';
 const queued={id:'q',state:'reserved',batchId:'b',scoringStatus:'pending',completionLabel:'任务结果待定；官方运行中，等待评分'};
 const running={id:'r',state:'running',batchId:'b',startedAt:100,scoringStatus:'pending'};
 const campaign={state:'running',config:{concurrency:5},counts:{activeTrials:5},batches:[{id:'b',acceptedAt:50}]};

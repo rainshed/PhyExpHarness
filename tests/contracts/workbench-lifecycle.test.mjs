@@ -4,7 +4,6 @@ import vm from 'node:vm';
 import {build} from 'esbuild';
 import {Context,Service} from '@deepseek-ai/cordis';
 import * as bridge from '../../packages/meta-workbench-bridge/index.mjs';
-import * as classicHost from '../../packages/meta-workbench/host/index.mjs';
 import * as studioHost from '../../packages/meta-workbench-studio/host/index.mjs';
 
 // Exercise the production client entry points with native Cordis effect ownership.
@@ -30,7 +29,7 @@ async function client(name){
  return sandbox.module.exports;
 }
 
-test('new and classic UI unload independently while one authenticated bridge remains',async()=>{
+test('Studio and an independent UI unload while one authenticated bridge remains',async()=>{
  const previous={url:process.env.PHYEXP_CONTROL_URL,token:process.env.PHYEXP_USER_TOKEN};
  process.env.PHYEXP_CONTROL_URL='http://127.0.0.1:1';process.env.PHYEXP_USER_TOKEN='fixture-only';
  const ctx=new Context();let routes=0;
@@ -40,14 +39,15 @@ test('new and classic UI unload independently while one authenticated bridge rem
  try{
   await ctx.plugin(Slots).await();
   const route=ctx.plugin(bridge);await route.await();
-  const classic=await client('meta-workbench'),studio=await client('meta-workbench-studio');
-  const ch=ctx.plugin(classicHost),sh=ctx.plugin(studioHost);await ch.await();await sh.await();
+  const studio=await client('meta-workbench-studio');
+  const alternative={inject:['slots'],apply(ctx){ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'temporary-ui'},()=>null))}};
+  const sh=ctx.plugin(studioHost);await sh.await();
   assert.equal(routes,1,'UI hosts must not register API routes');
-  const first=ctx.plugin(classic),second=ctx.plugin(studio);await first.await();await second.await();
-  assert.equal(ctx.slots.items.size,4);
+  const first=ctx.plugin(alternative),second=ctx.plugin(studio);await first.await();await second.await();
+  assert.equal(ctx.slots.items.size,3);
   assert.ok(ctx.slots.items.has('main/phyexp-workbench-studio'));
-  assert.ok(ctx.slots.items.has('main/phyexp-workbench'));
-  await first.dispose();await ch.dispose();
+  assert.ok(ctx.slots.items.has('main/temporary-ui'));
+  await first.dispose();
   assert.equal(ctx.slots.items.size,2);assert.equal(routes,1);
   await second.dispose();await sh.dispose();
   assert.equal(ctx.slots.items.size,0);assert.equal(routes,1);

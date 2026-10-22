@@ -20,7 +20,7 @@ function request(port,url,headers={},method='GET',body=''){
  });
 }
 
-for(const variant of ['both','studio','classic'])test(`native ${variant} login protects workbench reads and commands behind an HTTPS proxy`, {timeout:30000},async()=>{
+for(const variant of ['studio','all','both'])test(`native ${variant} login protects workbench reads and commands behind an HTTPS proxy`, {timeout:30000},async()=>{
  const data=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-remote-'));
  const requests=[];
  const backend=http.createServer(async(req,res)=>{
@@ -44,7 +44,7 @@ for(const variant of ['both','studio','classic'])test(`native ${variant} login p
   const launch=output.match(/dsh web: (https:\/\/\S+)/)?.[1];assert.ok(launch,'UI must print the advertised login URL');
   const url=new URL(launch);assert.equal(url.origin,origin);
   const entries=JSON.parse(fs.readFileSync(path.join(data,'ui','workbench.patch.json'),'utf8'))[0].insert;
-  assert.deepEqual(entries.map(p=>p.id),['phyexp-meta-workbench-bridge',...(variant==='studio'?[]:['phyexp-meta-workbench']),...(variant==='classic'?[]:['phyexp-meta-workbench-studio'])]);
+  assert.deepEqual(entries.map(p=>p.id),['phyexp-meta-workbench-bridge','phyexp-meta-workbench-studio']);
   const headers={host:authority};
   assert.equal((await request(port,'/',headers)).status,401);
   for(const method of ['GET','POST'])assert.equal((await request(port,'/phyexp/api/campaigns',{...headers,origin},method,method==='POST'?'{}':'')).status,401);

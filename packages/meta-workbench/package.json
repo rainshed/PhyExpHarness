@@ -1,1 +1,0 @@
-{"name":"@phyexp/meta-workbench","version":"0.1.0","type":"module","main":"host/index.mjs","exports":{".":"./host/index.mjs","./client":"./lib/client.js","./package.json":"./package.json"},"dsh":{"client":{"inject":["@deepseek-ai/dsh-client-ui-layout","@deepseek-ai/dsh-client-ui-renderer"],"platform":"web"}},"peerDependencies":{"@deepseek-ai/cordis":"~4.0.5"}}

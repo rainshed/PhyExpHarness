@@ -111,10 +111,9 @@ src/
   exporting/                 # 按候选清单及插件引用组装项目与压缩包
 packages/
   meta-harness/              # Meta 工具注册、受限后台客户端、开发资料查询入口
-  meta-workbench-client/     # 目标：独立公共客户端，待从经典目录提取
-  meta-workbench-studio/     # Studio UI；迁移后作为默认版本
+  meta-workbench-client/     # 公共 API、查询、命令、草稿与请求身份
+  meta-workbench-studio/     # 当前默认 UI；shell/features/components
   meta-workbench-bridge/     # 所有 UI 共用的固定宿主 API 桥
-  meta-workbench/            # 迁移起点：经典 UI 与共享源码，解除依赖后移除
     host/                    # 用户身份的后台连接与事件桥接
     client/                  # 主面板、导航入口、React 视图与主题接入
 schemas/                     # 有版本的数据契约及兼容性样例
@@ -130,11 +129,11 @@ reports/                     # 本地研究、开发与验收记录；被 Git �
 
 ### 3.2 职责与依赖约束
 
-- **UI 版本可独立删除。** 按[UI 模块化设计](meta-workbench-modularity.md)分开公共客户端与具体界面；禁止 UI 相互依赖，公共层不得引用具体 UI。导航、页面、焦点与样式归各版 UI，公共组件按稳定复用需求建立。当前 Studio 对经典目录的引用是待消除的迁移债务。
+- **UI 版本可独立删除。** 按[UI 模块化设计](meta-workbench-modularity.md)分开公共客户端与具体界面；禁止 UI 相互依赖，公共层不得引用具体 UI。导航、页面、焦点与样式归各版 UI，公共组件按稳定复用需求建立。Studio 已改用公共包入口，经典包已移除；后续 UI 同样不得依赖 Studio 内部源码。
 
 - **执行依赖必须闭合。** `src/execution/` 只依赖明确声明的运行库、执行所需的契约和固定运行资产；不得直接或间接导入 `control/`、`evidence/`、`reporting/`、`exporting/`、平台插件包或旧兼容层 `src/runtime/`、`src/integrations/`。执行侧的审计和官方结果采集保留在执行部分，平台读取它的产物。控制服务可以通过明确入口调用执行能力，执行能力不能回调 Campaign 服务才能完成一次运行。
 - **平台持有业务规则。** `src/control/` 组织证据、报告、导出及其异步操作，持有 Meta 会话的启动、通知和恢复；这些能力不放进 UI 生命周期。`src/exporting/` 负责打包，真实独立验收的预算与调度仍由控制服务受理，导出器不自行启动未记账实验。
-- **Meta 与 UI 通过契约连接后台。** `packages/meta-harness/` 使用 Meta 身份；经典和新 UI 共用 `packages/meta-workbench-bridge/`，通过宿主会话及用户身份访问后台。各包有独立、可验证的入口。它们不通过跨目录源码导入直接访问数据库、调度器或凭据；不互相依赖对方存活。原计划 `src/meta/` 中的插件部分归前者，会话管理归 `src/control/`，资料索引/构建输入归 `knowledge/plugin-sdk/`，受限查询服务由固定后台提供。
+- **Meta 与 UI 通过契约连接后台。** `packages/meta-harness/` 使用 Meta 身份；各版 UI 共用 `packages/meta-workbench-bridge/`，通过宿主会话及用户身份访问后台。各包有独立、可验证的入口。它们不通过跨目录源码导入直接访问数据库、调度器或凭据；不互相依赖对方存活。原计划 `src/meta/` 中的插件部分归前者，会话管理归 `src/control/`，资料索引/构建输入归 `knowledge/plugin-sdk/`，受限查询服务由固定后台提供。
 - **执行契约和资产可以独立选取。** `schemas/` 区分执行与平台契约，执行侧不从统一聚合入口引入平台代码。Solver 使用的 profile/patch 归入执行资产或冻结配方；根目录 `profiles/` 的工作台、开发宿主配置不进入执行包。资料包与其查询服务不成为 Solver 依赖。
 - **测试与交付使用同一执行内容。** 冻结插件内容、组合配置和准确依赖引用；测试与导出共用解析及装配规则，核对实际内容和配置。依赖安装按锁及平台条件复用，导出不复制整个仓库或机器缓存。影响执行语义的启动入口、必要适配及模板须有确定的版本或内容摘要，不依赖导出时的当前源码。
 - **外围代码按实际职责交付。** 网关、隔离、单次监督和 Harbor 适配逐项核对依赖；必要代码提供明确版本的最小插件、入口或适配包，平台调度与研究服务留在平台。不得默认将整个 `src/execution/` 作为每个候选或导出必带的运行底座；划分依据见专项方案第 4 节。
@@ -464,11 +463,11 @@ Trial 阶段建议为 `reserved / starting / executing / evaluating / collecting
 
 ## 9. UI 信息架构与交互
 
-通用依赖、版本注册、状态隔离与增删规则见[UI 模块化设计](meta-workbench-modularity.md)；Studio 布局与功能对应关系见[Studio 设计](meta-workbench-studio.md)。经典版并存是迁移起点，目标先保留 Studio，再按需新增独立方案；经典版不是永久保留要求。
+通用依赖、版本注册、状态隔离与增删规则见[UI 模块化设计](meta-workbench-modularity.md)；Studio 布局与功能对应关系见[Studio 设计](meta-workbench-studio.md)。经典版已移除，当前保留 Studio；后续按需新增独立方案，不要求长期保留旧版本。
 
 ### 9.1 原生插件接入与生命周期
 
-共享 API 桥位于 `packages/meta-workbench-bridge/`，独立于两个 UI 插件装配。经典 `packages/meta-workbench/` 和新 `packages/meta-workbench-studio/` 分别声明 `host/` 的 Node 宿主入口和 `client/` 构建出的 `./client` 浏览器入口，通过 `dsh.client` 注册。浏览器半侧在 root `main` slot 注册工作台面板，通过 `ctx.layout.selectPanel(id)` 进入，并提供导航入口；布局、主题和共享 React 模块沿用锁定的 dsh 组合。客户端 bundle 按该版本的构建/依赖约定发布，不向宿主额外塞入一份不兼容的 React 运行时。
+共享 API 桥位于 `packages/meta-workbench-bridge/`，独立于具体 UI 装配。当前 `packages/meta-workbench-studio/` 及未来 UI 分别声明 `host/` 的 Node 宿主入口和 `client/` 构建出的 `./client` 浏览器入口，通过 `dsh.client` 注册。浏览器半侧在 root `main` slot 注册工作台面板，通过 `ctx.layout.selectPanel(id)` 进入，并提供导航入口；布局、主题和共享 React 模块沿用锁定的 dsh 组合。客户端 bundle 按该版本的构建/依赖约定发布，不向宿主额外塞入一份不兼容的 React 运行时。
 
 使用专门的工作台宿主 profile 装配 UI 和固定适配器；Meta 开发 Runner 和 Solver Runner 继续独立启动。UI 的用户操作身份不挂入模型工具表，Solver profile 不加载工作台或开发工具。原生 UI 接入不要求将生成插件放进拥有用户权限的 UI 宿主执行。
 

@@ -22,6 +22,9 @@
   },
   "private": true,
   "dependencies": {
-    "@phyexp/meta-workbench": "0.1.0"
+    "@phyexp/meta-workbench-client": "0.1.0"
+  },
+  "phyexpWorkbench": {
+    "kind": "ui"
   }
 }

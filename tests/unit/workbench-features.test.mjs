@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {build} from 'esbuild';
+import {defaults} from '@phyexp/meta-workbench-client';
+
+test('all registered Studio pages render, including report appendices after module extraction',async()=>{
+ const result=await build({entryPoints:['packages/meta-workbench-studio/client/shell/features.tsx'],bundle:true,write:false,format:'cjs',platform:'browser',external:['react','react/jsx-runtime'],jsx:'automatic'});
+ const jsx=(type,props)=>({type,props}),react={Fragment:Symbol('Fragment'),createElement:jsx,useState:initial=>[typeof initial==='function'?initial():initial,()=>{}],useEffect(){},useRef:initial=>({current:initial}),useId:()=> 'fixture-id'};
+ const sandbox={module:{exports:{}},exports:null,require:id=>{assert.ok(['react','react/jsx-runtime'].includes(id));return {...react,jsx,jsxs:jsx}}};sandbox.exports=sandbox.module.exports;
+ vm.runInNewContext(result.outputFiles[0].text,sandbox);
+ const {features,FeaturePage}=sandbox.module.exports;
+ const c={id:'fixture',state:'running',config:defaults,trials:[],batches:[],candidates:[],evidence:[],reports:[],exports:[],operations:[],metaSessions:[],selectionDecisions:[],tables:{plugins:[],versions:[],rounds:[]},counts:{rounds:0,startedTrials:0,activeTrials:0,reservedTrials:0},usage:{confirmedTokens:0,unknownRequests:0,inflightReservedTokens:0,unknownReservedTokens:0},elapsedSeconds:0};
+ const report={id:'report',kind:'final',createdAt:100,analysisRevision:1,analysis:{summary:'Fixture summary',decision:'Fixture decision',limitations:[],evidenceRefs:[]},facts:{campaign:c,trials:[],evidence:[],batches:[]},tables:c.tables};
+ const w={c,events:[],report,finalReport:report,readEvidence(){},readReport(){},navigate(){},setNotice(){}};
+ const props={w,c,table:'plugins',setTable(){},tablesProps:{},readEvidence(){},open(){}};
+ function render(node){
+  if(node==null||typeof node==='boolean')return '';
+  if(Array.isArray(node))return node.map(render).join('');
+  if(typeof node!=='object')return String(node);
+  if(typeof node.type==='function')return render(node.type(node.props));
+  return render(node.props?.children);
+ }
+ assert.equal(new Set(features.map(f=>f.id)).size,features.length);
+ for(const feature of features){const output=render(FeaturePage({id:feature.id,...props}));assert.ok(output.length,feature.id);if(feature.id==='reports')assert.match(output,/Fixture summary/);}
+ assert.match(render(FeaturePage({id:'removed',...props})),/此页面当前不可用/);
+});

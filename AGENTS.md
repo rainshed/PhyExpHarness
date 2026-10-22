@@ -11,7 +11,8 @@
 | `src/evidence/`、`src/reporting/`、`src/exporting/` | 证据查询、报告生成与冻结项目导出 |
 | `src/runtime/`、`src/integrations/` | 历史命令与导入的兼容入口 |
 | `packages/meta-harness/` | Meta 工具插件 |
-| `packages/meta-workbench/`、`packages/meta-workbench-studio/` | 经典与新工作台 UI、共享客户端业务 |
+| `packages/meta-workbench-client/` | 公共客户端、查询与命令、草稿和请求身份 |
+| `packages/meta-workbench-studio/` | Studio UI、页面模块与独立样式 |
 | `packages/meta-workbench-bridge/` | 独立工作台宿主 API 桥 |
 | `schemas/`、`knowledge/plugin-sdk/` | 数据契约、默认值、SDK 资料源文件与技术样例 |
 | `profiles/`、`recipes/`、`experiments/` | 宿主配置、执行配方与可复用实验计划 |
@@ -27,7 +28,7 @@
 | 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
 | Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
-| 新 UI、插件并存与切换 | [新工作台设计](docs/design/meta-workbench-studio.md) |
+| Studio 页面与阅读体验 | [新工作台设计](docs/design/meta-workbench-studio.md) |
 | UI 公共能力、版本独立与增删边界 | [UI 模块化设计](docs/design/meta-workbench-modularity.md) |
 | 开发推进、验证与验收规则 | [开发任务书](docs/plans/meta-harness-development.md) |
 | 安装、构建、运行、恢复与已知限制 | [运行说明](docs/operations/meta-harness.md) |

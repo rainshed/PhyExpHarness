@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {configError,numericConfig} from '../../packages/meta-workbench/client/form.mjs';
-import {loadGoalDraft,defaultObjective} from '../../packages/meta-workbench/client/goal.mjs';
-import {createAttempt} from '../../packages/meta-workbench/client/create-attempt.mjs';
+import {configError,numericConfig} from '@phyexp/meta-workbench-client/form';
+import {loadGoalDraft,defaultObjective} from '@phyexp/meta-workbench-client/goal';
+import {createAttempt} from '@phyexp/meta-workbench-client/create-attempt';
 
 test('an unchanged create retry survives reload without duplicating a campaign',()=>{
  let keys=0;const key=()=>String(++keys);
@@ -57,7 +57,7 @@ test('optional caps preserve null while blank custom inputs remain invalid',()=>
 
 
 test('old backend catalog names preserve selectable GPT subscriptions during an upgrade',async()=>{
- const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ const {readModelCatalog}=await import('@phyexp/meta-workbench-client/model-catalog');
  const result=readModelCatalog({models:['gpt-6-sol','gpt-6-astra','gpt-6-luna'],provider:'openai-codex'});
  for(const id of ['gpt-6-sol','gpt-6-astra','gpt-6-luna']){
   const model=result.models.find(m=>m.provider==='openai-codex'&&m.model===id);
@@ -67,7 +67,7 @@ test('old backend catalog names preserve selectable GPT subscriptions during an 
 });
 
 test('new catalog retains custom capabilities and rejects malformed rows before draft matching',async()=>{
- const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ const {readModelCatalog}=await import('@phyexp/meta-workbench-client/model-catalog');
  const model={provider:'custom',model:'fixture',name:'Custom',reasoningEfforts:[],defaultReasoningEffort:null};
  assert.deepEqual(readModelCatalog({models:[model]}),{models:[model],note:''});
  const thinking={...model,reasoningEfforts:['off','high'],defaultReasoningEffort:'high'};
@@ -77,6 +77,6 @@ test('new catalog retains custom capabilities and rejects malformed rows before 
 });
 
 test('an explicitly versioned empty directory is usable after all providers are disabled',async()=>{
- const {readModelCatalog}=await import('../../packages/meta-workbench/client/model-catalog.mjs');
+ const {readModelCatalog}=await import('@phyexp/meta-workbench-client/model-catalog');
  assert.deepEqual(readModelCatalog({schemaVersion:2,models:[]}),{models:[],note:''});
 });
