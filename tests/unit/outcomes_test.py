@@ -121,7 +121,7 @@ class UnifiedProjectionTests(unittest.TestCase):
             self.addCleanup(service.pool.shutdown,wait=True)
             config={'solver':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},
                     'meta':{'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'},
-                    'tasks':['time_budgeted_hamlearn_10q'],'wallTimeSeconds':7200,'concurrency':1}
+                    'tasks':['time_budgeted_hamlearn_10q'],'wallTimeSeconds':7200,'concurrency':1,'taskEvaluationRule':RULE}
             cid=service.store.create(config,'fixture')['id'];service.store.control(cid,'start','start')
             candidate=service.store.candidate(cid,{'id':'bundle','path':'/fixture','plugins':[]},'H0',check={'status':'passed'})
             batch=service.store.submit(cid,candidate['id'],config['tasks'],4,'batch')

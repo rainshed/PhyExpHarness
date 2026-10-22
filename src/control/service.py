@@ -28,7 +28,7 @@ from src.execution.host.models import campaign_route
 from src.execution.host.failure import public_failure
 from src.evidence.library import EvidenceLibrary
 from src.evidence.diagnostics import trial_diagnostics
-from src.evidence.outcomes import evaluation, RESOURCE_RULE
+from src.evidence.outcomes import evaluation, DEFAULT_RULE
 from src.evidence.materials import Materials,snapshot_tasks
 from .meta_context import activity_state
 from .meta_composition import freeze as freeze_meta, POLICY as STOP_POLICY
@@ -118,7 +118,11 @@ class ControlService:
             if planning.enabled(config) and 'configurationSources' not in config:
                 config['configurationSources']=json.loads(replay['payload'])['configurationSources'] if replay else {k:{'source':source if config.get(k) is not None else 'unset' if k in ('maxRounds','maxTrials','softTokenLimit','trialTimeSeconds') else 'platform_default',
                     'value':config.get(k)} for k in planning.LIMITS}
-            if planning.enabled(config):config.setdefault('taskEvaluationRule',RESOURCE_RULE)
+            if planning.enabled(config) and 'taskEvaluationRule' not in config:
+                # A replay must use the original request defaults, including pre-v4 creates.
+                original=json.loads(replay['payload']) if replay else {}
+                if not replay or 'taskEvaluationRule' in original:
+                    config['taskEvaluationRule']=original.get('taskEvaluationRule',DEFAULT_RULE)
             if model_revision is not None and not replay:self.providers.check_revision(catalog,model_revision)
             # The generated reference can change while this long-lived service runs.
             # Freeze and verify the current files before persisting a new Campaign;

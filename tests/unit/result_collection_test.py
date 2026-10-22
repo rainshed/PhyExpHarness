@@ -29,7 +29,7 @@ class ResultCollectionTests(unittest.TestCase):
         self.store = self.service.store
         cfg = {'solver': {'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},
                'meta': {'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'},
-               'tasks':[TASK], 'maxRounds':2, 'maxTrials':3, 'concurrency':1, 'wallTimeSeconds':7200,
+               'taskEvaluationRule':'task-completion-v3', 'tasks':[TASK], 'maxRounds':2, 'maxTrials':3, 'concurrency':1, 'wallTimeSeconds':7200,
                'trialTimeSeconds':3600, 'softTokenLimit':3000000, 'reserveSeconds':900, 'reserveTokens':300000}
         self.cid = self.store.create(cfg, 'fixture')['id']
         self.store.control(self.cid, 'start', 'start')
@@ -145,3 +145,22 @@ class ResultCollectionTests(unittest.TestCase):
         self.assertEqual(trial['scoringStatus'],'not_run')
         shown=self.client.get('/campaigns/'+self.cid).json()['trials'][0]
         self.assertEqual(shown['taskAssessment']['category'],'external_failure')
+
+    def test_v4_bridge_failure_is_zero_after_collection_with_official_null_unchanged(self):
+        campaign=self.store.get('campaigns',self.cid)
+        campaign['config']['taskEvaluationRule']='task-completion-v4'
+        self.store.put('campaigns',campaign)
+        self.write('harbor/trial/result.json',{'task_name':TASK,'exception_info':{'exception_type':'RuntimeError',
+            'exception_message':'Container transport failed: Only a nonempty command is accepted'},'verifier_result':None})
+        self.write('summary.json',{**self.original,'error':'Expected exactly one completed trial and no infrastructure errors'})
+        archive_manifest(self.output)
+        before={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in self.output.rglob('*') if p.is_file()}
+        self.assertEqual(self.recover().status_code,200)
+        shown=self.client.get('/campaigns/'+self.cid).json()
+        trial=shown['trials'][0]
+        self.assertIsNone(trial['score']);self.assertEqual(trial['scoringStatus'],'not_run')
+        self.assertEqual(trial['taskAssessment']['score'],0)
+        self.assertEqual(trial['completionLabel'],'失败 · 容器桥接异常')
+        self.assertEqual(shown['taskEvaluation']['total']['eligible'],1)
+        self.assertEqual(shown['taskEvaluation']['macroSuccessRate'],0)
+        self.assertEqual(before,{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in self.output.rglob('*') if p.is_file()})

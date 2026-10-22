@@ -59,7 +59,7 @@ export function pendingSummary(total,rows=[],historical=false) {
 export function outcomeNote(r,rows=[],c={}) {
   if (!r?.attempts) return '未测';
   return [
-    ...[['external_failure','未计分故障'],['cancelled','取消'],['unresolved','待归因']]
+    ...[['external_failure','未计分故障'],['not_started','未执行'],['cancelled','取消'],['unresolved',c.config?.taskEvaluationRule==='task-completion-v4'?'结束状态待核实':'待归因']]
       .filter(([k])=>r[k]>0).map(([k,label])=>`${label} ${r[k]}`),
     pendingSummary(r.pending,rows,c.historical)
   ].filter(Boolean).join(' · ') || (r.eligible ? '' : '无可计分结果');

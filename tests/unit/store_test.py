@@ -28,7 +28,7 @@ class LedgerTests(unittest.TestCase):
         self.assertRaises(Conflict,self.submit,'batch',[PUBLIC_TASKS[1]])
         self.assertEqual(self.store.status(self.c)['counts']['rounds'],1)
     def test_task_evaluation_rule_binds_at_creation_and_replays_without_migration(self):
-        self.assertEqual(self.store.get('campaigns',self.c)['config']['taskEvaluationRule'],'task-completion-v2')
+        self.assertEqual(self.store.get('campaigns',self.c)['config']['taskEvaluationRule'],'task-completion-v4')
         old=self.store.create({**self.config,'taskEvaluationRule':'task-completion-v1'},'v1')
         self.assertEqual(self.store.create({**self.config,'taskEvaluationRule':'task-completion-v1'},'v1'),old)
         self.assertEqual(self.store.get('campaigns',old['id'])['config']['taskEvaluationRule'],'task-completion-v1')

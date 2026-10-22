@@ -10,7 +10,7 @@ from pathlib import Path
 from .defaults import effective_objective
 from src.execution.host.models import supported_model,load_model_config,provider_route,campaign_model_config
 from src.evidence.diagnostics import trial_diagnostics
-from src.evidence.outcomes import outcome_summary, RULE as TASK_RULE, LEGACY_RULE, RESOURCE_RULE, rule_for, description_for
+from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for, description_for
 from . import resource_planning as planning
 
 SCHEMA_VERSION = 3
@@ -98,8 +98,8 @@ def selection_assessment(config,previous,trials,has_reference):
         for task,row in summary[label].items():
             row['taskCompletion']=completion[label]['byTask'][task]
             counted=row['taskCompletion']
-            for key,category_title in [('external_failure','外部故障'),('unresolved','待归因'),('cancelled','取消')]:
-                if counted[key]:limits.append(f'{title}/{task}：{counted[key]} 次{category_title}，单列且不计入任务成功率。')
+            for key,category_title in [('external_failure','外部故障'),('unresolved','待归因'),('cancelled','取消'),('not_started','未执行')]:
+                if counted.get(key):limits.append(f'{title}/{task}：{counted[key]} 次{category_title}，单列且不计入任务成功率。')
             if row['scoredCount']==0:limits.append(f'{title}/{task}：缺少有效官方评分，均分未知。')
             elif row['scoredCount']<2:limits.append(f'{title}/{task}：仅有一次有效评分，重复证据不足。')
             if row['pendingTrialIds']:limits.append(f'{title}/{task}：仍有未结束试验，后续结果可能改变判断。')
@@ -126,7 +126,7 @@ def validate_config(config,model_config=None):
     model_config=load_model_config() if model_config is None else model_config
     config=dict(config)
     if config.get('resourcePolicy') not in (None, planning.POLICY):raise Refused('Unknown resource policy')
-    if config.get('taskEvaluationRule',TASK_RULE) not in {LEGACY_RULE,TASK_RULE,RESOURCE_RULE}:raise Refused('Unknown task evaluation rule')
+    if config.get('taskEvaluationRule',DEFAULT_RULE) not in RULES:raise Refused('Unknown task evaluation rule')
     for key in ['objective','stabilityCriteria']:
         if key in config and config[key] is not None and (not isinstance(config[key],str) or len(config[key])>16000):
             raise Refused(key+' must be text of at most 16000 characters')
@@ -230,7 +230,7 @@ class Store:
             if saved and 'modelRoutes' not in json.loads(saved['payload']):config.pop('modelRoutes',None)
             prior=self._idem(db,'global','create',key,config)
             if prior:return prior
-            c={'id':identity('campaign'),'config':{**config,**(defaults or {}),'taskEvaluationRule':config.get('taskEvaluationRule',TASK_RULE),'objective':effective_objective(config),'retentionRule':config.get('retentionRule',META_RETENTION_RULE)},'state':'draft','createdAt':self.clock(),'startedAt':None,
+            c={'id':identity('campaign'),'config':{**config,**(defaults or {}),'taskEvaluationRule':config.get('taskEvaluationRule',DEFAULT_RULE),'objective':effective_objective(config),'retentionRule':config.get('retentionRule',META_RETENTION_RULE)},'state':'draft','createdAt':self.clock(),'startedAt':None,
                'deadline':None,'stopReason':None,'retainedCandidateId':None,'finalCandidateId':None,'explorationClosed':False}
             c=self._save(db,'campaigns',c);self._event(db,c['id'],'created')
             return self._remember(db,'global','create',key,config,c)

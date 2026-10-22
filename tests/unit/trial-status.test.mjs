@@ -63,6 +63,14 @@ test('coverage is independent of execution completion and preserves official zer
  assert.equal(outcomeNote({attempts:1,pending:1},[queued]), '排队 1');
  assert.equal(outcomeNote({attempts:0}), '未测');
 });
+test('v4 keeps official absence in details while showing terminal failure and excluding unstarted attempts',()=>{
+ const c={config:{taskEvaluationRule:'task-completion-v4'}};
+ const failed={state:'failed',score:null,scoringStatus:'not_run',resultLabel:'未评分',completionLabel:'失败 · 评分器异常'};
+ assert.equal(trialStage(failed).label,'失败 · 评分器异常');
+ assert.equal(coverageLabel({taskCount:1,coveredTasks:1,macroSuccessRate:0}),'0.0%');
+ assert.equal(outcomeNote({attempts:3,eligible:1,not_started:1,unresolved:1},[],c),'未执行 1 · 结束状态待核实 1');
+ assert.equal(trialStage({...failed,state:'running'}).key,'running');
+});
 test('report revisions use the frozen activity clock, not a newer revision date',()=>{
  const c=reportContext({createdAt:9000,presentationSourceReportId:'old',facts:{campaign:{state:'running',startedAt:100,elapsedSeconds:60},trials:[running]}});
  assert.equal(c.snapshotAt,160);assert.equal(c.historical,true);

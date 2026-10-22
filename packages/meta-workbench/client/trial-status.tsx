@@ -5,7 +5,7 @@ import {trialStage,trialTiming,waitingReason,activityProgress} from './trial-sta
 export function TrialStatus({trial:t,campaign:c={}}:any) {
  const stage=trialStage(t),timing=trialTiming(t,c),reason=waitingReason(t,c);
  return <div className="mh-trial-status"><strong className={'mh-phase '+stage.key}>{c.historical?'当时 · ':''}{stage.label}</strong>
- <div className="mh-trial-time">{timing.seconds==null?(stage.key==='queued'?'排队起点未记录':'耗时未完整记录'):`${timing.label} ${duration(timing.seconds)}`}{timing.start!=null&&<small>{stage.key==='queued'?'本轮受理于 ':'启动于 '}{date(timing.start)}</small>}</div>
+ <div className="mh-trial-time">{t.taskAssessment?.category==='not_started'?'未启动，无执行耗时':timing.seconds==null?(stage.key==='queued'?'排队起点未记录':'耗时未完整记录'):`${timing.label} ${duration(timing.seconds)}`}{timing.start!=null&&<small>{stage.key==='queued'?'本轮受理于 ':'启动于 '}{date(timing.start)}</small>}</div>
  {reason&&<p className="mh-wait-reason">{c.historical?'当时等待原因：':'等待原因：'}{reason}</p>}</div>;
 }
 export function SnapshotNotice({campaign:c,recordedAt}:any) {

@@ -156,6 +156,13 @@ def cell(value):
 def completion_lines(stats):
     rate=lambda value:'待定' if value is None else f'{value:.1%}'
     total=stats['total']
+    if stats['rule']=='task-completion-v4':
+        def detail(row):
+            return (f"按规则计 0：{row['derivedFailures']} 次；未执行 {row.get('not_started',0)}，人工取消 {row['cancelled']}，"
+                    f"待定 {row['pending']}，结束状态待核实 {row['unresolved']}。")
+        return [f"所选任务等权成功率：{rate(stats['macroSuccessRate'])}；覆盖 {stats['coveredTasks']}/{stats['taskCount']} 个任务。",
+                f"逐次通过 {total['passed']}/{total['eligible']}，"+detail(total),
+                *[f"- {task}：成功率 {rate(row['successRate'])}（{row['passed']}/{row['eligible']}）；"+detail(row) for task,row in stats['byTask'].items()]]
     lines=[f"所选任务等权成功率：{rate(stats['macroSuccessRate'])}；覆盖 {stats['coveredTasks']}/{stats['taskCount']} 个任务。",
            f"逐次通过 {total['passed']}/{total['eligible']}，其中按规则计 0：{total['derivedFailures']} 次；未计分外部故障 {total['external_failure']}，取消 {total['cancelled']}，待定 {total['pending']}，待归因 {total['unresolved']}。"]
     for task,row in stats['byTask'].items():

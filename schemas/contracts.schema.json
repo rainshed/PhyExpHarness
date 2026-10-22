@@ -743,13 +743,14 @@
       ],
       "properties": {
         "rule": {
-          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3"]
+          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3", "task-completion-v4"]
         },
         "category": {
           "enum": [
             "passed",
             "failed",
             "external_failure",
+            "not_started",
             "cancelled",
             "pending",
             "unresolved"
@@ -792,7 +793,7 @@
       ],
       "properties": {
         "rule": {
-          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3"]
+          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3", "task-completion-v4"]
         },
         "total": {
           "type": "object"
