@@ -6,11 +6,11 @@ import { DshSession } from '../runner/dsh_session.mjs';
 export function isolatedSession({ executionRoot, logs, config, gateway, handler, mounts = [], image = 'phyexp-runner:0.2.1-rc.2' }) {
   const id = 'phyexp-runner-' + crypto.randomUUID();
   fs.mkdirSync(logs, { recursive: true });
-  const configDir = path.join(logs,'runner-config'); fs.mkdirSync(configDir);
+  const configDir = path.join(logs,'runner-config'); fs.mkdirSync(configDir,{recursive:true});
   fs.writeFileSync(path.join(configDir,'runner.json'), JSON.stringify(config),{mode:0o600});
   const args = ['run','--rm','-i','--init','--name',id,'--network','none','--read-only','--cap-drop','ALL',
     '--security-opt','no-new-privileges','--pids-limit','128','--memory','1g','--cpus','2',
-    '--tmpfs','/tmp:rw,exec,nosuid,size=256m,mode=1777', '--tmpfs','/work:rw,nosuid,size=256m,mode=1777',
+    '--tmpfs','/tmp:rw,exec,nosuid,size=256m,mode=1777', ...(config.nativeMeta?[]:['--tmpfs','/work:rw,nosuid,size=256m,mode=1777']),
     '--mount',`type=bind,source=${path.resolve(executionRoot)},target=/opt/phyexp/src/execution,readonly`,
     '--mount',`type=bind,source=${path.resolve(configDir)},target=/config,readonly`];
   for (const key of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy']) args.push('--env',key+'=');

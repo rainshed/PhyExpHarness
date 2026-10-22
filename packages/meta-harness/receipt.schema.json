@@ -1,0 +1,296 @@
+{
+  "type": "object",
+  "properties": {
+    "receiptVersion": {
+      "const": "meta-tool-receipt-v1"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "committed",
+        "rejected"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "file": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/(materials|evidence|sdk|versions)/"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "completeness": {
+          "const": "complete"
+        }
+      },
+      "required": [
+        "ref",
+        "path",
+        "mediaType",
+        "bytes",
+        "sha256",
+        "completeness"
+      ],
+      "additionalProperties": false
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unavailableCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "candidateCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "trialCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "limitationCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "selectionRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "planRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "activeTrials": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reservedTrials": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unresolvedOperationCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pendingQuestionCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "analysisRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errorCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "documentId": {
+      "type": "string"
+    },
+    "knowledgePackId": {
+      "type": "string"
+    },
+    "sdkVersion": {
+      "type": "string"
+    },
+    "evaluationRule": {
+      "type": "string"
+    },
+    "candidateId": {
+      "type": "string"
+    },
+    "decisionId": {
+      "type": "string"
+    },
+    "campaignId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "reportId": {
+      "type": "string"
+    },
+    "factsId": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "retainedCandidateId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "finalCandidateId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stopReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "committed": {
+      "type": "boolean"
+    },
+    "explorationClosed": {
+      "type": "boolean"
+    },
+    "remainingSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "confirmed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "inflight": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "confirmed",
+        "inflight",
+        "unknown",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "analysisSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/(materials|evidence|sdk|versions)/"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "completeness": {
+          "const": "complete"
+        }
+      },
+      "required": [
+        "ref",
+        "path",
+        "mediaType",
+        "bytes",
+        "sha256",
+        "completeness"
+      ],
+      "additionalProperties": false
+    },
+    "analysisTemplate": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/(materials|evidence|sdk|versions)/"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "completeness": {
+          "const": "complete"
+        }
+      },
+      "required": [
+        "ref",
+        "path",
+        "mediaType",
+        "bytes",
+        "sha256",
+        "completeness"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "receiptVersion",
+    "status",
+    "summary"
+  ],
+  "additionalProperties": false,
+  "description": "meta-tool-receipt-v1; UTF-8 rendered JSON <=4096 bytes; complete content is published before a success receipt.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "file"
+        ]
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 """Validate an actual ZIP in a relocated environment. Never calls a model provider."""
 import hashlib,json,shutil,subprocess,tempfile,zipfile
 from pathlib import Path
-from src.execution.bundle.freeze import verify
+from src.execution.bundle.manifest import verify
 
 def relocate(record,destination):
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=False)
@@ -43,7 +43,8 @@ WORKDIR /unrelated
             (context/'Dockerfile').write_text(dockerfile);(context/'.dockerignore').write_text('Dockerfile\n.dockerignore\n')
             tag='phyexp-relocation:export-'+bundle['id'][:16]
             subprocess.run(['docker','build','-t',tag,str(context)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=600)
-        script="import sys,json;sys.path.insert(0,'/relocated project');from src.execution.adapters.quantum_harbor import agent;from src.execution.bundle.freeze import verify;assert agent.__file__.startswith('/relocated project/');print(json.dumps({'agent':agent.__file__,'bundleId':verify('/relocated project')['id']}))"
+        verifier_module="manifest" if bundle.get("schemaVersion")==2 else "freeze"
+        script="import sys,json;sys.path.insert(0,'/relocated project');from src.execution.adapters.quantum_harbor import agent;from src.execution.bundle."+verifier_module+" import verify;assert agent.__file__.startswith('/relocated project/');print(json.dumps({'agent':agent.__file__,'bundleId':verify('/relocated project')['id']}))"
         result=json.loads(subprocess.check_output(['docker','run','--rm','--network','none',tag,'python','-c',script],text=True,timeout=30))
         node=subprocess.check_output(['docker','run','--rm','--network','none',tag,'node','--input-type=module','-e',"import {createRequire} from 'node:module';const r=createRequire('/relocated project/package.json');const p=r.resolve('@deepseek-ai/dsh-llm');if(!p.startsWith('/relocated project/node_modules/'))throw Error('external dependency');console.log(p);"],text=True,timeout=30).strip()
     proof={'status':'passed','exportId':record['id'],'bundleId':bundle['id'],'archiveSha256':record['archiveSha256'],

@@ -33,6 +33,8 @@ MESSAGES = {
     'campaign_deadline': '活动达到截止时间',
     'verifier_failed': '官方评分器执行失败',
     'runtime_failed': '执行进程未正常完成，具体原因尚未确认',
+    'result_collection_failed': '官方评分已完成，但平台收集结果失败',
+    'container_transport_error': '容器工具桥接异常，官方评分未完成',
     'archive_invalid': '结果或归档未通过完整性检查',
     'unknown_failure': '实验未正常完成，具体原因尚未确认',
 }
@@ -91,9 +93,15 @@ def diagnose(run_dir, stop_reason=None):
     if result and result['code'] in ['request_cancelled', 'runtime_failed'] and stop in MESSAGES:
         result = {**result, **public_failure({**result, 'code': stop})}
     if not result:
-        code = stop if stop in MESSAGES else 'verifier_failed' if scoring == 'failed' else 'runtime_failed' if runtime else 'unknown_failure'
-        result = public_failure({'code': code, 'stage': 'verifier' if scoring == 'failed' else 'model' if code.startswith('model_') else 'execution',
-                                 'evidence': str(runtime_file.relative_to(root)) if runtime_file else 'summary.json'})
+        bridge_error = (exception.get('exception_type') == 'RuntimeError'
+                        and exception.get('exception_message', '').startswith('Container transport failed: '))
+        code = (stop if stop in MESSAGES and stop != 'runtime_failed' else 'verifier_failed' if scoring == 'failed'
+                else 'container_transport_error' if bridge_error
+                else 'result_collection_failed' if runtime.get('status') == 'completed' and scoring == 'completed'
+                else 'runtime_failed' if runtime else 'unknown_failure')
+        if bridge_error and not verifier: scoring = 'not_run'
+        result = public_failure({'code': code, 'stage': 'collection' if code == 'result_collection_failed' else 'verifier' if scoring == 'failed' else 'model' if code.startswith('model_') else 'execution',
+                                 'evidence': str(trial_files[0].relative_to(root)) if bridge_error else str(runtime_file.relative_to(root)) if runtime_file else 'summary.json'})
     if stop in MESSAGES: result['termination'] = stop
     result['scoringStatus'] = scoring
     # Distinguish causal failure from cleanup/collector errors without exposing raw text.

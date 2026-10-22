@@ -25,7 +25,7 @@ OUTPUT_FAILURES = {'invalid_tool_arguments', 'stream_whitespace', 'stream_repeti
                    'user_stop_invalid_tool_argument_stream'}
 EXTERNAL_FAILURES = {'model_service_overloaded', 'model_transport_error', 'model_response_error', 'model_stream_incomplete',
                      'stream_idle_timeout', 'startup_failure', 'verifier_failed', 'archive_invalid',
-                     'supervisor_lost_start_not_repeated'}
+                     'supervisor_lost_start_not_repeated', 'result_collection_failed', 'container_transport_error'}
 PENDING = {'reserved', 'queued', 'launching', 'running'}
 
 

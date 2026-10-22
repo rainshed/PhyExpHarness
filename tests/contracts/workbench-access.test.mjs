@@ -65,6 +65,12 @@ for(const variant of ['both','studio','classic'])test(`native ${variant} login p
   assert.equal((await request(port,'/phyexp/api/health',{...authenticated,'sec-fetch-site':'cross-site'})).status,403);
   assert.equal((await request(port,'/phyexp/api/health',{...authenticated,cookie:cookie+'broken'})).status,401);
   assert.equal(requests.length,2,'denied requests must never reach the controller');
+  const answer='/phyexp/api/meta-questions/question-fixture/answer';
+  assert.equal((await request(port,answer,{...headers,origin},'POST','{}')).status,401);
+  assert.equal((await request(port,answer,{...authenticated,origin,'content-type':'application/json'},'POST','{"answers":[]}')).status,200);
+  assert.equal(requests.length,3);assert.equal(requests[2].body,'{"answers":[]}');
+  assert.equal((await request(port,'/phyexp/api/meta-sessions/forged/runtime',{...authenticated,origin},'POST','{}')).status,400);
+  assert.equal(requests.length,3,'human UI must not reach the trusted Meta host channel');
  }finally{
   if(ui.exitCode===null){const exited=once(ui,'exit');ui.kill('SIGTERM');await exited;}
   await close(backend);fs.rmSync(data,{recursive:true,force:true});

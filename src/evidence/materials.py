@@ -6,13 +6,17 @@ from pathlib import Path
 from src.control.store import Refused, encoded
 from src.control.operations import workspace_path
 from src.control.meta_context import activity_state
-from src.execution.bundle.freeze import verify
+from src.execution.bundle.manifest import verify,resolve
 from src.reporting.tables import plugin_changes
 
 KINDS = ('activity', 'task', 'sdk', 'version', 'plugin', 'experiment', 'evidence', 'analysis', 'guide')
 GUIDES = {
     'interface': '来源：平台工具契约。插件草稿使用工作区相对路径。冻结和实验提交返回持久 ID；完成通知只提供状态，可按需查询材料。重复请求使用相同 idempotencyKey，参数改变须使用新键。候选冻结只接受插件目录和配置，Solver 配方由后台确定。null 次数/token 上限表示没有该项上限，时间及并发约束仍生效。额外模型调用计入预算，无自动重试。候选保留规则和当前决策可查询 activity:current，完整历史在 campaign_status 的 full 视图。meta-selection-v1 由 Meta 主动选择，candidate_retain 需提交 candidateId、reason、evidenceRefs、tradeoffs、limitations（可为空数组）、reconsiderWhen；平台核验证据并保存比较限制，不因缺分、在途试验、环境差异或退步否决。选择不代表认证。旧活动遵循绑定规则。',
     'reporting': '来源：平台报告契约。report_save 的 summary、observations、hypotheses、limitations、decision、evidenceRefs 为必需字段；可提供 process（简短中文过程节点）、problems（已解决及未解决问题）、pluginContributions（plugin、expected、observed、comparison、assessment、evidenceRefs）。引用使用 evidence 原始 ID。版本、插件差异、分数和消耗由系统生成；分析说明实际发生的过程、问题和插件作用，区分加载、触发、行为改变及因果收益，缺少对比时明确说明。省略 batchId 保存总报告，填写则保存每轮报告。总报告说明进化过程、保留版本、是否达标、停止原因和局限。插件 manifest 的 displayName/functionSummary/mechanism 及候选 displayName 使用可读名称。历史分析是模型判断，不是新的官方证据。比较版本和撰写报告以后台 taskEvaluation 绑定的规则版本为准：模型输出异常、未提交、约定限额耗尽计任务完成分0，v2 另将最终未恢复的模型过载和连接故障计0，v1 保持原口径；其余外部故障/取消/待定/待归因单列；官方评分保持原值。使用逐任务分子分母与任务等权成功率，不以有评分样本比例代替成功率。',
+}
+GUIDES_NATIVE={
+    'interface':GUIDES['interface'].replace('额外模型调用计入预算，无自动重试。','额外模型调用计入同一预算。Meta 技术恢复与 Solver 请求重试分别遵循绑定契约。')+' 原生 v2 日常开发使用文件、搜索、终端和 jobs 工具，插件草稿在 /work/plugins，分析在 /work/analysis。业务参数直接传对象；candidate_retain 还须提交 expectedSelectionRevision。candidate_check/candidate_freeze 和 export_create 返回 operationId；检查/冻结从 campaign_status 的 full 视图查询，导出从 export_status 查询。完整来源路径及未决操作见 /evidence/index.json、/outputs/index.json 和 campaign_status.metaRequests。',
+    'reporting':'来源：平台 meta-tools-v2 报告契约。先用 report_get_facts（可带 batchId）取得不可变 factsId 和完整事实文件，再用 report_save 提交 factsId、analysis 或带 path/sha256 的 analysisFile、expectedReportRevision、idempotencyKey。每轮与总报告各自维护修订，首次为 0。analysis 中的内容要求如下：'+GUIDES['reporting'].replace('report_save 的','analysis 的').replace('省略 batchId 保存总报告，填写则保存每轮报告。','报告范围由 report_get_facts 的 batchId 决定，不能在 analysis 内另改范围。')
 }
 
 
@@ -97,16 +101,17 @@ class Materials:
         manifest = verify(candidate['bundlePath'])
         recipe = json.loads(checked_text(candidate['bundlePath'], 'recipe.json', manifest['files']['recipe.json']))
         parent=self.store.get('candidates',candidate['parentId']) if candidate.get('parentId') else None
-        return encoded({'source': '冻结执行 Bundle', 'candidateId': candidate['id'],
+        return encoded({'source': '冻结执行组合', 'candidateId': candidate['id'],
                         'bundleId': manifest['id'], 'parentId': candidate.get('parentId'),
                         'changesFromParent':plugin_changes(parent,candidate) if parent else None,
                         'description': candidate.get('description'), 'recipe': recipe, 'plugins': manifest['plugins']})
 
     def _plugin(self, candidate, relative):
-        manifest = verify(candidate['bundlePath'])
+        resolved = resolve(candidate['bundlePath']);manifest = resolved.manifest
         if not relative.startswith('plugins/') or relative not in manifest['files']:
             raise Refused('Not a frozen plugin asset')
-        return checked_text(candidate['bundlePath'], relative, manifest['files'][relative])
+        file = resolved.asset(relative)
+        return checked_text(file.parent, file.name, manifest['files'][relative])
 
     def _experiment(self, campaign, batch):
         from .diagnostics import trial_diagnostics
@@ -125,8 +130,15 @@ class Materials:
             yield self._record('activity:current', 'activity', '活动目标、约束与实时状态', '固定后台配置与账本',
                                lambda: encoded(activity_state(self.service, campaign)), version='live')
         if include('guide'):
-            for name, text in GUIDES.items():
-                yield self._record('guide:' + name, 'guide', name, '平台工具契约', lambda t=text: t, version='1')
+            native=self.store.get('campaigns',campaign)['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
+            from src.control.meta_contracts import version,ANALYSIS
+            guides=GUIDES_NATIVE if native else GUIDES
+            if native and version(self.service,campaign)=='meta-tools-v3':
+                guides={
+                    'interface':GUIDES_NATIVE['interface'].replace('full 视图','完整快照文件').replace('campaign_status.metaRequests','campaign_status.file 的 requests').replace('原生 v2','原生 v3')+' campaign_status/candidate_list 输入为空对象，evidence_list 可按 batchId/trialId 过滤但不分页。七个精简工具只返回描述和完整文件路径；原生 read/grep/bash 按需读取正文。sdk_read 只接受 id，同版本导航见 /sdk/index.json。',
+                    'reporting':'meta-report-analysis-v1：report_get_facts 返回 factsId、完整事实、analysisSchema 和 analysisTemplate 路径。report_save 只传 factsId、expectedReportRevision、idempotencyKey，以及 analysis / analysisFile 中恰好一个；推荐先用原生工具写 /work/analysis/*.json，再提交路径和 SHA-256。合法最小结构与正式 schema：'+encoded(ANALYSIS)}
+            for name, text in guides.items():
+                yield self._record('guide:' + name, 'guide', name, '平台工具契约', lambda t=text: t, version='2' if native else '1')
         if include('task'):
             yield from self._tasks(campaign)
         if include('sdk'):
@@ -143,7 +155,11 @@ class Materials:
                         lambda r=c: self._version(r), candidateId=c['id'], version=c['bundleId'], createdAt=c.get('createdAt'))
                 if include('plugin'):
                     # Only the frozen manifest's plugin assets are addressable.
-                    manifest = json.loads(checked_text(c['bundlePath'], 'bundle.json'))
+                    try:manifest = verify(c['bundlePath'])
+                    except (OSError,ValueError) as error:
+                        yield self._record('plugin:'+c['id'],'plugin',title,'冻结执行组合',lambda:'',
+                            candidateId=c['id'],availability='unavailable',reason=str(error))
+                        continue
                     for relative, digest in sorted(manifest['files'].items()):
                         if relative.startswith('plugins/'):
                             yield self._record('plugin:' + c['id'] + ':' + relative, 'plugin', title + ' / ' + relative,
@@ -213,7 +229,8 @@ class Materials:
             if row['ref'] != ref: continue
             result = self._public(row)
             if row['availability'] != 'available': return result
-            text = row['_load']()
+            try:text = row['_load']()
+            except UnicodeDecodeError:return {**result,'encoding':'binary','previewAvailable':False}
             return {**result, 'sha256': hashlib.sha256(text.encode()).hexdigest(), 'observedAt': self.store.clock(),
                     'offset': offset, 'total': len(text), 'text': text[offset:offset+limit],
                     'nextOffset': offset+limit if offset+limit < len(text) else None}
@@ -226,7 +243,8 @@ class Materials:
         matches = []
         for row in self._filtered(campaign, **filters):
             if row['availability'] != 'available': continue
-            text = row['_load']()
+            try:text = row['_load']()
+            except UnicodeDecodeError:continue
             match = re.search(re.escape(query),text,re.IGNORECASE)
             if match:
                 pos=match.start()

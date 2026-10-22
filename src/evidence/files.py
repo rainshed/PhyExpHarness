@@ -1,0 +1,83 @@
+"""Read-only, content-addressed file views shared by native Meta tools and scripts."""
+import hashlib
+import json
+import mimetypes
+import os
+import re
+import shutil
+import tempfile
+from pathlib import Path
+from src.control.store import Refused,encoded
+
+VERSION='meta-files-v2'
+ROOTS=('evidence','materials','sdk','versions','outputs')
+
+def atomic_json(file,value):
+    file=Path(file);file.parent.mkdir(parents=True,exist_ok=True)
+    fd,temp=tempfile.mkstemp(dir=file.parent,prefix='.publishing-')
+    try:
+        with os.fdopen(fd,'w') as stream:stream.write(encoded(value)+'\n')
+        os.replace(temp,file)
+    finally:
+        if os.path.exists(temp):os.unlink(temp)
+
+class FileViews:
+    def __init__(self,service):self.service=service;self.store=service.store;self.root=service.data/'campaigns'
+    def directory(self,campaign):
+        self.store.get('campaigns',campaign)
+        directory=self.root/campaign/'meta-files'
+        for name in ROOTS:(directory/name).mkdir(parents=True,exist_ok=True)
+        return directory
+    def publish(self,campaign,ref,data,*,kind,source,version=None,trial=None,original=None):
+        if isinstance(data,str):data=data.encode('utf-8')
+        sha=hashlib.sha256(data).hexdigest()
+        group='evidence' if kind=='evidence' else 'sdk' if kind=='sdk' else 'versions' if kind in ['version','plugin'] else 'materials'
+        suffix=Path(str(source.get('archive',''))) .suffix if isinstance(source,dict) else ''
+        if not re.fullmatch(r'\.[a-zA-Z0-9]{1,12}',suffix):suffix='.txt'
+        relative=Path('trials')/trial/(sha+suffix) if trial else Path('objects')/(sha+suffix)
+        target=self.directory(campaign)/group/relative;target.parent.mkdir(parents=True,exist_ok=True)
+        if not target.exists():
+            fd,name=tempfile.mkstemp(dir=target.parent,prefix='.publishing-');os.close(fd);pending=Path(name)
+            try:
+                # Only immutable evidence objects can be hard-linked; source archives may still change.
+                if original:
+                    pending.unlink()
+                    try:os.link(original,pending)
+                    except OSError:shutil.copyfile(original,pending)
+                else:pending.write_bytes(data)
+                pending.chmod(0o444)
+                try:os.link(pending,target)
+                except FileExistsError:pass
+            finally:pending.unlink(missing_ok=True)
+        if target.is_symlink() or hashlib.sha256(target.read_bytes()).hexdigest()!=sha:raise Refused('Published file integrity mismatch')
+        try:data.decode('utf-8');encoding='utf-8'
+        except UnicodeDecodeError:encoding='binary'
+        return {'ref':ref,'kind':kind,'campaignId':campaign,'trialId':trial,'path':'/'+group+'/'+relative.as_posix(),
+            'mediaType':mimetypes.guess_type('file'+suffix)[0] or 'application/octet-stream','encoding':encoding,
+            'bytes':len(data),'sha256':sha,'source':source,'version':version,'viewVersion':VERSION,
+            'availability':'available','completeness':'complete','observedAt':self.store.clock()}
+    def evidence(self,campaign,row):
+        if row['campaignId']!=campaign:raise Refused('Cross-Campaign evidence')
+        file=Path(row['path']);data=file.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=row['sha256']:raise Refused('Evidence integrity mismatch')
+        return self.publish(campaign,'evidence:'+row['id'],data,kind='evidence',source=row['source'],
+            version=row['policy'],trial=row['trialId'],original=file)
+    def material(self,campaign,row):
+        if row['kind']=='evidence':return self.evidence(campaign,self.store.get('evidence',row['evidenceId']))
+        if row['availability']!='available':return {k:v for k,v in row.items() if k!='_load'}
+        data=row['_load']()
+        return self.publish(campaign,row['ref'],data,kind=row['kind'],source=row['source'],version=row.get('version'))
+    def refresh(self,campaign):
+        items=[]
+        for row in self.service.materials._records(campaign):
+            try:items.append(self.material(campaign,row))
+            except (OSError,ValueError) as error:
+                items.append({'ref':row['ref'],'availability':'unavailable','reason':str(error),'completeness':'unavailable'})
+        # Descriptors include all files; callers paginate the index, never silently cap it.
+        directory=self.directory(campaign);file=directory/'evidence/index.json'
+        old=json.loads(file.read_text()) if file.exists() else {}
+        signature=hashlib.sha256(encoded([{k:v for k,v in r.items() if k!='observedAt'} for r in items]).encode()).hexdigest()
+        index={'version':VERSION,'campaignId':campaign,'revision':old.get('revision',0)+(signature!=old.get('digest')),
+            'digest':signature,'items':items,'total':len(items),'complete':all(r['availability']=='available' for r in items)}
+        atomic_json(file,index)
+        return index

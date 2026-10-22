@@ -1,6 +1,8 @@
 # 独立执行 Harness
 
-本目录是经过测试的冻结执行项目。身份和文件摘要见 `bundle.json`，配置见 `recipe.json`，选中的插件见 `plugins/`。不依赖原 PhyExpHarness 仓库或活动后台，不包含工作台、Meta 插件、报告历史或模型凭据。
+本目录按经过测试的组合装配。组合身份与 DeepSeek 的准确包版本、下载地址、完整性摘要见 `bundle.json`，配置见 `recipe.json`，选中的插件见 `plugins/`。`objects.json` 保存插件、适配代码和依赖声明的内容摘要；`delivery.json` 逐项说明必要适配文件的职责。不依赖原 PhyExpHarness 仓库或活动后台，不包含 DeepSeek 本体、安装缓存、工作台、Meta 插件、报告历史或模型凭据。
+
+安装时从 `package-lock.json` 指定的来源取得 DeepSeek 及依赖；无法取得准确版本时安装失败，不回退到最新版。ZIP 文件摘要属于交付归档，和原组合身份分别记录。
 
 需要 Node.js 24、Python 3.13、Docker，以及外部 Quantum-Harbor checkout 和它的任务/官方 verifier 镜像。依赖安装：
 

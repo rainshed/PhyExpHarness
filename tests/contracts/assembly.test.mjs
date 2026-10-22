@@ -26,12 +26,12 @@ for(const selected of cases)test(`frozen assembly accepts ${selected.provider}/$
   const recipe={...base,...selected};
   fs.writeFileSync(path.join(dir,'recipe.json'),JSON.stringify(recipe));
   const frozen=await run(process.env.PYTHON||'python3',['-c',
-   "import json,sys;from pathlib import Path;from src.execution.bundle.freeze import freeze;print(json.dumps(freeze(Path.cwd(),Path(sys.argv[1])/'bundles',json.loads((Path(sys.argv[1])/'recipe.json').read_text()))))",dir],{cwd:source});
+   "import json,sys;from pathlib import Path;from src.execution.bundle.freeze import freeze;from src.control.execution_cache import prepare_runtime;b=freeze(Path.cwd(),Path(sys.argv[1])/'bundles',json.loads((Path(sys.argv[1])/'recipe.json').read_text()));b['runtime']=str(prepare_runtime(b['path'],Path(sys.argv[1])/'cache',install=False));print(json.dumps(b))",dir],{cwd:source});
   const bundle=JSON.parse(frozen.stdout),logs=path.join(dir,'check');
   // Only host test dependencies are shared; the native Runner uses the Bundle's locked Docker image.
-  fs.symlinkSync(path.join(source,'node_modules'),path.join(bundle.path,'node_modules'),'dir');
+  fs.symlinkSync(path.join(source,'node_modules'),path.join(bundle.runtime,'node_modules'),'dir');
   fs.mkdirSync(logs);
-  await run(process.execPath,[path.join(bundle.path,'src/execution/bundle/check.mjs'),bundle.path,logs],
+  await run(process.execPath,[path.join(bundle.runtime,'src/execution/bundle/check.mjs'),bundle.path,logs],
    {cwd:dir,timeout:35000,env:{...process.env,PHYEXP_CODEX_AUTH_FILE:path.join(dir,'missing-auth.json'),
     DEEPSEEK_API_KEY:'',PHYEXP_ASSEMBLY_MISSING_KEY:''}});
   const assembly=JSON.parse(fs.readFileSync(path.join(logs,'assembly.json')));

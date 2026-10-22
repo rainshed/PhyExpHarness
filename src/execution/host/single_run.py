@@ -7,10 +7,11 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from ..bundle.freeze import verify
+from ..bundle.manifest import verify
 from .network import provider_environment
 from ..adapters.quantum_harbor.results import collect, archive_manifest, verify_manifest
 
@@ -83,6 +84,7 @@ def cleanup(output):
 
 
 def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_limit=3_000_000, task_image_lock=None):
+    runtime_root = Path(__file__).resolve().parents[3]
     bundle_root, quantum_harbor, output = map(lambda p: Path(p).resolve(), [bundle_root, quantum_harbor, output])
     bundle = verify(bundle_root)
     recipe = json.loads((bundle_root / 'recipe.json').read_text())
@@ -107,8 +109,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         if remaining <= TRIAL_CLOSEOUT_RESERVE_SECONDS:
             raise TimeoutError('Insufficient time for startup and official verification')
         # No generated plugin is loaded during this host preflight.
-        auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync('recipe.json')),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
-        subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000))], cwd=bundle_root, check=True)
+        auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync(process.argv[2])),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
+        subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
         image = subprocess.run(['docker', 'image', 'inspect', bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
         provenance['runnerImageId'] = image
         solver_deadline = min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
@@ -128,7 +130,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
             provenance['taskImageLock'] = lock
             config['environment'].update(type=None, import_path='src.execution.adapters.quantum_harbor.pinned_environment:PinnedDockerEnvironment', kwargs={'pinned_images':images})
         write_json(output / 'harbor-config.json', config)
-        env = dict(provider_environment(), PYTHONPATH=str(bundle_root), PHYEXP_RUN_TOKEN_LIMIT=str(soft_token_limit or ''))
+        env = dict(provider_environment(), PYTHONPATH=str(runtime_root), PHYEXP_PYTHON=sys.executable, PHYEXP_RUN_TOKEN_LIMIT=str(soft_token_limit or ''))
         # Disallow a parent checkout from winning module resolution.
         env['PYTHONNOUSERSITE'] = '1'
         env['PHYEXP_RUNNER_IMAGE_ID'] = image
@@ -171,7 +173,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
 
 def main(bundle_root=None, argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    if bundle_root is None: parser.add_argument('--bundle',type=Path,required=True)
+    parser.add_argument('--bundle',type=Path,default=bundle_root,required=bundle_root is None)
     parser.add_argument('--quantum-harbor',type=Path)
     parser.add_argument('--task')
     parser.add_argument('--output',type=Path)
@@ -182,7 +184,7 @@ def main(bundle_root=None, argv=None):
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--collect',type=Path)
     args = parser.parse_args(argv)
-    bundle_root = bundle_root or args.bundle
+    bundle_root = args.bundle
     if args.verify:
         print(json.dumps({'bundleId':verify(bundle_root)['id'],'status':'verified'}));return 0
     if args.collect:

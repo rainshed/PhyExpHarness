@@ -17,13 +17,15 @@ from .knowledge import KnowledgePack
 from .image_identity import resolve as resolve_image_identity
 from .operations import workspace_path,read_workspace,write_workspace,execute_workspace
 from src.execution.bundle.freeze import freeze,verify
+from src.execution.bundle.manifest import resolve as resolve_bundle,infrastructure_identity,read_plugins
+from .execution_cache import prepare_runtime
+from .result_collection import read_summary, projection
 from src.execution.host.single_run import cleanup,task_image_sources,write_json
 from .task_images import POLICY as TASK_IMAGE_POLICY,prepare_task_images,sources_digest,verify_locks
 from .runner_images import prepare_runner_image
 from src.execution.host.network import network_preflight
 from src.execution.host.models import campaign_route
 from src.execution.host.failure import public_failure
-from src.execution.adapters.quantum_harbor.results import verify_manifest
 from src.evidence.library import EvidenceLibrary
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, RESOURCE_RULE
@@ -44,6 +46,8 @@ class ControlService:
         self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
         self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
         self.materials=Materials(self);self.stop_runtime=StopRuntime(self)
+        from .meta_api import MetaAPI
+        self.meta_api=MetaAPI(self)
         self.pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='phyexp-build');self.operations={};self.children={}
         self.operation_lock=threading.Lock()
         for row in self.store.list('operations'):
@@ -91,7 +95,9 @@ class ControlService:
         row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
         def work():
             try:result=fn();row.update(state='finished',result=result)
-            except Exception as error:row.update(state='failed',error=str(error))
+            except Exception as error:
+                row.update(state='failed',error=str(error))
+                if getattr(error,'check_files',None):row['files']=error.check_files
             row['finishedAt']=time.time();self.store.put('operations',row)
             with self.store.connection(True) as db:self.store._event(db,campaign,'operation_finished',operationId=row['id'],state=row['state'])
         self.operations[row['id']]=self.pool.submit(work)
@@ -163,7 +169,7 @@ class ControlService:
             trials=trial_diagnostics(self.store.list('trials',campaign),self.data,value['config']),operations=self.store.list('operations',campaign),
             reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.list('reports',campaign)],
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
-            exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),
+            exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
             evidence=[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign)])
         value['executionProtection']=self.execution_policy(campaign)
         value['comparisonIssues']=comparison_issues(value['trials'])
@@ -175,9 +181,11 @@ class ControlService:
     def execution_policy(self,campaign):
         candidates=self.store.list('candidates',campaign)
         baseline=candidates[0] if candidates else {}
-        policy=Path(baseline.get('bundlePath','/nonexistent'))/'src/execution/host/stream-policy.json'
-        return json.loads(policy.read_text()) if policy.is_file() else None
-    def build_candidate(self,campaign,selections,description,parent=None,display_name=None):
+        if not baseline or not (Path(baseline['bundlePath'])/'bundle.json').is_file():return None
+        resolved=resolve_bundle(baseline['bundlePath'])
+        policy=resolved.assets.get('src/execution/host/stream-policy.json')
+        return json.loads(policy.read_text()) if policy else None
+    def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False):
         c=self.store.get('campaigns',campaign)
         recipe=json.loads((self.source/'recipes/h0-sol.json').read_text())
         recipe.update(c['config']['solver']);recipe['modules']=[]
@@ -195,26 +203,36 @@ class ControlService:
                 text=file.read_text()
                 if any(task in text for task in c['config']['tasks']):raise Refused('Task-specific selector detected in plugin source')
             chosen.append({'path':str(directory),'config':selected.get('config',{})})
-        bundle=freeze(self.source,self.data/'objects/sha256',recipe,chosen,self.knowledge_for(campaign).manifest)
         existing=self.store.list('candidates',campaign)
+        base=verify(existing[0]['bundlePath']) if existing else None
+        bundle=freeze(self.source,self.data/'objects/sha256',recipe,chosen,self.knowledge_for(campaign).manifest,
+                      legacy=bool(base and base.get('schemaVersion',1)==1))
         if existing:
-            base=verify(existing[0]['bundlePath'])
-            fixed=lambda m:{p:h for p,h in m['files'].items() if not p.startswith('plugins/') and p!='recipe.json'}
-            if fixed(base)!=fixed(bundle['manifest']) or base['profileDigest']!=bundle['manifest']['profileDigest']:
+            if infrastructure_identity(base)!=infrastructure_identity(bundle['manifest']):
                 raise Refused('Fixed infrastructure changed; start a new Campaign for a comparable baseline')
         directory=Path(bundle['path']);logs=self.data/'campaigns'/campaign/'checks'/identity('check');logs.mkdir(parents=True)
         locks=self.data/'locks';locks.mkdir(exist_ok=True)
-        with (locks/(bundle['id']+'.lock')).open('a') as lock,(logs/'installation.log').open('w') as log:
-            fcntl.flock(lock,fcntl.LOCK_EX)
-            marker=directory/'node_modules/.phyexp-install'
-            lock_hash=hashlib.sha256((directory/'package-lock.json').read_bytes()).hexdigest()
-            if not marker.exists() or marker.read_text()!=lock_hash:
-                subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=directory,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
-                marker.write_text(lock_hash)
-            runner_image=prepare_runner_image(directory,self.data/'runner-runtime-locks',log)
-            subprocess.run(['node',str(directory/'src/execution/bundle/check.mjs'),str(directory),str(logs)],
-                cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True,timeout=45)
-        check=json.loads((logs/'assembly.json').read_text());check.update(evidence=str(logs),generalization='not_verified',runnerImagePreparation=runner_image)
+        try:
+            with (locks/(bundle['id']+'.lock')).open('a') as lock,(logs/'installation.log').open('w') as log:
+                fcntl.flock(lock,fcntl.LOCK_EX)
+                runtime=prepare_runtime(directory,self.data/'cache',log)
+                if bundle['manifest'].get('schemaVersion',1)==1:
+                    marker=directory/'node_modules/.phyexp-install'
+                    lock_hash=hashlib.sha256((directory/'package-lock.json').read_bytes()).hexdigest()
+                    if not marker.exists() or marker.read_text()!=lock_hash:
+                        subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=directory,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
+                        marker.write_text(lock_hash)
+                runner_image=prepare_runner_image(runtime,self.data/'runner-runtime-locks',log)
+                subprocess.run(['node',str(runtime/'src/execution/bundle/check.mjs'),str(directory),str(logs)],
+                    cwd='/tmp',stdout=log,stderr=subprocess.STDOUT,check=True,timeout=45)
+            check=json.loads((logs/'assembly.json').read_text());check.update(evidence=str(logs),generalization='not_verified',runnerImagePreparation=runner_image)
+        except Exception as error:
+            if c['config'].get('metaComposition',{}).get('version')=='meta-composition-v2':
+                error.check_files=[self.meta_api.files.publish(campaign,'check:'+logs.name+':'+p.name,p.read_bytes(),kind='check',source={'archive':p.name},version=bundle['id']) for p in sorted(logs.iterdir()) if p.is_file()]
+            raise
+        if check_only:
+            files=[self.meta_api.files.publish(campaign,'check:'+logs.name+':'+p.name,p.read_bytes(),kind='check',source={'archive':p.name},version=bundle['id']) for p in sorted(logs.iterdir()) if p.is_file()]
+            return {'checkId':logs.name,'status':check['status'],'bundleId':bundle['id'],'files':files,'trialCreated':False}
         row=self.store.candidate(campaign,bundle,description,parent,check)
         if display_name and isinstance(display_name,str):
             row['displayName']=display_name.strip()[:80];row=self.store.put('candidates',row)
@@ -238,6 +256,10 @@ class ControlService:
                     with self.store.connection(True) as db:self.store._event(db,campaign,'network_preflight',provider=model['provider'],**checked)
         if action=='resume':self._verify_task_images(c['config'])
         result=self.store.control(campaign,action,key,expected_revision,changes)
+        if action=='resume':
+            for row in self.store.list('meta_sessions',campaign):
+                if row['state']=='needs_attention':
+                    row.update(state='interrupted',recovery={'userResumedAt':time.time()});self.store.put('meta_sessions',row)
         if action=='start' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
         # User stop ends experiments but leaves the remaining Meta budget available for reports.
         if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)
@@ -250,17 +272,19 @@ class ControlService:
         result=subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True)
         return result.returncode==0 and str(output) in result.stdout
     def _launch(self,trial):
-        candidate=self.store.get('candidates',trial['candidateId']);bundle=Path(candidate['bundlePath']);verify(bundle)
+        candidate=self.store.get('candidates',trial['candidateId']);bundle=Path(candidate['bundlePath']);manifest=verify(bundle)
         output=self.data/'trials'/trial['launchId']
         lease,token=self.lease(trial['campaignId'],'solver',trial['deadline'],trial['id'])
         trial=self.store.trial_update(trial['id'],output=str(output),leaseId=lease['id'])
         if self.launch_trial_override:
             process=self.launch_trial_override(trial)
         else:
+            runtime=prepare_runtime(bundle,self.data/'cache')
+            trial=self.store.trial_update(trial['id'],executionEntry=str(runtime/'run.py'))
             frozen=self.store.get('campaigns',trial['campaignId'])['config']
             env=dict(self.providers.environment(frozen['solver']['provider'],campaign_route(frozen,'solver')),PHYEXP_ACCOUNTING_URL=self.base_url+'/accounting/'+lease['id'],PHYEXP_ACCOUNTING_TOKEN=token,
                 PHYEXP_LAUNCH_ID=trial['launchId'])
-            args=[sys.executable,str(bundle/'run.py'),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
+            args=[sys.executable,str(runtime/'run.py'),*(['--bundle',str(bundle)] if manifest.get('schemaVersion')==2 else []),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
                 '--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-time.time())),
                 '--soft-token-limit',str(self.store.get('campaigns',trial['campaignId'])['config']['softTokenLimit'] or 'none')]
             config=self.store.get('campaigns',trial['campaignId'])['config']
@@ -293,13 +317,15 @@ class ControlService:
                 except (KeyError,ValueError):pass
         self.store.mark_unknown(trial['leaseId'])
     def _collect(self,trial):
-        output=Path(trial['output']);verify_manifest(output)
-        summary=json.loads((output/'summary.json').read_text());self._reconcile_usage(trial)
+        output=Path(trial['output'])
+        summary=read_summary(trial,self.store.get('candidates',trial['candidateId']));self._reconcile_usage(trial)
         state='finished' if summary.get('pipelineStatus')=='completed' else 'failed'
         changes=dict(state=state,score=summary.get('officialReward'),outcome=summary.get('taskOutcome'),
             **({k:summary.get(k) for k in ['failureContract','requestRecovery']} if summary.get('failureContract') else {}),
             failure=summary.get('failure'),scoringStatus=summary.get('scoringStatus','completed' if summary.get('officialReward') is not None else 'unknown'),
-            usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),stopReason=trial.get('stopReason') or summary.get('stopReason'),summary=summary)
+            usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),
+            stopReason=summary.get('stopReason') if summary.get('resultCollection') else trial.get('stopReason') or summary.get('stopReason'),summary=summary,
+            resultCollection=summary.get('resultCollection'))
         provenance_path=output/'provenance.json'
         if provenance_path.exists():
             provenance=json.loads(provenance_path.read_text())
@@ -318,12 +344,43 @@ class ControlService:
                 changes['runnerImageProof']=proof
             except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
                 pass # Keep strict raw-image comparison when proof is unavailable.
-        items=self.evidence.ingest(trial)
+        items=self.evidence.ingest(trial,summary)
         t=self.store.trial_update(trial['id'],**changes)
         c=self.store.get('campaigns',trial['campaignId'])
         if c['config'].get('retentionRule')!=META_RETENTION_RULE and c['retainedCandidateId'] is None and t['score'] is not None:
             self.store.retain(c['id'],t['candidateId'],'首个有官方结果的参考版本；不表示已验证泛化。',[items[0]['id']])
         return t
+    def recollect(self,trial_id):
+        # Serialize with scheduling/collection. This endpoint never runs Solver or verifier.
+        with self.tick_lock:
+            trial=self.store.get('trials',trial_id);campaign=trial['campaignId']
+            if self.store.get('campaigns',campaign)['state'] not in ['paused','finished','failed']:
+                raise Refused('Pause the Campaign before recovering results')
+            if trial['state'] not in ['finished','failed','unknown']:
+                raise Refused('Only ended Trials can be recollected')
+            try:summary=read_summary(trial,self.store.get('candidates',trial['candidateId']))
+            except OSError as error:raise Refused('Collection evidence is unavailable: '+str(error)) from error
+            if not summary.get('resultCollection'):
+                raise Refused('No supported result collection correction for this Trial')
+            if trial.get('resultCollection')==summary['resultCollection']:
+                return {'status':'already_recovered','trialId':trial_id,'score':trial.get('score')}
+            changes=projection(summary)
+            # Immutable before/after receipt, including original timestamps and unknown usage.
+            receipt={'trialId':trial_id,'campaignId':campaign,'before':trial,'changes':changes}
+            digest=hashlib.sha256(encoded(receipt).encode()).hexdigest()
+            path=self.data/'result-recoveries'/digest
+            path.parent.mkdir(parents=True,exist_ok=True)
+            if not path.exists():path.write_text(encoded(receipt));path.chmod(0o444)
+            items=self.evidence.ingest(trial,summary)
+            with self.store.connection(True) as db:
+                if self.store._get(db,'trials',trial_id)!=trial:raise Refused('Trial changed during result recovery')
+                current=self.store._get(db,'campaigns',campaign)
+                if current['state'] not in ['paused','finished','failed']:raise Refused('Campaign resumed during result recovery')
+                self.store._save(db,'trials',{**trial,**changes})
+                self.store._event(db,campaign,'trial_result_recollected',trialId=trial_id,
+                    correction=summary['resultCollection'],previousScore=trial.get('score'),score=changes['score'],
+                    receiptSha256=digest,evidenceRefs=[items[0]['id']])
+            return {'status':'recovered','trialId':trial_id,'score':changes['score'],'receiptSha256':digest}
     def _reconcile_trial(self,trial):
         output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
         if (output/'summary.json').is_file() and (output/'archive-manifest.json').is_file():
@@ -334,7 +391,7 @@ class ControlService:
             candidate=self.store.get('candidates',trial['candidateId'])
             listing=subprocess.run(['ps','-Ao','pid,command'],capture_output=True,text=True).stdout
             for line in listing.splitlines():
-                if str(Path(candidate['bundlePath'])/'run.py') in line and str(output) in line:
+                if trial.get('executionEntry',str(Path(candidate['bundlePath'])/'run.py')) in line and str(output) in line:
                     pid=int(line.strip().split()[0])
                     self.store.trial_update(trial['id'],state='running',pid=pid,output=str(output));return
         if not alive and (output/'supervisor.json').exists():
@@ -450,7 +507,7 @@ class ControlService:
             if args.get('candidateId'):
                 selected=self.store.get('candidates',args['candidateId'])
                 if selected['campaignId']!=campaign:raise Refused('Candidate unavailable')
-                return read_workspace(Path(selected['bundlePath'])/'plugins',args['path'])
+                return read_plugins(selected['bundlePath'],args['path'])
             return read_workspace(self.workspace(campaign),args['path'])
         if operation=='candidate_list':
             candidates=self.store.list('candidates',campaign)
@@ -474,7 +531,7 @@ class ControlService:
                 except (OSError,ValueError) as error:raise Refused('Frozen candidate integrity check failed') from error
                 if bundle['id']!=candidate['bundleId']:raise Refused('Frozen candidate identity mismatch')
             return self.store.retain(campaign,args['candidateId'],args.get('reason'),args.get('evidenceRefs'),
-                **{key:args.get(key) for key in ['tradeoffs','limitations','reconsiderWhen']})
+                **{key:args.get(key) for key in ['tradeoffs','limitations','reconsiderWhen','expectedSelectionRevision']})
         if operation=='export_create':return self.export(campaign,args['candidateId'])
         if operation=='campaign_finish':
             reason=args.get('reason')

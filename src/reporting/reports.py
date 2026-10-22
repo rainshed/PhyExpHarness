@@ -89,13 +89,14 @@ class Reports:
             'selectionDecisions':decisions,
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
             'comparisonRule':retention_rule_description(c['config'])}
-    def save(self,campaign,analysis,batch_id=None,author='meta'):
+    def save(self,campaign,analysis,batch_id=None,author='meta',facts=None,expected_revision=None,meta_request=None,analysis_schema=None,analysis_sha=None):
         fields={'summary','observations','hypotheses','limitations','decision','evidenceRefs'}
         if not fields.issubset(analysis) or not isinstance(analysis['summary'],str) or not analysis['summary'].strip():
             raise Refused('Analysis requires summary, observations, hypotheses, limitations, decision and evidenceRefs')
         refs=analysis['evidenceRefs']
         if not isinstance(refs,list) or not all(isinstance(x,str) for x in refs):raise Refused('evidenceRefs must be an array of exact evidence IDs')
-        facts=self.facts(campaign,batch_id)
+        facts=self.facts(campaign,batch_id) if facts is None else copy.deepcopy(facts)
+        if facts['campaign']['id']!=campaign:raise Refused('Facts belong to a different Campaign')
         allowed={x['id'] for x in facts['evidence']}
         if set(refs)-allowed:raise Refused('Unknown or unrelated evidence reference')
         if any(t.get('startedAt') for t in facts['trials']) and not refs:raise Refused('Analysis needs evidence references')
@@ -106,10 +107,11 @@ class Reports:
             if not isinstance(item,dict) or not all(isinstance(item.get(k),str) for k in ['plugin','expected','observed','comparison','assessment']):raise Refused('Plugin contribution requires plain-language fields')
             if not isinstance(item.get('evidenceRefs',[]),list) or any(x not in allowed for x in item.get('evidenceRefs',[])):raise Refused('Invalid contribution evidence')
         record={'id':identity('report'),'campaignId':campaign,'batchId':batch_id,'kind':'round' if batch_id else 'final',
+            **({'metaRequest':meta_request,'analysisSchema':analysis_schema,'analysisSha256':analysis_sha} if meta_request else {}),
             'author':author,'status':'analysis','facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
             'analysis':{k:analysis[k] for k in fields | (optional & analysis.keys())},'createdAt':self.store.clock(),
-            'tables':self.tables(campaign,batch_id,facts['campaign'])}
-        return self._persist(record)
+            'tables':build_tables(facts['candidates'],facts['batches'],facts['trials'],facts['campaign'],read_annotations(self.root.parent),batch_id)}
+        return self._persist(record,expected_revision)
     def status_summary(self,campaign,reason):
         facts=self.facts(campaign)
         return self._persist({'id':identity('report'),'campaignId':campaign,'batchId':None,'kind':'status_summary','author':'system',
@@ -117,11 +119,18 @@ class Reports:
             'analysis':{'summary':reason,'observations':[],'hypotheses':[],'limitations':['Meta 完整分析尚未完成。'],
                         'decision':'保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
             'tables':self.tables(campaign,context=facts['campaign'])})
-    def _persist(self,record):
+    def _persist(self,record,expected_revision=None):
         record['reading']=project(record,self.root.parent)
         record['presentationVersion']=PRESENTATION_VERSION
         with self.store.connection(True) as db:
+            if record.get('metaRequest'):
+                request=record['metaRequest']
+                previous=next((r for r in self.store._list(db,'reports',record['campaignId']) if r.get('metaRequest',{}).get('requestId')==request['requestId']),None)
+                if previous:
+                    if previous['metaRequest']['payload']!=request['payload']:raise Refused('Report request payload changed')
+                    return previous
             prior=[r for r in self.store._list(db,'reports',record['campaignId']) if r['batchId']==record['batchId'] and r['kind']==record['kind']]
+            if expected_revision is not None and expected_revision!=len(prior):raise Refused('Report revision changed')
             record['analysisRevision']=len(prior)+1;record['previousReportId']=prior[-1]['id'] if prior else None
             directory=self.root/record['id'];directory.mkdir(parents=True)
             record['markdownPath']=str(directory/'report.md')

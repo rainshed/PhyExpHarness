@@ -80,7 +80,10 @@ def collect(run_dir):
         'taskOutcome': ('no_submission' if not submitted else 'invalid_submission' if not assessed
                         else 'passed' if reward else 'failed_science'),
         'task': trial['task_name'], 'trial': trial['trial_name'],
-        'recipeId': runtime['recipe']['id'], 'model': runtime['model'], 'provider': runtime['provider'],
+        # Recipe labels are optional in v2; the frozen bundle owns execution identity.
+        'recipeId': runtime['recipe'].get('id'), 'bundleId': runtime.get('bundleId'),
+        'model': runtime['model'], 'provider': runtime['provider'],
+        'scoringStatus': 'completed',
         'officialReward': reward, 'sciencePassed': reward == 1,
         'submissionPresent': submitted, 'scientificAssessmentPresent': assessed,
         'qsimActions': sorted({e['action'] for e in experiment_events if 'action' in e}),

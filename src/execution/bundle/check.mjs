@@ -4,8 +4,9 @@ import path from 'node:path';
 import {isolatedSession} from '../host/isolation.mjs';
 import {ModelGateway} from '../host/model_gateway.mjs';
 import {providerRoute} from '../host/providers.mjs';
+import {resolveBundle,pluginMounts} from './manifest.mjs';
 const [root,logs]=process.argv.slice(2);
-const bundle=JSON.parse(fs.readFileSync(path.join(root,'bundle.json')));
+const resolved=resolveBundle(root),bundle=resolved.manifest;
 const recipe=JSON.parse(fs.readFileSync(path.join(root,'recipe.json')));
 // The response is synthetic, but native session validation must use the frozen model's capabilities.
 // Resolving this route is local and does not load credentials or contact the provider.
@@ -18,11 +19,11 @@ const gateway=new ModelGateway({model:recipe,deadline:Date.now()+20000,audit:pat
  calls++;yield {type:'block-start',index:0,blockType:'text'};yield {type:'block-end',index:0,block:{type:'text',text:'Technical assembly check.'}};
  yield {type:'usage',usage:{inputTokens:1,outputTokens:1,totalTokens:2}};yield {type:'finish',reason:{kind:'stop'}};
 }}});
-const session=isolatedSession({executionRoot:path.join(root,'src/execution'),logs,gateway,image:bundle.runnerImage,
+const session=isolatedSession({executionRoot:resolved.executionRoot,logs,gateway,image:bundle.runnerImage,
  config:{disableLocalTools:true,modelInfo,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),
  plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},
  ...bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}))]},
- mounts:bundle.plugins.length?[`type=bind,source=${path.join(root,'plugins')},target=/opt/phyexp/plugins,readonly`]:[],
+ mounts:pluginMounts(resolved),
  async *handler(op,payload){if(op!=='receipt')throw new Error('Check has no task capabilities');receipt=payload;yield {ok:true};}
 });
 try{
@@ -31,7 +32,7 @@ try{
  for(const tool of bundle.plugins.flatMap(p=>p.tools))if(!receipt.tools.includes(tool))throw new Error('Declared tool missing: '+tool);
  if(calls!==1)throw new Error('Unexpected extra call in assembly check');
  await session.shutdown();
- fs.writeFileSync(path.join(logs,'assembly.json'),JSON.stringify({status:'passed',model:'controlled-fake-provider',bundleId:bundle.id,receipt,
+ fs.writeFileSync(path.join(logs,'assembly.json'),JSON.stringify({status:'passed',model:'controlled-fake-provider',bundleId:bundle.id,compositionId:bundle.compositionId,framework:bundle.framework,plugins:bundle.plugins,receipt,
   workerSource:import.meta.url,events:events.length},null,2));
  console.log(JSON.stringify({status:'passed',bundleId:bundle.id,model:'controlled-fake-provider'}));
 }finally{await session.dispose();}

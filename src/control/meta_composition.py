@@ -29,6 +29,9 @@ def validate(manifest,root):
     return manifest
 
 def freeze(source,data,config):
+    if config.get('metaCompositionConfig',{}).get('version')!=VERSION:
+        from .meta_native_composition import freeze as freeze_native
+        return freeze_native(source,data,config)
     from .meta_context import system_prompt
     source=Path(source);data=Path(data);plugin=source/'packages/meta-harness'
     manifest=validate(json.loads((plugin/'composition.json').read_text()),plugin)
@@ -74,6 +77,9 @@ def verify(data,reference,source):
     root=Path(data)/'meta-compositions'/id
     try:document=json.loads((root/'manifest.json').read_text())
     except (OSError,ValueError) as error:raise Refused('Frozen Meta composition missing; restoration refused') from error
+    if document.get('version')=='meta-composition-v2':
+        from .meta_native_composition import verify as verify_native
+        return verify_native(data,reference,source)
     if document.get('id')!=id or digest({k:v for k,v in document.items() if k!='id'})!=id:raise Refused('Meta composition manifest changed')
     for rel,sha in document['files'].items():
         file=root/rel

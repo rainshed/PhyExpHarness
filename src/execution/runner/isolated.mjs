@@ -36,12 +36,15 @@ const patch = [ { id: 'llm-deepseek', disabled: true }, { insert: [{ id: 'fixed-
   // session. Its summaries must obey the same frozen model cap as ordinary calls.
   ...(config.fixedModel?.maxTokens !== undefined ? [{ id:'compaction-basic', config:{maxTokens:config.fixedModel.maxTokens} }] : []),
   ...(config.disableLocalTools ? ['persistent-bash','persistent-pwsh','terminal-bash','terminal-pwsh','tool-fs','tool-working-directory'].map(id => ({ id, disabled: true })) : []),
+  ...(config.nativeMeta ? [{id:'tool-fs',config:{read:true,write:true,edit:true}},
+    {id:'subprocess',disabled:true},{insert:[{id:'captured-subprocess',name:'/opt/phyexp/meta-plugin/captured-subprocess.mjs'}]},
+    {id:'sessions',config:{root:'/session/sessions',compression:'none'}}] : []),
   ...(config.plugins?.length ? [{ insert: config.plugins }] : []) ];
 fs.writeFileSync('/tmp/gateway.patch.json', JSON.stringify(patch));
 const connections=(config.mcpConnections||[]).map(c=>({...c,url:`http://127.0.0.1:${server.address().port}/mcp/${c.name}`}));
 fs.writeFileSync('/tmp/mcp-connections.json',JSON.stringify(connections));
 const child = spawn(process.execPath, ['/opt/phyexp/src/execution/runner/boot.mjs','/tmp/gateway.patch.json'], {
-  cwd: '/tmp/work', env: { PATH: process.env.PATH, HOME: '/tmp/home', DSH_HOME: '/tmp/home/dsh', NO_COLOR:'1',
+  cwd: config.nativeMeta?'/work':'/tmp/work', env: { PATH: process.env.PATH, HOME: '/tmp/home', DSH_HOME: config.nativeMeta?'/session':'/tmp/home/dsh', NO_COLOR:'1',
     PHYEXP_MODEL_INFO: JSON.stringify(config.modelInfo), PHYEXP_FIXED_MODEL: JSON.stringify(config.fixedModel), PHYEXP_GATEWAY_URL: `http://127.0.0.1:${server.address().port}`,
     PHYEXP_MCP_CONNECTIONS:'/tmp/mcp-connections.json',PHYEXP_TOOL_RECEIPT:'/tmp/tool-ready.json',...config.environment }, stdio: ['pipe','pipe','inherit'] });
 const output = readline.createInterface({ input: child.stdout });

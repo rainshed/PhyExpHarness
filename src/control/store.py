@@ -14,7 +14,7 @@ from src.evidence.outcomes import outcome_summary, RULE as TASK_RULE, LEGACY_RUL
 from . import resource_planning as planning
 
 SCHEMA_VERSION = 3
-TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions')
+TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
 LEGACY_RETENTION_RULE = 'public-development-v1'
@@ -267,11 +267,13 @@ class Store:
                 if c['state']!='draft':raise Refused('Campaign already started')
                 c.update(state='running',startedAt=self.clock(),deadline=min(self.clock()+c['config']['wallTimeSeconds'],c['config'].get('authorizationDeadline',float('inf'))))
             elif action=='pause':
-                if c['state']!='running':raise Refused('Only a running Campaign can pause')
+                if c['state'] not in ['running','closing']:raise Refused('Only a running or closing Campaign can pause')
                 c['state']='paused'
             elif action=='resume':
                 if c['state']!='paused':raise Refused('Campaign is not paused')
-                if self.clock()>=c['deadline']-(0 if planning.enabled(c['config']) else c['config']['reserveSeconds']):
+                if c['explorationClosed']:
+                    c['state']='closing'
+                elif self.clock()>=c['deadline']-(0 if planning.enabled(c['config']) else c['config']['reserveSeconds']):
                     c.update(state='closing',explorationClosed=True,stopReason='time_limit')
                 else:c['state']='running'
             elif action in ['stop','finish']:
@@ -540,8 +542,8 @@ class Store:
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
             if c['state'] in ['draft','finished','failed']:return c
-            if c['state']!='closing':
-                c.update(state='closing',explorationClosed=True,stopReason=reason);c=self._save(db,'campaigns',c)
+            if c['state'] not in ['closing','paused'] or not c['explorationClosed']:
+                c.update(state='paused' if c['state']=='paused' else 'closing',explorationClosed=True,stopReason=c.get('stopReason') or reason);c=self._save(db,'campaigns',c)
                 self._event(db,campaign,'closing',reason=reason)
             if cancel_reserved:
                 for t in self._list(db,'trials',campaign):
@@ -556,17 +558,23 @@ class Store:
             c.update(state='finished',explorationClosed=True,finishedAt=self.clock(),
                 stopReason=reason or c['stopReason'] or 'completed',finalCandidateId=c['retainedCandidateId'])
             c=self._save(db,'campaigns',c);self._event(db,campaign,'finished',reason=c['stopReason']);return c
-    def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None):
+    def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None):
         rejection=None
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
+            if meta_request:
+                previous=next((r for r in self._list(db,'selection_decisions',campaign) if r.get('metaRequest',{}).get('requestId')==meta_request['requestId']),None)
+                if previous:
+                    if previous['metaRequest']['payload']!=meta_request['payload']:raise Conflict('Selection request payload changed')
+                    return {**c,'selectionDecision':previous}
+            if expectedSelectionRevision is not None and expectedSelectionRevision!=len(self._list(db,'selection_decisions',campaign)):raise Conflict('Selection revision changed')
             if c['state'] in ['finished','failed']:raise Refused('Final candidate selection is frozen')
             selected=self._get(db,'candidates',candidate)
             if selected['campaignId']!=campaign:raise Refused('Candidate unavailable')
             trials=[t for t in self._list(db,'trials',campaign) if t['candidateId']==candidate]
             rule=c['config'].get('retentionRule',LEGACY_RETENTION_RULE)
             if rule==META_RETENTION_RULE:
-                return self._meta_select(db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsiderWhen)
+                return self._meta_select(db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsiderWhen,meta_request)
             has_result=any(t['score'] is not None for t in trials) if rule==LEGACY_RETENTION_RULE else any(
                 t['state']=='finished' and type(t.get('score')) in [int,float] and math.isfinite(t['score']) for t in trials)
             if not has_result:raise Refused('Retaining a candidate requires a completed official result')
@@ -594,13 +602,26 @@ class Store:
                     old,new=scores(previous),scores(trials)
                     if old is None or new is None or any(new[t]<old[t] for t in old):raise Refused('Retention rule requires comparable complete results without a task score regression')
             if rejection is None:
+                # v3 journals also bind explicitly configured historical selection rules.
+                # Their eligibility checks above remain unchanged.
+                if meta_request:
+                    previous_id=c.get('retainedCandidateId')
+                    previous=[t for t in self._list(db,'trials',campaign) if t['candidateId']==previous_id] if previous_id else []
+                    audit=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
+                    decision=self._save(db,'selection_decisions',{'id':identity('selection'),'campaignId':campaign,
+                        'candidateId':candidate,'bundleId':selected['bundleId'],'previousCandidateId':previous_id,
+                        'previousDecisionId':c.get('selectionDecisionId'),'createdAt':self.clock(),'source':'meta-analysis','rule':rule,
+                        'reason':reason,'evidenceRefs':refs,'tradeoffs':tradeoffs,'limitations':limitations,'reconsiderWhen':reconsiderWhen,
+                        'assessment':audit,'legacyEligibilityAssessment':assessment,'metaRequest':meta_request,
+                        'selectionRevision':len(self._list(db,'selection_decisions',campaign))+1})
+                    c['selectionDecisionId']=decision['id']
                 c['retainedCandidateId']=candidate;c=self._save(db,'campaigns',c)
                 self._event(db,campaign,'candidate_retained',candidateId=candidate,reason=reason,evidenceRefs=refs,rule=rule,assessment=assessment)
                 return c
         # Commit the rejected assessment for audit, without changing the selection.
         raise Refused(rejection)
 
-    def _meta_select(self,db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsider_when):
+    def _meta_select(self,db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsider_when,meta_request=None):
         if selected.get('check',{}).get('status')!='passed':raise Refused('Selection requires a checked frozen candidate')
         for key,value in [('reason',reason),('tradeoffs',tradeoffs),('reconsiderWhen',reconsider_when)]:
             if not isinstance(value,str) or not value.strip() or len(value)>16000:raise Refused(key+' must be non-empty text of at most 16000 characters')
@@ -622,6 +643,7 @@ class Store:
         assessment=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
         decision=self._save(db,'selection_decisions',{'id':identity('selection'),'campaignId':c['id'],
             'candidateId':selected['id'],'bundleId':selected['bundleId'],'previousCandidateId':previous_id,
+            **({'metaRequest':meta_request,'selectionRevision':len(self._list(db,'selection_decisions',c['id']))+1} if meta_request else {}),
             'previousDecisionId':c.get('selectionDecisionId'),'createdAt':self.clock(),'source':'meta-analysis',
             'rule':META_RETENTION_RULE,'reason':reason,'tradeoffs':tradeoffs,'limitations':limitations,
             'reconsiderWhen':reconsider_when,'evidenceRefs':refs,'verifiedEvidence':checks,'assessment':assessment,

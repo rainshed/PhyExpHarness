@@ -157,6 +157,7 @@ class PreparationTests(unittest.TestCase):
 
 class CampaignPreparationTests(unittest.TestCase):
     def setUp(self):
+        self.meta=patch('src.control.service.freeze_meta',return_value={});self.meta.start();self.addCleanup(self.meta.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.data = Path(self.tmp.name)
         self.service = ControlService(ROOT, self.data, ROOT.parent/'Quantum-Harbor', 'http://127.0.0.1:1')

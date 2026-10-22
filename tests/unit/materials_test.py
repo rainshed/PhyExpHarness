@@ -31,7 +31,7 @@ class MaterialTests(unittest.TestCase):
         (folder/'hidden.json').write_text('SECRET_NOT_FOR_META')
         self.service = ControlService(ROOT,self.root/'data',self.quantum,'http://127.0.0.1:1')
         self.config = {'solver':MODEL,'meta':{**MODEL,'model':'gpt-6-astra'},'tasks':[TASK],
-                       'wallTimeSeconds':7200,'concurrency':1}
+                       'wallTimeSeconds':7200,'concurrency':1,'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
         with patch.object(self.service,'_operation',return_value={'fixture':True}):
             self.c = self.service.create(self.config,'new')['id']
         self.store = self.service.store
@@ -110,6 +110,9 @@ class MaterialTests(unittest.TestCase):
         with patch('src.control.meta.subprocess.Popen') as process:
             process.return_value.pid=123
             driver.start(self.c)
+            driver.start(self.c)
+            self.assertEqual(len(self.store.list('meta_sessions',self.c)),1)
+            row=self.store.list('meta_sessions',self.c)[0];row['state']='interrupted';self.store.put('meta_sessions',row)
             driver.start(self.c)
         rows=self.store.list('meta_sessions',self.c)
         self.assertEqual(len(rows),2)

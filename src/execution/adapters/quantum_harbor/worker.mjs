@@ -8,16 +8,13 @@ import {forwardMcp,callContainer} from '../../host/capabilities.mjs';
 import {budgetGate} from '../../host/budget.mjs';
 import {summarizeUsage} from '../../host/usage.mjs';
 import {verifyToolReceipt} from './profile.mjs';
+import {resolveBundle,pluginMounts} from '../../bundle/manifest.mjs';
 
 const [logs,bundleRoot,socketPath,deadlineString]=process.argv.slice(2);
-const bundle=JSON.parse(fs.readFileSync(path.join(bundleRoot,'bundle.json')));
+const resolved=resolveBundle(bundleRoot),bundle=resolved.manifest;
 const recipe=JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json')));
 const started=Date.now();const deadline=Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
 if(!Number.isFinite(deadline))throw new Error('Explicit finite deadline required');
-for(const [relative,digest] of Object.entries(bundle.files)){
- const target=path.join(bundleRoot,relative);
- if(fs.lstatSync(target).isSymbolicLink()||crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')!==digest)throw new Error('Bundle integrity mismatch: '+relative);
-}
 const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));
 const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,usage:{},toolCalls:0};
 const budget=budgetGate({deadline,softTokenLimit:Number(process.env.PHYEXP_RUN_TOKEN_LIMIT)||Infinity,
@@ -39,11 +36,11 @@ try{
  provider=await providerRuntime({model:recipe,credentialFile:credentials.credentialFile});
  gateway=new ModelGateway({model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
  const plugins=bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}));
- session=isolatedSession({executionRoot:path.join(bundleRoot,'src/execution'),logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
+ session=isolatedSession({executionRoot:resolved.executionRoot,logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
   config:{disableLocalTools:true,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),modelInfo:provider.info,mcpConnections:connections,
    environment:{PHYEXP_MAX_OUTPUT_CHARS:String(recipe.maxOutputChars)},
    plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},...plugins]},
-  mounts:bundle.plugins.length?[`type=bind,source=${path.join(bundleRoot,'plugins')},target=/opt/phyexp/plugins,readonly`]:[],
+  mounts:pluginMounts(resolved),
   async *handler(op,payload,signal){
    if(op==='mcp')yield* forwardMcp(connections,payload,signal);
    else if(op==='tool')yield await callContainer(socketPath,payload.command,signal);
@@ -62,7 +59,7 @@ try{
   +'The bash tool runs inside the task container, starting in /app on each call. Files persist between calls; shell state does not.\n'
   +'Configured MCP endpoints (reachable from Python client scripts inside the container):\n'+JSON.stringify(environment.mcpServers)+'\n';
  fs.writeFileSync(path.join(logs,'prompt.txt'),prompt);
- fs.writeFileSync(path.join(logs,'load-receipt.json'),JSON.stringify({bundleId:bundle.id,worker:import.meta.url,agent:bundle.agentEntry,plugins:bundle.plugins,filesVerified:Object.keys(bundle.files).length},null,2));
+ fs.writeFileSync(path.join(logs,'load-receipt.json'),JSON.stringify({bundleId:bundle.id,compositionId:bundle.compositionId,framework:bundle.framework,worker:import.meta.url,agent:bundle.agentEntry,plugins:bundle.plugins,filesVerified:Object.keys(bundle.files).length},null,2));
  // Enforce base inventory and declared additions on every call, including calls made by plugins.
  const stream=gateway.stream.bind(gateway);
  gateway.stream=async function*(request,signal){

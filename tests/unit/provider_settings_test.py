@@ -197,12 +197,17 @@ class ProviderSettingsTests(unittest.TestCase):
         self.service.store.submit(campaign['id'], candidate['id'], config['tasks'], 1, 'submit')
         trial = self.service.store.claim(campaign['id'])
         self.save(enabled=False, route={**self.route, 'baseURL': 'https://new.invalid'})
-        with patch('src.control.service.subprocess.Popen') as spawn:
+        runtime = self.data/'shared-runtime'
+        with patch('src.control.service.prepare_runtime',return_value=runtime), patch('src.control.service.subprocess.Popen') as spawn:
             spawn.return_value.pid = 987654
             self.service._launch(trial)
             env = spawn.call_args.kwargs['env']
             self.assertEqual(env[self.route['auth']['env']], 'solver-fixture-secret')
             self.assertNotIn('meta-fixture-secret', env.values())
+            argv=spawn.call_args.args[0]
+            self.assertEqual(argv[1],str(runtime/'run.py'))
+            self.assertEqual(argv[argv.index('--bundle')+1],bundle['path'])
+            self.assertEqual(self.service.store.get('trials',trial['id'])['executionEntry'],str(runtime/'run.py'))
         driver = MetaDriver(self.service)
         with patch('src.control.meta.startup_context', return_value={'fixture': True}), patch('src.control.meta.subprocess.Popen') as spawn:
             spawn.return_value.pid = 987655

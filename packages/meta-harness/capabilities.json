@@ -1,0 +1,74 @@
+{
+  "version": "meta-capabilities-v2",
+  "base": {
+    "profile": "sdk-minimal",
+    "version": "0.2.1-rc.2",
+    "reason": "Headless native Agent; add native development consumers and scoped domain presets"
+  },
+  "native": {
+    "files": [
+      "tool-fs",
+      "tool-working-directory"
+    ],
+    "search": [
+      "tool-fs-search"
+    ],
+    "terminal": [
+      "tool-bash-persistent",
+      "tool-terminal"
+    ],
+    "jobs": [
+      "tool-jobs"
+    ],
+    "context": [
+      "compaction-basic",
+      "session-query",
+      "tool-session-query"
+    ],
+    "knowledge": [
+      "skill",
+      "skill-filesystem",
+      "tool-skill"
+    ],
+    "planning": [
+      "tool-todo"
+    ],
+    "human": [
+      "user-questions",
+      "tool-ask-user"
+    ],
+    "delegation": [
+      "subagent",
+      "tool-subagent"
+    ]
+  },
+  "roles": {
+    "meta": "native development, human questions, isolated delegation and business writes",
+    "research": "native development in independent work/session; evidence and status queries only",
+    "reviewer": "independent work/session and authoritative review output; no business writes or delegation"
+  },
+  "capacity": {
+    "source": "fixed platform meta-runtime-v2",
+    "cpus": 2,
+    "memoryBytes": 1073741824,
+    "pids": 128,
+    "temporaryBytes": 268435456,
+    "outputBytesPerAgent": 268435456,
+    "activeChildren": 2,
+    "childPublicationBytes": 67108864,
+    "persistentWorkspaceQuota": "host filesystem capacity; no enforced per-activity quota yet"
+  },
+  "restrictions": {
+    "network": "disabled in Runner; only host-controlled model/accounting and material services",
+    "mcp": "Meta has no configured external MCP connections; Solver task MCP is unchanged",
+    "office": "headless profile excludes optional office rendering payloads",
+    "human": "blocking native ask-user; question/answer persists independently of UI connection",
+    "processRecovery": "files and native session persist; OS processes are terminated and output marked interrupted"
+  },
+  "receipts": {
+    "bootstrap": "meta-sessions/<attempt>/bootstrap-receipt.json",
+    "activeScope": "meta_sessions.agents; tools are captured from the actual Agent scope",
+    "versions": "runtime-package-lock.json",
+    "config": "composition-native.json and frozen runner-config/runner.json"
+  }
+}

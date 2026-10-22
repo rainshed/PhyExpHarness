@@ -14,5 +14,82 @@
     "Quantum-Harbor checkout",
     "output directory",
     "host credential file"
-  ]
+  ],
+  "delivery": {
+    "name": "quantum-harbor-execution",
+    "groups": [
+      {
+        "role": "composition-verification",
+        "purpose": "Shared non-executing resolver and native fake-provider assembly check.",
+        "files": [
+          "src/execution/bundle/manifest.py",
+          "src/execution/bundle/manifest.mjs",
+          "src/execution/bundle/check.mjs"
+        ]
+      },
+      {
+        "role": "isolated-native-host",
+        "purpose": "Native DeepSeek profile, gateway client and isolated stdio transport; framework packages are installed from the lock.",
+        "files": [
+          "src/execution/runner/boot.mjs",
+          "src/execution/runner/isolated.mjs",
+          "src/execution/runner/gateway_plugin.mjs",
+          "src/execution/runner/dsh_session.mjs",
+          "src/execution/runner/assets/sdk-minimal.yml",
+          "src/execution/runner/Dockerfile"
+        ]
+      },
+      {
+        "role": "fixed-host-supervision",
+        "purpose": "Credential boundary, fixed model, request protection, accounting, task network and one-Trial supervision required by the existing execution contract.",
+        "files": [
+          "src/execution/host/model_gateway.mjs",
+          "src/execution/host/task_network.py",
+          "src/execution/host/capabilities.mjs",
+          "src/execution/host/provider-config.schema.json",
+          "src/execution/host/model_failures.mjs",
+          "src/execution/host/network.py",
+          "src/execution/host/isolation.mjs",
+          "src/execution/host/stream-policy.json",
+          "src/execution/host/failure.py",
+          "src/execution/host/transport_diagnostics.mjs",
+          "src/execution/host/model-catalog.json",
+          "src/execution/host/provider_auth.mjs",
+          "src/execution/host/budget.mjs",
+          "src/execution/host/chatgpt_auth.mjs",
+          "src/execution/host/stream_guard.mjs",
+          "src/execution/host/single_run.py",
+          "src/execution/host/providers.mjs",
+          "src/execution/host/models.py",
+          "src/execution/host/usage.mjs"
+        ]
+      },
+      {
+        "role": "quantum-harbor-adapter",
+        "purpose": "Task tools, MCP transport, pinned environments and official result collection; task images and verifier stay external.",
+        "files": [
+          "src/execution/adapters/quantum_harbor/agent.py",
+          "src/execution/adapters/quantum_harbor/mcp_tunnel.py",
+          "src/execution/adapters/quantum_harbor/bridge.py",
+          "src/execution/adapters/quantum_harbor/results.py",
+          "src/execution/adapters/quantum_harbor/profile.mjs",
+          "src/execution/adapters/quantum_harbor/worker.mjs",
+          "src/execution/adapters/quantum_harbor/pinned_environment.py",
+          "src/execution/adapters/quantum_harbor/container_tool.mjs"
+        ]
+      }
+    ],
+    "entrypoints": {
+      "run.py": "templates/standalone/run.py",
+      "install-runner.mjs": "templates/standalone/install-runner.mjs",
+      "README.md": "templates/standalone/README.md",
+      "LICENSE": "templates/standalone/LICENSE"
+    },
+    "dependencies": {
+      "package.json": "templates/standalone/package.json",
+      "package-lock.json": "templates/standalone/package-lock.json",
+      "requirements.lock": "templates/standalone/requirements.lock",
+      "requirements.txt": "templates/standalone/requirements.txt"
+    }
+  }
 }

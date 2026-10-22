@@ -34,6 +34,8 @@ def project(report,data=None):
                  'Meta 提供的过程与插件作用分析。' if 'process' in a else '按原 Meta 分析整理；未单独记录的事项明确留空。',
         'sourceReportId':notes.get('sourceReportId'),
         'evidenceRefs':a.get('evidenceRefs',[])}
+    if report.get('analysisSchema')=='meta-report-analysis-v1':
+        reading['problems']=[('已解决：' if p['status']=='resolved' else '未解决：')+p['description'] for p in content.get('problems',[])]
     # Evidence identifiers remain exact machine links, never rewrite their values.
     refs=reading.pop('evidenceRefs');contribution_refs=[v.get('evidenceRefs',[]) for v in reading['pluginContributions']]
     reading=readable_text(reading,tables);reading['evidenceRefs']=refs;reading['sourceReportId']=notes.get('sourceReportId')

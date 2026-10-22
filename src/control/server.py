@@ -94,6 +94,9 @@ def make_app(service,supervise=True):
         user(request);trial=service.store.get('trials',id)
         if trial['state'] in ['launching','running']:service.stop_trial(trial,'user_stop')
         return service.store.get('trials',id)
+    @app.post('/trials/{id}/recollect')
+    def recollect(id:str,request:Request):
+        user(request);return service.recollect(id)
     @app.get('/evidence/{id}')
     def evidence(id:str,request:Request,offset:int=0,limit:int=16000):
         user(request);row=service.store.get('evidence',id);return service.evidence.read(row['campaignId'],id,offset,limit)
@@ -152,13 +155,32 @@ def make_app(service,supervise=True):
     def runtime(id:str,request:Request,body:dict):
         row=service.store.get('meta_sessions',id);role=request.state.identity
         if role.get('id')!=row['leaseId'] or role['role']!='meta':raise Refused('Meta session lease mismatch')
-        return service.stop_runtime.dispatch(id,body['action'],body.get('input',{}))
+        if body['action']=='user_question':
+            from .meta_questions import request as question_request
+            args=body.get('input',{})
+            return question_request(service.store,id,args.get('agentId'),args.get('callId'),args.get('questions'))
+        try:return service.stop_runtime.dispatch(id,body['action'],body.get('input',{}))
+        except (Refused,Conflict,KeyError,ValueError,TypeError) as error:
+            if row.get('runtimeVersion')!='meta-runtime-v2' or body['action']!='call':raise
+            code='conflict' if isinstance(error,Conflict) else 'unavailable' if isinstance(error,KeyError) else 'refused' if isinstance(error,Refused) else 'invalid_input'
+            return {'ok':False,'error':{'code':code,'message':str(error),'retryable':False}}
+    @app.post('/meta-questions/{id}/answer')
+    def question_answer(id:str,request:Request,body:dict):
+        user(request)
+        from .meta_questions import answer
+        return answer(service.store,id,body)
     @app.get('/meta-sessions/{id}/notifications')
     def notifications(id:str,request:Request,after:int=0):
         row=service.store.get('meta_sessions',id);role=request.state.identity
         if role.get('id')!=row['leaseId'] or role['role']!='meta':raise Refused('Meta session lease mismatch')
         if not service.meta_driver:raise Refused('Meta driver unavailable')
         return service.meta_driver.notifications(id,after)
+    @app.post('/meta-sessions/{id}/ack')
+    def acknowledge(id:str,request:Request,body:dict):
+        row=service.store.get('meta_sessions',id);role=request.state.identity
+        if role.get('id')!=row['leaseId'] or role['role']!='meta':raise Refused('Meta session lease mismatch')
+        if not service.meta_driver:raise Refused('Meta driver unavailable')
+        return service.meta_driver.acknowledge(id,body.get('cursor'))
     @app.post('/accounting/{lease_id}/{action}')
     def accounting(lease_id:str,action:str,request:Request,body:dict):
         lease=request.state.identity

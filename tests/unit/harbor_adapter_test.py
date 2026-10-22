@@ -82,6 +82,29 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
                 await bridge.execute({'command': 'true', key: 'forbidden'})
         environment.exec.assert_not_called()
 
+    async def test_rejected_command_then_success_does_not_abort_verifier(self):
+        with tempfile.TemporaryDirectory() as temp:
+            environment = SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(stdout='ok', stderr='', return_code=0)))
+            bridge = ContainerBridge(environment, Path(temp)/'audit.jsonl')
+            server = await asyncio.start_server(bridge.handle, '127.0.0.1', 0)
+            async def call(value):
+                reader, writer = await asyncio.open_connection('127.0.0.1', server.sockets[0].getsockname()[1])
+                writer.write((json.dumps(value)+'\n').encode());await writer.drain()
+                result = json.loads(await reader.readline())
+                await reader.read();writer.close();await writer.wait_closed()
+                return result
+            try:
+                for request in [{'command': ''}, {'command': '  '}, {'command': 'true', 'user': 'root'}, []]:
+                    self.assertIn('error', await call(request))
+                self.assertEqual(await call({'command': 'printf ok'}), {'stdout': 'ok', 'stderr': '', 'returnCode': 0})
+                self.assertEqual(bridge.errors, [])
+                environment.exec.assert_awaited_once()
+                environment.exec.side_effect = OSError('transport unavailable')
+                self.assertIn('error', await call({'command': 'true'}))
+                self.assertEqual(bridge.errors, ['transport unavailable'])
+            finally:
+                server.close();await server.wait_closed();await bridge.close()
+
 
 class ResultsTests(unittest.TestCase):
     def setUp(self):
@@ -113,6 +136,16 @@ class ResultsTests(unittest.TestCase):
         self.assertEqual(result['status'], 'completed')
         self.assertEqual(result['officialReward'], 0)
         self.assertFalse(result['sciencePassed'])
+
+    def test_v2_recipe_without_label_preserves_frozen_identity_and_score(self):
+        runtime = json.loads((self.base/'phyexp/runtime-summary.json').read_text())
+        runtime.update(recipe={'plugins': []}, bundleId='a'*64)
+        self.write('harbor/trial/phyexp/runtime-summary.json', runtime)
+        result = collect(self.root)
+        self.assertIsNone(result['recipeId'])
+        self.assertEqual(result['bundleId'], 'a'*64)
+        self.assertEqual(result['officialReward'], 0)
+        self.assertEqual(result['scoringStatus'], 'completed')
 
     def test_other_released_report_formats_preserve_official_verdicts(self):
         reports = [

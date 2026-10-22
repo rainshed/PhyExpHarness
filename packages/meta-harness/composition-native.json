@@ -1,0 +1,94 @@
+{
+  "version": "meta-composition-v2",
+  "id": "meta-native-v2",
+  "mode": "complete",
+  "plugins": [
+    {
+      "id": "meta-control",
+      "module": "domain-control.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta",
+        "research",
+        "reviewer"
+      ],
+      "requires": [],
+      "provides": [
+        "metaControl"
+      ]
+    },
+    {
+      "id": "meta-campaign",
+      "module": "domain-campaign.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta",
+        "research",
+        "reviewer"
+      ],
+      "requires": [
+        "metaControl",
+        "tools",
+        "systemPrompt"
+      ]
+    },
+    {
+      "id": "meta-experiments",
+      "module": "domain-experiments.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta"
+      ],
+      "requires": [
+        "metaControl",
+        "tools"
+      ]
+    },
+    {
+      "id": "meta-evidence",
+      "module": "domain-evidence.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta",
+        "research",
+        "reviewer"
+      ],
+      "requires": [
+        "metaControl",
+        "tools"
+      ]
+    },
+    {
+      "id": "meta-reporting",
+      "module": "domain-reporting.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta"
+      ],
+      "requires": [
+        "metaControl",
+        "tools"
+      ]
+    },
+    {
+      "id": "meta-stop-review",
+      "module": "domain-stop-review.mjs",
+      "enabled": true,
+      "config": {},
+      "roles": [
+        "meta"
+      ],
+      "requires": [
+        "metaControl",
+        "tools",
+        "subagents",
+        "meta-campaign"
+      ]
+    }
+  ]
+}

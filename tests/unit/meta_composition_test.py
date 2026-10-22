@@ -16,7 +16,7 @@ class CompositionTests(unittest.TestCase):
         validate(manifest,ROOT/'packages/meta-harness')
     def test_snapshot_is_recoverable_unchanged_and_checks_every_byte(self):
         with tempfile.TemporaryDirectory() as temp:
-            config={'objective':'literal {{unknown}}','solver':{'model':'fixture'}}
+            config={'objective':'literal {{unknown}}','solver':{'model':'fixture'},'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
             with patch('src.control.meta_composition.subprocess.run') as docker:
                 docker.return_value.returncode=0;docker.return_value.stdout='sha256:'+'a'*64
                 ref=freeze(ROOT,Path(temp),config);again=freeze(ROOT,Path(temp),config)
@@ -26,7 +26,7 @@ class CompositionTests(unittest.TestCase):
             with self.assertRaisesRegex(Refused,'source changed'):verify(temp,ref,ROOT)
     def test_configuration_changes_have_distinct_identity(self):
         with tempfile.TemporaryDirectory() as temp:
-            config={'objective':'objective','solver':{'model':'fixture'}}
+            config={'objective':'objective','solver':{'model':'fixture'},'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
             with patch('src.control.meta_composition.subprocess.run') as docker:
                 docker.return_value.returncode=0;docker.return_value.stdout='sha256:'+'a'*64
                 first=freeze(ROOT,temp,config)

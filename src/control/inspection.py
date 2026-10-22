@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from .store import Refused
 from .operations import workspace_path
-from src.execution.bundle.freeze import verify
+from src.execution.bundle.manifest import verify, resolve
 from src.reporting.tables import plugin_key
 
 
@@ -14,7 +14,7 @@ def plugin_source(service,candidate_id,plugin_id,file=None):
     if not plugin:raise Refused('Plugin is not a member of this execution version')
     bundle=Path(candidate['bundlePath']).resolve()
     if not bundle.is_relative_to((service.data/'objects/sha256').resolve()):raise Refused('Frozen object outside data directory')
-    manifest=verify(bundle);root=bundle/'plugins'/plugin['name']
+    resolved=resolve(bundle);manifest=resolved.manifest;root=resolved.plugin_roots[plugin['name']]
     prefix='plugins/'+plugin['name']+'/'
     files=[p[len(prefix):] for p in manifest['files'] if p.startswith(prefix)]
     result={'candidateId':candidate_id,'pluginId':plugin_id,'directory':str(root),'files':files,'readOnly':True}

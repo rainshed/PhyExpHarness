@@ -51,6 +51,17 @@ def ready(store,db,c):
 def no_pending(store,db,c):
     if any(t['state'] not in TERMINAL for t in store._list(db,'trials',c['id'])) or any(o['state']=='running' for o in store._list(db,'operations',c['id'])):raise Refused('Pending experiments or builds must settle before voluntary stop')
 
+def owns_review(store,db,session,review):
+    """A recovered host can read/use its existing judgment, never obtain a new vote."""
+    current=session;seen=set()
+    while current['id'] not in seen:
+        seen.add(current['id'])
+        if current['campaignId']!=review['campaignId']:return False
+        if current['id']==review['sessionId']:return True
+        if current.get('runtimeVersion')!='meta-runtime-v2' or not current.get('previousSessionId'):return False
+        current=store._get(db,'meta_sessions',current['previousSessionId'])
+    return False
+
 def finish(store,db,c,args):
     """Called inside Store.control's write transaction, including direct finish attempts."""
     ready(store,db,c);no_pending(store,db,c);required_text(args.get('reason'),'reason')
@@ -85,26 +96,32 @@ class StopRuntime:
             session=store._get(db,'meta_sessions',session_id);campaign=session['campaignId'];c=store._get(db,'campaigns',campaign)
             if c['config'].get('stopPolicy')!=POLICY or session['state'] not in ['starting','running','waiting']:raise Refused('Active composed Meta session required')
             agents=session.get('agents',{})
+            native=c['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
+            main=session.get('nativeSessionId',session_id)
             if action=='register':
                 agent=data.get('agentId');preset=data.get('preset')
                 if not isinstance(agent,str) or not agent:raise Refused('Native agent identity required')
-                if preset not in ['phyexp-meta','phyexp-stop-reviewer']:raise Refused('Unknown native preset')
-                if preset=='phyexp-meta' and agent!=session_id:raise Refused('Main session identity mismatch')
+                if preset not in (['phyexp-meta','phyexp-stop-reviewer','phyexp-researcher'] if native else ['phyexp-meta','phyexp-stop-reviewer']):raise Refused('Unknown native preset')
+                if native and not data.get('isolated'):raise Refused('Isolated host binding required')
+                if preset=='phyexp-meta' and agent!=main:raise Refused('Main session identity mismatch')
                 if preset=='phyexp-stop-reviewer':
                     pending=[r for r in store._list(db,'stop_reviews',campaign) if r['sessionId']==session_id and r['state']=='pending']
                     if len(pending)!=1:raise Refused('Reviewer requires exactly one pending request')
                     if any(a.get('reviewId')==pending[0]['id'] for a in agents.values()):raise Refused('Review already owns a child')
                     data={**data,'reviewId':pending[0]['id']}
-                    if any(t not in READ_OPERATIONS|{'cordis_inspect_list','cordis_inspect_query','structured_output'} for t in data.get('tools',[])):raise Refused('Reviewer acquired unexpected capability')
+                    if not native and any(t not in READ_OPERATIONS|{'cordis_inspect_list','cordis_inspect_query','structured_output'} for t in data.get('tools',[])):raise Refused('Reviewer acquired unexpected capability')
+                if native and preset!='phyexp-meta':
+                    operations=self.service.meta_api.contract
+                    if any(t in operations and operations[t]['write'] for t in data.get('tools',[])):raise Refused('Child acquired business writes')
                 agents[agent]={**data,'registeredAt':store.clock()};session['agents']=agents;store._save(db,'meta_sessions',session)
                 return {'ok':True}
             if action=='call':
                 actor=agents.get(data.get('agentId'))
                 if not actor:raise Refused('Unregistered native caller')
-                if actor['preset']=='phyexp-stop-reviewer' and data.get('operation') not in READ_OPERATIONS:raise Refused('Reviewer is read-only')
+                if actor['preset']!='phyexp-meta' and data.get('operation') not in READ_OPERATIONS:raise Refused('Child is read-only')
                 if data.get('operation')=='campaign_finish' and data.get('input',{}).get('condition')=='exhausted':
                     review=store._get(db,'stop_reviews',data['input'].get('reviewId',''))
-                    if review['sessionId']!=session_id:raise Refused('Stop approval belongs to a different main session')
+                    if not owns_review(store,db,session,review):raise Refused('Stop approval belongs to a different main session')
                 # Dispatch outside this transaction; its own writes are transactional.
             elif action=='model_request':
                 actor=agents.get(data.get('agentId'))
@@ -117,11 +134,12 @@ class StopRuntime:
                 actor=agents.get(data.get('agentId'))
                 if not actor:raise Refused('Unknown agent')
                 plugins=c['config']['metaComposition']['plugins'];scope='meta' if actor['preset']=='phyexp-meta' else 'reviewer'
-                if not any(p['id']==data.get('pluginId') and p['scope']==scope and p['enabled'] for p in plugins):raise Refused('Plugin not in frozen composition')
+                scope='research' if actor['preset']=='phyexp-researcher' else scope
+                if not any(p['id']==data.get('pluginId') and (scope in p.get('roles',[]) if native else p['scope']==scope) and p['enabled'] for p in plugins):raise Refused('Plugin not in frozen composition')
                 key=sha([session_id,data.get('agentId'),data.get('pluginId'),data.get('callId'),data.get('event')])
                 return store._save(db,'meta_observations',{'id':key,'campaignId':campaign,'sessionId':session_id,**data,'recordedAt':store.clock()})
             elif action=='review_request':
-                if data.get('agentId')!=session_id or agents.get(session_id,{}).get('preset')!='phyexp-meta':raise Refused('Only main Meta may request review')
+                if data.get('agentId')!=main or agents.get(main,{}).get('preset')!='phyexp-meta':raise Refused('Only main Meta may request review')
                 ready(store,db,c);no_pending(store,db,c);request=data.get('request',{});request_valid(store,db,c,request)
                 snapshot_data=snapshot(store,db,c);fingerprint=sha(snapshot_data);key=sha([campaign,POLICY,fingerprint,request])
                 reviews=store._list(db,'stop_reviews',campaign)
@@ -130,8 +148,12 @@ class StopRuntime:
                     if old['snapshotSha256']==fingerprint:
                         if old['sessionId']!=session_id and old['state']=='pending':old.update(state='failed',failure='Owner session ended before completion');store._save(db,'stop_reviews',old)
                         return {**old,'replayed':True}
-                row={'id':identity('review'),'campaignId':campaign,'sessionId':session_id,'parentAgentId':session_id,'policy':POLICY,'requestKey':key,'request':request,'snapshot':snapshot_data,'snapshotSha256':fingerprint,'state':'pending','createdAt':store.clock(),'compositionId':c['config']['metaComposition']['id']}
+                row={'id':identity('review'),'campaignId':campaign,'sessionId':session_id,'parentAgentId':main,'policy':POLICY,'requestKey':key,'request':request,'snapshot':snapshot_data,'snapshotSha256':fingerprint,'state':'pending','createdAt':store.clock(),'compositionId':c['config']['metaComposition']['id']}
                 return store._save(db,'stop_reviews',row)
+            elif action=='review_status' and native:
+                row=store._get(db,'stop_reviews',data.get('reviewId',''))
+                if not owns_review(store,db,session,row):raise Refused('Review owner mismatch')
+                return row
             elif action in ['review_attach','review_result','review_failed']:
                 row=store._get(db,'stop_reviews',data.get('reviewId',''))
                 if row['sessionId']!=session_id or row['campaignId']!=campaign:raise Refused('Review owner mismatch')
@@ -159,4 +181,4 @@ class StopRuntime:
                 store._event(db,campaign,'stop_review',reviewId=row['id'],state=row['state'])
                 return store._save(db,'stop_reviews',row)
             else:raise Refused('Unknown runtime operation')
-        return self.service.meta_call(campaign,data['operation'],data.get('input',{}))
+        return (self.service.meta_api.call if native else self.service.meta_call)(campaign,data['operation'],data.get('input',{}))

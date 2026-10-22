@@ -35,6 +35,21 @@ class FailureTests(unittest.TestCase):
         (self.root/'harbor/trial/result.json').write_text(json.dumps({'exception_info':{'exception_type':'VerifierTimeoutError'}}))
         self.assertEqual(diagnose(self.root)['code'],'verifier_failed')
         self.assertEqual(diagnose(self.root)['scoringStatus'],'failed')
+    def test_collection_and_bridge_errors_are_platform_failures(self):
+        from src.evidence.outcomes import task_outcome
+        self.write({'status':'completed','failureContract':'request-failure-v2','failure':None})
+        result_path=self.root/'harbor/trial/result.json'
+        result_path.write_text(json.dumps({'verifier_result':{'rewards':{'reward':0}}}))
+        d=failed_result(self.root,KeyError('id'))
+        self.assertEqual(d['failure']['code'],'result_collection_failed')
+        self.assertEqual(d['failure']['stage'],'collection')
+        result_path.write_text(json.dumps({'exception_info':{'exception_type':'RuntimeError',
+            'exception_message':'Container transport failed: Only a nonempty command is accepted'}}))
+        d=failed_result(self.root,ValueError('collector'))
+        self.assertEqual(d['failure']['code'],'container_transport_error')
+        self.assertEqual(d['scoringStatus'],'not_run')
+        self.assertIsNone(d['officialReward'])
+        self.assertEqual(task_outcome({'state':'failed','summary':d})['category'],'external_failure')
     def test_cancelled_request_uses_known_stop_and_missing_scoring_stays_unknown(self):
         self.write({'status':'completed'})
         self.assertEqual(diagnose(self.root)['scoringStatus'],'unknown')
