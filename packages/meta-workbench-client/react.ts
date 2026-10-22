@@ -44,8 +44,8 @@ export function useResource(scope:string){
 }
 
 // Fetch explanations only when their durable revision changes, never every poll.
-export function useResearch(campaign:string,revision:unknown,offset=0,pluginKey=''){
- const resource=useResource(campaign+':'+pluginKey);
- useEffect(()=>{if(campaign)resource.load(signal=>readResearch(campaign,offset,signal,pluginKey))},[campaign,JSON.stringify(revision),offset,pluginKey]);
+export function useResearch(campaign:string,revision:unknown,offset=0,pluginKey='',relation=''){
+ const resource=useResource(campaign+':'+pluginKey+':'+relation);
+ useEffect(()=>{if(campaign)resource.load(signal=>readResearch(campaign,offset,signal,pluginKey,relation))},[campaign,JSON.stringify(revision),offset,pluginKey,relation]);
  return resource;
 }

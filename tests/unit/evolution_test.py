@@ -102,6 +102,23 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(crowded['pluginContext']['developmentRef'],self.ref(origin))
         self.assertEqual(crowded['pluginContext']['latestObservation']['recordId'],observed['recordId'])
         self.assertEqual(self.research.overview(self.c,pluginKey='foreign')['total'],0)
+    def test_research_categories_cover_all_records_before_paging_and_follow_plugin_binding(self):
+        plugin={'name':'sample','version':'1','digest':'a'*64};candidate=self.candidate('categorized',[plugin])
+        linked=self.research.save(self.c,self.record(plugins=[{'candidateId':candidate['id'],'pluginKey':plugin_key(plugin)}]),0,'linked')
+        attempts=[self.research.save(self.c,self.record(state='failed' if i==0 else 'proposed'),0,'attempt-'+str(i)) for i in range(23)]
+        related=self.research.overview(self.c,relation='plugin')
+        first=self.research.overview(self.c,relation='unlinked');last=self.research.overview(self.c,20,relation='unlinked')
+        self.assertEqual(related['relationCounts'],{'plugin':1,'unlinked':23})
+        self.assertEqual([r['recordId'] for r in related['items']],[linked['recordId']])
+        self.assertEqual(first['total'],23);self.assertEqual(first['nextOffset'],20);self.assertEqual(len(last['items']),3)
+        self.assertEqual({r['recordId'] for r in first['items']+last['items']},{r['recordId'] for r in attempts})
+        with self.store.connection(True) as db:self.research.bind_candidate(db,self.c,candidate,[self.ref(attempts[0])])
+        updated=self.research.overview(self.c,relation='plugin')
+        self.assertEqual(updated['relationCounts'],{'plugin':2,'unlinked':22})
+        self.assertNotEqual(updated['revision'],related['revision'])
+        self.assertEqual(next(r for r in updated['items'] if r['recordId']==attempts[0]['recordId'])['state'],'failed')
+        self.assertEqual(self.research.overview(self.c,pluginKey=plugin_key(plugin),relation='unlinked')['total'],0)
+        self.assertRaises(Refused,self.research.overview,self.c,relation='invented')
     def test_meta_write_reconciles_without_duplicate_and_validates_v4(self):
         args={'record':self.record(),'expectedRevision':0,'idempotencyKey':'api'}
         row=self.api.call(self.c,'research_save',args);self.assertEqual(row,self.api.call(self.c,'research_save',args))

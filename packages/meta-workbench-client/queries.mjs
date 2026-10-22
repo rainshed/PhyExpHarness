@@ -29,7 +29,7 @@ export function watchCampaign({id='',request=api,onData,onError,interval=2000}){
  return {refresh,dispose(){live=false;controller.abort();clearInterval(timer);}};
 }
 
-export const readResearch=(campaign,offset=0,signal,pluginKey='')=>api(`/campaigns/${encodeURIComponent(campaign)}/research?offset=${offset}&limit=20${pluginKey?'&pluginKey='+encodeURIComponent(pluginKey):''}`,undefined,signal);
+export const readResearch=(campaign,offset=0,signal,pluginKey='',relation='')=>api(`/campaigns/${encodeURIComponent(campaign)}/research?offset=${offset}&limit=20${pluginKey?'&pluginKey='+encodeURIComponent(pluginKey):''}${relation?'&relation='+encodeURIComponent(relation):''}`,undefined,signal);
 export const readResearchRevision=(campaign,ref,signal)=>api(`/campaigns/${encodeURIComponent(campaign)}/research/${encodeURIComponent(ref.recordId)}?revision=${ref.revision}`,undefined,signal);
 export const readSelection=(campaign,id,signal)=>api(`/campaigns/${encodeURIComponent(campaign)}/selections/${encodeURIComponent(id)}`,undefined,signal);
 export const readExcerpt=(campaign,anchor,signal)=>api(`/campaigns/${encodeURIComponent(campaign)}/excerpt`,anchor,signal);

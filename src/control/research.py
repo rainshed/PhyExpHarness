@@ -70,8 +70,9 @@ class Research:
         anchors=row['record'].get('anchors',[])+[a for o in row['record'].get('observations',[]) for a in o['anchors']]
         return {**row,'revisions':[{k:r[k] for k in ['revision','recordedAt','author']} for r in self.store.list('research_records',campaign) if r['recordId']==recordId],'excerpts':[self.evidence.excerpt(campaign,a) for a in anchors],
             'candidateLinks':[r for r in self.store.list('research_links',campaign) if r['recordId']==recordId and r['recordRevision']==revision]}
-    def overview(self,campaign,offset=0,limit=20,pluginKey=None):
+    def overview(self,campaign,offset=0,limit=20,pluginKey=None,relation=None):
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=50:raise Refused('Invalid research page')
+        if relation not in (None,'','plugin','unlinked'):raise Refused('Invalid research relation')
         with self.store.connection() as db:
             c=self.store._get(db,'campaigns',campaign);all_rows=self.store._list(db,'research_records',campaign)
             latest={r['recordId']:r for r in sorted(all_rows,key=lambda r:r['revision'])}
@@ -92,11 +93,13 @@ class Research:
                 development=next((r for r in sorted(links,key=lambda r:r['recordedAt']) if any(p['pluginKey']==pluginKey for p in r['plugins'])),None)
                 plugin_context={'pluginContext':{'developmentRef':{'recordId':development['recordId'],'revision':development['recordRevision']} if development else None,
                     'latestObservation':next((r for r in rows if r['kind'] in ('observation','turning_point')),None)}}
+            relation_counts={'plugin':sum(bool(r['plugins']) for r in rows),'unlinked':sum(not r['plugins'] for r in rows)}
+            if relation:rows=[r for r in rows if bool(r['plugins'])==(relation=='plugin')]
             # Limits/next plan may be long; main polling carries only a fingerprint, this view is fetched on changes.
             fingerprint=hashlib.sha256(encoded([all_rows,links,c.get('selectionDecisionId')]).encode()).hexdigest()
             return {'schemaVersion':'evolution-view-v1','revision':fingerprint,'observedAt':self.store.clock(),
                 'availability':'available' if rows else 'not_recorded','total':len(rows),'items':rows[offset:offset+limit],
-                'nextOffset':offset+limit if offset+limit<len(rows) else None,'offset':offset,**plugin_context}
+                'nextOffset':offset+limit if offset+limit<len(rows) else None,'offset':offset,'relationCounts':relation_counts,**plugin_context}
 
     def selection(self,db,c,selected,summary,alternatives,refs):
         """Freeze all explicitly considered alternatives in the selection transaction."""

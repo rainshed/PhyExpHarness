@@ -84,6 +84,15 @@ export const readingStyles=`
 .studio-root .studio-plugin-picker button[aria-pressed=true]{background:var(--soft);border-color:var(--accent)}
 .studio-root .studio-plugin-picker strong{font-size:14px}
 .studio-root .studio-plugin-picker small{font-size:11px}
+.studio-root .studio-plugin-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px;margin:22px 0}
+.studio-root .studio-plugin-toolbar .studio-plugin-picker{flex:1;margin:0}
+.studio-root .studio-all-research-link{flex-shrink:0}
+.studio-root .studio-research-library:focus{outline:none}
+.studio-root .studio-research-categories{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--line);padding-bottom:12px}
+.studio-root .studio-research-categories button{display:flex;align-items:center;gap:12px;background:transparent;border-color:transparent;padding:10px 14px}
+.studio-root .studio-research-categories button[aria-pressed=true]{background:var(--soft);border-color:var(--line);color:var(--accent)}
+.studio-root .studio-research-categories span{font-size:11px;min-width:22px;text-align:center;border-radius:12px;background:var(--sunk);padding:1px 6px}
+.studio-root .studio-research-category-note{font-size:14px;line-height:1.8;margin:20px 0 6px}
 .studio-root .studio-plugin-purpose{margin-bottom:14px}
 .studio-root .studio-reading-section{margin:14px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .studio-root .studio-reading-section>summary{padding:20px 22px;display:flex;gap:18px;align-items:flex-start;list-style:none;color:var(--ink)}

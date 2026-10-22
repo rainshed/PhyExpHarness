@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {readResearchRevision} from '@phyexp/meta-workbench-client';
 import {useResearch,useResource} from '@phyexp/meta-workbench-client/react';
 import {ResearchSources,ResearchAnnotation} from '../components/research-sources';
@@ -46,13 +46,21 @@ function PluginStory({w,c,plugin,tablesProps,readEvidence}:any){
 
 export function Page({w,c,table,setTable,tablesProps,readEvidence}:any){
  const plugins=c.tables?.plugins||[];
- const [selected,setSelected]=useState(w.readingTarget==='research'?'research':plugins[0]?.id||'research');
- useEffect(()=>setSelected(w.readingTarget==='research'?'research':plugins[0]?.id||'research'),[c.id,w.readingTarget]);
+ const [selected,setSelected]=useState(plugins[0]?.id||''),[researchOpen,setResearchOpen]=useState(w.readingTarget==='research'||!plugins.length);
+ const library=useRef<HTMLDivElement|null>(null),openButton=useRef<HTMLButtonElement|null>(null),wasOpen=useRef(false);
+ useEffect(()=>{setSelected(plugins[0]?.id||'');setResearchOpen(w.readingTarget==='research'||!plugins.length)},[c.id,w.readingTarget]);
+ useEffect(()=>{if(researchOpen){library.current?.focus({preventScroll:true});library.current?.scrollIntoView({block:'start'});wasOpen.current=true}else if(wasOpen.current){openButton.current?.focus({preventScroll:true});wasOpen.current=false}},[researchOpen]);
  const plugin=plugins.find((p:any)=>p.id===selected);
  return <div data-reading-anchor="research" tabIndex={-1} className="studio-plugin-page">
-  <PageIntro eyebrow="PLUGINS / 从动机理解能力" title="每个插件，都有一个来由。">先了解它解决什么问题，再看实际发生了什么。</PageIntro>
-  <nav className="studio-plugin-picker" aria-label="选择要了解的插件">{plugins.map((p:any)=><button key={p.id} aria-pressed={selected===p.id} onClick={()=>setSelected(p.id)}><strong>{p.displayName}</strong><small>{p.version}{plugins.filter((x:any)=>x.name===p.name&&x.version===p.version).length>1?' · 内容 '+p.digest?.slice(0,8):''}</small></button>)}<button aria-pressed={selected==='research'} onClick={()=>setSelected('research')}><strong>全部研究与未成形的尝试</strong><small>保留失败、放弃和没有插件的方向</small></button></nav>
-  {plugin?<PluginStory key={c.id+':'+plugin.id} w={w} c={c} plugin={plugin} tablesProps={tablesProps} readEvidence={readEvidence}/>:<ResearchPanel key={c.id} c={c} onEvidence={readEvidence} onReport={w.readReport}/>}
+  {researchOpen?<div ref={library} tabIndex={-1} className="studio-research-library">
+   <button className="studio-text-link" onClick={()=>setResearchOpen(false)}>← 返回插件与动机</button>
+   <PageIntro eyebrow="RESEARCH / 全部探索过程" title="全部研究记录">既看与已有插件相关的研究，也保留尚未形成插件的探索。</PageIntro>
+   <ResearchPanel key={c.id} c={c} grouped onEvidence={readEvidence} onReport={w.readReport}/>
+  </div>:<>
+   <PageIntro eyebrow="PLUGINS / 从动机理解能力" title="每个插件，都有一个来由。">先了解它解决什么问题，再看实际发生了什么。</PageIntro>
+   <div className="studio-plugin-toolbar"><nav className="studio-plugin-picker" aria-label="选择要了解的插件">{plugins.map((p:any)=><button key={p.id} aria-pressed={selected===p.id} onClick={()=>setSelected(p.id)}><strong>{p.displayName}</strong><small>{p.version}{plugins.filter((x:any)=>x.name===p.name&&x.version===p.version).length>1?' · 内容 '+p.digest?.slice(0,8):''}</small></button>)}</nav><button ref={openButton} className="studio-text-link studio-all-research-link" onClick={()=>setResearchOpen(true)}>查看全部研究记录 <span aria-hidden="true">→</span></button></div>
+   {plugin?<PluginStory key={c.id+':'+plugin.id} w={w} c={c} plugin={plugin} tablesProps={tablesProps} readEvidence={readEvidence}/>:<p className="mh-muted">这个活动尚未形成插件，可查看已保存的研究记录。</p>}
+  </>}
   <ReadingSection number="↳" title="历史问题来源与补充说明" description="核对其他活动提供的启发，或追加有来源的解释。"><ResearchSources w={w} c={c}/><ResearchAnnotation w={w} c={c}/></ReadingSection>
   <ReadingSection number="↳" title="版本、配置与代码继承" description="查看全部插件组合、父版本、名称和配置。" open={table==='versions'}><nav className="mh-tabs" aria-label="实验工作区">{[['plugins','插件与配置'],['versions','版本详情与血缘']].map(([id,label])=><button key={id} className={table===id?'active':''} aria-pressed={table===id} onClick={()=>setTable(id)}>{label}</button>)}</nav><HarnessTables tables={c.tables} {...tablesProps} section={table} onSectionChange={setTable}/></ReadingSection>
  </div>;
