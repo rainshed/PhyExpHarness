@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from jsonschema import Draft202012Validator,ValidationError
 from .store import Refused,Conflict,identity,encoded
-from src.reporting.tables import plugin_key
+from src.reporting.tables import plugin_key,build_tables,read_annotations
 from src.evidence.library import EvidenceLibrary
 
 SCHEMA=json.loads((Path(__file__).resolve().parents[2]/'packages/meta-harness/research.schema.json').read_text())
@@ -116,7 +116,10 @@ class Research:
         from src.evidence.diagnostics import trial_diagnostics
         from src.evidence.outcomes import evaluation
         from .store import comparison_issues
-        trials=trial_diagnostics(trials,self.data,c['config']);candidates=[r for r in self.store._list(db,'candidates',c['id']) if r['id'] in ids]
+        trials=trial_diagnostics(trials,self.data,c['config'])
+        all_candidates=self.store._list(db,'candidates',c['id'])
+        names={v['id']:v['displayName'] for v in build_tables(all_candidates,[],[],c,read_annotations(self.data))['versions']}
+        candidates=[{**r,'snapshotDisplayName':names[r['id']]} for r in all_candidates if r['id'] in ids]
         return {'summary':summary,'alternatives':choices,'researchRefs':refs,'researchRecords':research,
             'consideredSnapshot':{'factAt':self.store.clock(),'candidates':candidates,'trials':trials,
                 'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),

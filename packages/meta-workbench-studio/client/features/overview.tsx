@@ -19,6 +19,6 @@ export function Overview({w,setTable,tablesProps}:any){const {c,navigate}=w;cons
  <div className="mh-notice">在途预留 {number(c.usage.inflightReservedTokens)} token · 未知请求 {c.usage.unknownRequests} 个 · 保守预留 {number(c.usage.unknownReservedTokens)} token。未知用量未按零处理；收尾预留包含在总量内。</div>
  <div className="studio-section-title"><h3>哪个版本在哪些任务上更好？</h3><button onClick={()=>navigate('compare')}>按版本与任务比较 →</button></div>
  {c.comparisonIssues?.length>0&&<p className="mh-notice">比较条件有差异或缺失，尚未证明环境一致。不能据此认定插件带来了可靠提升。</p>}
- <details><summary>Meta 版本选择与依据</summary><SelectionDecisions campaignId={c.id} decisions={c.selectionDecisions} tables={c.tables} readEvidence={w.readEvidence}/></details>
+ <details><summary>Meta 版本选择与依据</summary><SelectionDecisions onReport={w.readReport} campaignId={c.id} decisions={c.selectionDecisions} tables={c.tables} readEvidence={w.readEvidence}/></details>
  </>;
 }

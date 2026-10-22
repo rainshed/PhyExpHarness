@@ -67,6 +67,7 @@ class EvolutionTests(unittest.TestCase):
         selected=self.store.retain(self.c,h0['id'],'保持基线',[ev['id']],**args)['selectionDecision']
         self.assertEqual({x['id'] for x in selected['consideredSnapshot']['candidates']},{h0['id'],h1['id']})
         self.assertNotIn(h2['id'],{x['candidateId'] for x in selected['alternatives']})
+        self.assertEqual(next(x for x in selected['consideredSnapshot']['candidates'] if x['id']==h1['id'])['snapshotDisplayName'],'H1 · 原始基线')
         before=copy.deepcopy(selected);h1['displayName']='renamed';self.store.put('candidates',h1)
         self.assertEqual(self.store.get('selection_decisions',selected['id']),before)
         self.assertRaises(Conflict,self.store.retain,self.c,h1['id'],'stale',[ev['id']],**args)
