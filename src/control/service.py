@@ -26,6 +26,7 @@ from .runner_images import prepare_runner_image
 from src.execution.host.network import network_preflight
 from src.execution.host.models import campaign_route
 from src.execution.host.failure import public_failure
+from .meta_status import meta_status
 from src.evidence.library import EvidenceLibrary
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, DEFAULT_RULE
@@ -171,6 +172,9 @@ class ControlService:
         if config.get('taskImagePolicy')==TASK_IMAGE_POLICY:
             try:verify_locks(self.quantum,config['tasks'],config.get('taskImageLocks',{}))
             except ValueError as error:raise Refused(str(error)) from error
+    def list_status(self):
+        return [{**self.store.status(c['id']), 'metaStatus':meta_status(self.store.list('meta_sessions',c['id']))}
+                for c in self.store.list('campaigns')]
     def status(self,campaign):
         value=self.store.status(campaign)
         value.update(candidates=self.store.list('candidates',campaign),batches=self.store.list('batches',campaign),
@@ -179,6 +183,7 @@ class ControlService:
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
             exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
             evidence=[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign)])
+        value['metaStatus']=meta_status(value['metaSessions'])
         value['executionProtection']=self.execution_policy(campaign)
         value['comparisonIssues']=comparison_issues(value['trials'])
         value['retentionRuleDescription']=retention_rule_description(value['config'])

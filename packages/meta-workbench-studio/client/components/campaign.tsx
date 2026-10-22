@@ -1,5 +1,6 @@
 import React from 'react';
 import {number,duration,date,reasons,tasks} from './common';
+import {campaignStatus} from './campaign-status.mjs';
 export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command,setLimits,setLimitsError,finalReport,readReport}=w;
  return <div className="mh-actions studio-actions">
   {c.state==='draft'&&<button className="primary" disabled={!!busy||!connected||!h0Ready} onClick={()=>command('start')}>{h0Ready?'启动进化':c.operations.some((o:any)=>o.kind==='prepare_h0'&&o.state==='failed')?'环境准备或基线检查失败，请查看后台动态':'正在准备环境与基线…'}</button>}
@@ -11,9 +12,17 @@ export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command
  </div>;
 }
 
-export function CampaignNotices({c}:any){return <>
+export function CampaignNotices({c,onDetails}:any){const status=campaignStatus(c);return <>
+ {status.attention&&<section className="studio-attention" role="alert" aria-label="活动需要处理">
+  <h3>需要处理 · Meta 已停止推进</h3>
+  <p><strong>{status.reason}。</strong>{status.recoveryNote}</p>
+  <p>{c.counts?.activeTrials?`已启动的 ${c.counts.activeTrials} 次实验仍由后台继续执行；Meta 暂时无法分析结果和安排后续研究。`:'当前没有正在执行的实验；后续研究需恢复 Meta 才能继续。'}{c.counts?.reservedTrials>0&&`另有 ${c.counts.reservedTrials} 次已受理实验等待后台调度。`}</p>
+  <p>处理原因后，点击“{c.state==='closing'?'暂停收尾':'暂停新工作'}”，再点击“恢复活动”。墙钟仍在计时。</p>
+  {onDetails&&<button onClick={onDetails}>查看中断详情 →</button>}
+ </section>}
+ {status.recovering&&<section className="mh-notice" role="status" aria-label="Meta 正在恢复"><strong>Meta 正在自动恢复</strong><p>{status.reason}。后台正在尝试接续会话，已受理实验仍由后台监督。</p></section>}
  {c.state==='paused'&&<p className="mh-notice">已暂停新工作，已启动实验继续；Meta 当前请求中断。墙钟仍在计时，恢复时先对账。</p>}
- {c.state==='closing'&&<p className="mh-notice">正在收尾，等待外部任务终止确认、用量归集和报告。操作受理不代表任务已经停止。</p>}
+ {c.state==='closing'&&!status.attention&&!status.recovering&&<p className="mh-notice">正在收尾，等待外部任务终止确认、用量归集和报告。操作受理不代表任务已经停止。</p>}
  {c.stopReason&&<p className={c.state==='finished'?'studio-ended-reason':'mh-notice'}>{c.explorationClosed&&c.state==='running'?'探索已关闭，已受理实验继续；原因：':'停止原因：'}{reasons[c.stopReason]||c.stopReason}</p>}
  {c.config.precedingAttempt&&<p className="mh-notice">前序失败已保留：{c.config.precedingAttempt.trials} 次尝试，已确认 {number(c.config.precedingAttempt.confirmedTokens)} token，未知预留 {number(c.config.precedingAttempt.unknownReservedTokens)} token。此活动使用原总额度的剩余部分。</p>}
  </>}

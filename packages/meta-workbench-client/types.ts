@@ -8,6 +8,8 @@ export interface CampaignConfig {
 export interface CreateAttempt {signature:string;key:string}
 export interface DraftState {version:1;config:CampaignConfig;selected:string;attempt:CreateAttempt|null}
 export type Request=<T=unknown>(route:string,body?:unknown,signal?:AbortSignal)=>Promise<T>;
+// Optional read-only projection on /campaigns and /campaigns/{id}; lifecycle state is unchanged.
+export type MetaStatus={sessionId:string;state:string;recoveryReason:string|null;failure:{code:string;message:string;detectedAt?:string}|null;connectionTimedOut:boolean};
 
 export type ResearchRef={recordId:string;revision:number};
 export type EvidenceAnchor={evidenceId:string;sha256:string;start:number;end:number;unit:'characters';supports:string};

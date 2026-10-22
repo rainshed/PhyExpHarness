@@ -73,7 +73,7 @@ def make_app(service,supervise=True):
         user(request);return service.providers.get_test(id)
     @app.get('/campaigns')
     def campaigns(request:Request):
-        user(request);return [service.store.status(c['id']) for c in service.store.list('campaigns')]
+        user(request);return service.list_status()
     @app.post('/campaigns')
     def create(request:Request,body:dict):
         user(request);return service.create(body['config'],body['idempotencyKey'],body.get('modelCatalogRevision'),source='user_submitted')

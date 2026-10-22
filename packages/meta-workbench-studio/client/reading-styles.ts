@@ -9,6 +9,9 @@ export const readingStyles=`
 .studio-root .studio-campaign .mh-eyebrow{display:none}
 .studio-root .studio-model-line{font-size:11px}
 .studio-root .studio-model-line .mh-badge{font-size:11px;border:0;background:var(--sunk);padding:2px 7px}
+.studio-root .studio-model-line .studio-status-attention{background:light-dark(#fff1dc,#44351e);color:light-dark(#825116,#ffd599);font-weight:650}
+.studio-root .studio-attention{border:1px solid light-dark(#d8b77e,#8c713f);border-left-width:4px;border-radius:10px;background:light-dark(#fffaf0,#302a20);padding:18px 22px;margin:0 0 26px;overflow-wrap:anywhere}
+.studio-root .studio-attention h3{color:light-dark(#825116,#ffd599);font-size:18px;margin:0 0 10px}.studio-root .studio-attention p{font-size:14px;line-height:1.8;margin:7px 0}.studio-root .studio-attention button{margin-top:8px}
 .studio-root .studio-models{display:inline-block;font-size:12px;margin:0}
 .studio-root .studio-models summary{padding:0;min-height:24px;color:var(--muted)}
 .studio-root .studio-models[open]{display:block;flex-basis:100%;padding:8px 12px;background:var(--panel)}

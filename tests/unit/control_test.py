@@ -27,6 +27,27 @@ class ControlTests(unittest.TestCase):
         self.c=self.service.store.create(self.config,'setup')['id'];self.service.store.control(self.c,'start','start')
     def tearDown(self):
         self.service.pool.shutdown(wait=True);self.client.close();self.temp.cleanup()
+    def test_list_and_detail_expose_latest_meta_health_without_raw_logs_or_state_changes(self):
+        store=self.service.store
+        before=store.get('campaigns',self.c)
+        store.put('meta_sessions',{'id':'meta-old','campaignId':self.c,'state':'needs_attention',
+            'recovery':{'reason':'recovery_exhausted','failure':{'code':'model_transport_error',
+                'message':'RAW SECRET','observed':{'transport':{'errorCode':'ETIMEDOUT'},'private':'SECRET'}}},
+            'summary':{'error':'RAW STACK SECRET'}})
+        listing=self.client.get('/campaigns').json()[0]
+        detail=self.client.get('/campaigns/'+self.c).json()
+        self.assertEqual(listing['state'],'running')
+        self.assertEqual(listing['metaStatus'],detail['metaStatus'])
+        self.assertEqual(listing['metaStatus']['state'],'needs_attention')
+        self.assertTrue(listing['metaStatus']['connectionTimedOut'])
+        self.assertNotIn('SECRET',json.dumps(listing))
+        self.assertEqual(store.get('campaigns',self.c),before)
+        store.put('meta_sessions',{'id':'meta-new','campaignId':self.c,'state':'running'})
+        for result in [self.client.get('/campaigns').json()[0],self.client.get('/campaigns/'+self.c).json()]:
+            self.assertEqual(result['metaStatus']['state'],'running')
+            self.assertIsNone(result['metaStatus']['failure'])
+            self.assertEqual(result['metaStatus']['sessionId'],'meta-new')
+
     def test_model_catalog_is_available_to_user_and_denied_to_meta(self):
         response=self.client.get('/models')
         self.assertEqual(response.status_code,200)
