@@ -1,6 +1,6 @@
 # 开发导航
 
-按当前用户授权范围工作；具体开发约束见下列对应文档。
+按当前用户授权范围工作；项目设计哲学与具体开发约束见下列对应文档。
 
 ## 目录安排
 
@@ -23,6 +23,7 @@
 
 | 要了解的内容 | 入口 |
 |---|---|
+| 固定 Solver、插件组合优化与可理解的进化 | [项目设计哲学](docs/design/design-philosophy.md) |
 | 项目目标与产品要求 | [README](README.md)、[需求文档](docs/requirements/meta-harness.md) |
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
 | 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
