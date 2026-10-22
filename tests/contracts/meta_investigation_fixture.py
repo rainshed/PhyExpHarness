@@ -57,7 +57,7 @@ print('COMPLETE_SCORES_AND_TRAJECTORY_READ',len(proof))
                     if self.stage==3:
                         assert row['result']['status']=='passed' and row['result']['trialCreated'] is False,row
                         self.stage=5;self.operation=None
-                        return 'candidate_freeze',{'plugins':[{'path':'/work/plugins/investigation','config':{}}],'description':'Full-evidence investigation fixture','idempotencyKey':'investigation-freeze'}
+                        return 'candidate_freeze',{'plugins':[{'path':'/work/plugins/investigation','config':{}}],'description':'Full-evidence investigation fixture','researchRefs':[],'idempotencyKey':'investigation-freeze'}
                     self.candidate=row['result']['id'];self.stage=6
                     return 'batch_submit',{'candidateId':self.candidate,'tasks':last['config']['tasks'],'repeats':1,'idempotencyKey':'investigation-batch'}
             time.sleep(.2)

@@ -28,7 +28,7 @@ class Provider(BaseHTTPRequestHandler):
         count=sum(m['role']=='tool' for m in messages)
         request=self.server.request
         if NATIVE:
-            analysis={'summary':'Native synthetic report','observations':['Fixture only'],'hypotheses':[],'limitations':['No real model'],'decision':'Closeout','evidenceRefs':['evidence-fixture']}
+            analysis={'brief':'Native synthetic report','researchRefs':[],'summary':'Native synthetic report','observations':['Fixture only'],'hypotheses':[],'limitations':['No real model'],'decision':'Closeout','evidenceRefs':['evidence-fixture']}
             if child:
                 assert 'campaign_finish' not in tools and 'subagent' not in tools
                 name,args=('evidence_read',{'id':'evidence-fixture'}) if count==0 else ('structured_output',{'verdict':'approve','reason':'Independent evidence read','evidenceRefs':['evidence-fixture'],'missingEvidence':[],'nextDirections':[]})
