@@ -112,7 +112,10 @@ class V4IntegrationTests(unittest.TestCase):
         self.store=self.service.store
 
     def test_new_default_and_service_create_replay_preserve_original_versions(self):
-        with patch.object(self.service,'_operation',return_value={}):
+        # This verifies version/idempotency semantics; image construction belongs
+        # to the Docker contracts and must not make the unit suite build an image.
+        with patch.object(self.service,'_operation',return_value={}), \
+             patch('src.control.meta_native_composition.prepare_image',return_value='sha256:'+'a'*64):
             first=self.service.create(CONFIG,'new')
             self.assertEqual(first['config']['taskEvaluationRule'],END_TO_END_RULE)
             self.assertEqual(self.service.create(CONFIG,'new')['config'],first['config'])
