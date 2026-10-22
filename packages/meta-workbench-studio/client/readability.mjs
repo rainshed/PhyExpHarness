@@ -38,7 +38,7 @@ export function comparison(c, id, reference) {
 export function defaultVersions(c) {
   const versions = c.tables?.versions || [], baseline = versions[0]?.id;
   const retained = c.comparisonCandidateId || c.retainedCandidateId || c.finalCandidateId || versions.find(v=>v.retained||v.final)?.id;
-  return [baseline, retained].filter((id,i,all) => id && all.indexOf(id)===i && (id===baseline || comparison(c,id,baseline).state!=='different'));
+  return [baseline, retained, versions.at(-1)?.id].filter((id,i,all) => id && all.indexOf(id)===i);
 }
 export function comparisonTasks(c, versions, common=false) {
   const tasks = c.config?.tasks || [];
@@ -68,4 +68,20 @@ export function reportGroups(reports=[], batches=[]) {
 export function reportTitle(r, batches=[]) {return r.kind==='status_summary'||r.status==='analysis_incomplete'?'阶段摘要 · 分析未完成':r.kind==='final'?'最终研究报告':`第 ${batches.find(b=>b.id===r.batchId)?.round ?? '—'} 轮报告`;}
 export function reportCampaign(report) {
   return {...reportContext(report), comparisonCandidateId:report.batchId?report.tables?.rounds.find(r=>r.id===report.batchId)?.candidateId:null};
+}
+
+export function trialBucket(t) {
+  if (['running','launching'].includes(t.state)) return 'active';
+  if (['reserved','queued'].includes(t.state)) return 'queued';
+  if (t.state==='unknown' && !t.finishedAt) return 'unknown';
+  return 'ended';
+}
+export function trialLabel(c,t) {
+  const r=c.tables?.rounds?.find(r=>r.id===t.batchId||r.results?.some(x=>x.id===t.id));
+  const index=r?.results?.findIndex(x=>x.id===t.id);
+  return r && index>=0 ? `第 ${r.round} 轮 · 实验 ${index+1}` : `实验 ${t.id}`;
+}
+export function trialReport(c,t) {
+  const batch=t.batchId||c.tables?.rounds?.find(r=>r.results?.some(x=>x.id===t.id))?.id;
+  return reportGroups(c.reports||[]).find(rows=>batch&&rows[0].batchId===batch)?.[0]?.id;
 }

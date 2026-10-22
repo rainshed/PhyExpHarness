@@ -12,9 +12,9 @@ test('version task statistics preserve missing scores, full coverage, and common
  assert.equal(outcomeNote(v[1].taskEvaluation.byTask.b),'未计分故障 1');assert.equal(outcomeNote(undefined),'未测');
  assert.equal(taskMean(v[0],[]),null);
 });
-test('known budget differences excluded by default; missing provenance remains unknown',()=>{
+test('known budget differences stay visible with a warning; missing provenance remains unknown',()=>{
  const c=withTrials(campaign());assert.equal(comparison(c,'h1','h0').state,'same');assert.deepEqual(defaultVersions(c),['h0','h1']);
- c.trials[1].taskTimeLimitSeconds=200;assert.equal(comparison(c,'h1','h0').state,'different');assert.deepEqual(defaultVersions(c),['h0']);
+ c.trials[1].taskTimeLimitSeconds=200;assert.equal(comparison(c,'h1','h0').state,'different');assert.deepEqual(defaultVersions(c),['h0','h1']);
  c.trials[1].taskTimeLimitSeconds=100;delete c.trials[1].comparisonContext; c.tables.rounds[1].results=[c.trials[1]];
  assert.equal(comparison(c,'h1','h0').state,'unknown');assert.deepEqual(defaultVersions(c),['h0','h1']);
 });
@@ -46,4 +46,15 @@ test('evidence pagination follows Unicode characters rather than UTF-16 units or
  const {evidenceEnd}=await import('@phyexp/meta-workbench-client/evidence-text');
  assert.equal(evidenceEnd({offset:16000,text:'证据🧪α'}),16004);
  assert.equal(evidenceEnd({offset:4,text:''}),4);
+});
+
+test('overview defaults include latest candidate and filtered trial identities remain stable',async()=>{
+ const {trialBucket,trialLabel,trialReport}=await import('../../packages/meta-workbench-studio/client/readability.mjs');
+ const c=withTrials(campaign());c.tables.versions.push({id:'h2'});
+ assert.deepEqual(defaultVersions(c),['h0','h1','h2']);
+ c.tables.rounds=[{id:'b',round:4,candidateId:'h1',results:[{id:'first'},{id:'second'}]}];
+ c.reports=[{id:'old',batchId:'b',analysisRevision:1},{id:'new',batchId:'b',analysisRevision:2}];
+ assert.equal(trialLabel(c,{id:'second'}),'第 4 轮 · 实验 2');
+ assert.equal(trialReport(c,{id:'second'}),'new');
+ assert.deepEqual(['queued','running','failed','unknown'].map(state=>trialBucket({state})),['queued','active','ended','unknown']);
 });
