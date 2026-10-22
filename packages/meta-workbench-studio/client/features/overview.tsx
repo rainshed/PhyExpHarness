@@ -1,24 +1,46 @@
-import React from 'react';
+import React,{useEffect} from 'react';
+import {api} from '@phyexp/meta-workbench-client';
+import {useResource,useResearch} from '@phyexp/meta-workbench-client/react';
 import {ResearchPanel} from '../components/research';
-import {Badge,Metric,number,duration,date,short,tasks} from '../components/common';
-import {ProgressNotice,TrialStatus} from '../components/trial-status';
+import {number,duration,date} from '../components/common';
 import {activityProgress} from '../components/trial-status.mjs';
-import {SelectionDecisions} from '../components/selection';
 import {VersionComparison} from '../components/version-comparison';
-import {RoundRecords} from '../components/round-records';
-export function Metrics({c}:any){return <div className="mh-metrics studio-metrics"><Metric label="已受理轮次" value={`${c.counts.rounds} / ${c.config.maxRounds??'不限'}`} note="每个受理批次计一轮，包含 H0"/><Metric label="已启动实验" value={`${c.counts.startedTrials} / ${c.config.maxTrials??'不限'}`} note={activityProgress(c)}/><Metric label="已确认用量" value={number(c.usage.confirmedTokens)} note={c.config.softTokenLimit==null?'token 不限，持续计量':`软阈值 ${number(c.config.softTokenLimit)} token`}/><Metric label={c.state==='finished'?'实际耗时':'已用时间'} value={duration(c.elapsedSeconds)} note={c.state==='finished'?`结束于 ${date(c.finishedAt)}`:`剩余 ${duration(c.remainingSeconds)}`}/></div>}
+import {PageIntro,ReadingLimits} from '../components/reading-layout';
+import {reportCampaign,reportGroups,readableText} from '../readability.mjs';
 
-export function Overview({w,setTable,tablesProps}:any){const {c,navigate}=w;const versions=c.tables?.versions||[];
- const chosen=versions.find((v:any)=>v.id===(c.finalCandidateId||c.retainedCandidateId)),latest=versions.at(-1);
- const current=c.trials.filter((t:any)=>['launching','running'].includes(t.state));
- const status=c.state==='draft'?(w.h0Ready?'基线已就绪，等待启动':'准备任务环境与执行基线'):c.state==='paused'?'新工作已暂停':c.state==='closing'?'正在归集结果并收尾':c.state==='finished'?'活动已结束':c.state==='failed'?'活动失败，请查看后台动态':c.metaSessions.at(-1)?.state==='needs_attention'?'Meta 需要处理，请查看后台动态':c.metaSessions.at(-1)?.state==='recovering'?'Meta 正在恢复会话':current.length?'正在等待实验结果':c.metaSessions.some((s:any)=>s.state==='running')?'Meta 正在推进活动':'等待后台工作';
- return <><ResearchPanel c={c} compact onEvidence={w.readEvidence} onReport={w.readReport}/><Metrics c={c}/><ProgressNotice campaign={c}/><div className="studio-summary-grid"><section className="mh-card"><div className="studio-card-heading"><h3>当前进展</h3><Badge value={c.state}/></div><div className="studio-card-body"><h2>{status}</h2>{current.length?<ul className="studio-current">{current.map((t:any)=><li key={t.id}><span>{tasks[t.task]||t.task||short(t.id)}</span><TrialStatus trial={t} campaign={c}/></li>)}</ul>:<p className="mh-muted">{c.operations.some((o:any)=>o.state==='failed')?'后台操作失败，请查看 Meta 运行中的具体原因。':'具体状态与进度以后台回执为准。'}</p>}</div><div className="studio-card-footer"><span>{c.counts.activeTrials} 次在途 · {c.counts.reservedTrials} 次待执行</span><button onClick={()=>navigate('meta')}>查看后台动态 →</button></div></section>
- <section className="mh-card"><div className="studio-card-heading"><h3>{c.finalCandidateId?'最终冻结版本':'当前保留版本'}</h3>{chosen&&<span className="mh-badge">{chosen.label}</span>}</div><div className="studio-card-body"><h2>{chosen?.displayName||'尚未选择'}</h2><p className="mh-muted">{chosen?.plugins.length?chosen.plugins.map((p:any)=>c.tables.plugins.find((x:any)=>x.id===p.pluginId)?.displayName||p.pluginId).join(' · '):chosen?'原始执行基线，无额外插件。':'等待 Meta 根据已有证据作出选择。'}</p><p>{c.selectionDecisions?.at(-1)?.summary||'未记录独立的简短选择结论；可展开当时理由。'}</p><p className="mh-muted">最新候选：{latest?.displayName||'暂无'}{!c.finalCandidateId&&' · 尚未冻结最终版本'}</p></div><div className="studio-card-footer"><span>选择不代表因果提升已证实</span><button onClick={()=>{navigate('compare')}}>查看版本与依据 →</button></div></section></div>
- <VersionComparison c={c} compact onEvidence={tablesProps.onEvidence} onStopTrial={tablesProps.onStopTrial} onReport={w.readReport} onVersion={()=>navigate('lab')}/>
- <RoundRecords c={c} tablesProps={tablesProps} limit={3}/><button className="studio-all-rounds" onClick={()=>navigate('rounds')}>查看全部实验记录 →</button>
- <div className="mh-notice">在途预留 {number(c.usage.inflightReservedTokens)} token · 未知请求 {c.usage.unknownRequests} 个 · 保守预留 {number(c.usage.unknownReservedTokens)} token。未知用量未按零处理；收尾预留包含在总量内。</div>
- <div className="studio-section-title"><h3>哪个版本在哪些任务上更好？</h3><button onClick={()=>navigate('compare')}>按版本与任务比较 →</button></div>
- {c.comparisonIssues?.length>0&&<p className="mh-notice">比较条件有差异或缺失，尚未证明环境一致。不能据此认定插件带来了可靠提升。</p>}
- <details><summary>Meta 版本选择与依据</summary><SelectionDecisions onReport={w.readReport} campaignId={c.id} decisions={c.selectionDecisions} tables={c.tables} readEvidence={w.readEvidence}/></details>
+export function Overview({w,tablesProps}:any){
+ const {c,navigate}=w,versions=c.tables?.versions||[],decision=c.selectionDecisions?.at(-1);
+ const chosen=versions.find((v:any)=>v.id===(c.finalCandidateId||c.retainedCandidateId));
+ const research=useResearch(c.id,c.researchRevision),recent=research.value?.items?.[0];
+ const report=useResource(c.id);
+ const ended=['finished','failed'].includes(c.state);
+ const latest=ended?reportGroups(c.reports,c.batches).find(rows=>rows[0].kind==='final'||rows[0].kind==='status_summary')?.[0]:null;
+ useEffect(()=>{if(latest)report.load(signal=>api('/reports/'+latest.id,undefined,signal));else report.clear()},[c.id,latest?.id]);
+ const saved=report.value?.id===latest?.id?report.value:null;
+ const summary=saved?.analysis?.brief||recent?.summary;
+ const limits=saved?.analysis?.brief?saved.analysis.limitations:recent?.limitations;
+ const stamp=saved?.analysis?.brief?reportCampaign(saved).snapshotAt:recent?.factAt;
+ const next=ended?null:recent?.nextStep;
+ return <>
+  <PageIntro eyebrow="EVOLUTION / 研究方向与当前判断" title="这次进化，为什么这样走？">先理解发现与选择，再看每个版本的实验表现。</PageIntro>
+  <section className="studio-reading-hero" aria-label="研究结论与当前选择">
+   <div className="studio-hero-findings"><small className="studio-kicker">{saved?.analysis?.brief?'最新报告中的结论':'最近保存的研究认识'}</small>
+    {research.loading||report.loading?<p role="status">正在读取研究概述…</p>:<p className="studio-hero-lede">{readableText(summary)||'尚未记录独立的研究概述。已有的实验结果和原始报告仍可查阅。'}</p>}
+    {(report.error||research.error)&&<p role="alert">概述读取未完成：{report.error||research.error}</p>}
+    <ReadingLimits items={limits} compact/>
+    {summary&&<p className="studio-source-note">{saved?.analysis?.brief?'来自总报告 · 修订 '+saved.analysisRevision:'来自研究记录 · 修订 '+recent.revision}{stamp!=null?' · '+date(stamp):''}。实验进度见下方实时矩阵。</p>}
+    {saved&&<button className="studio-text-link" onClick={()=>w.readReport(saved.id)}>阅读这份报告与依据 ↗</button>}
+   </div>
+   <div className="studio-hero-choice"><small className="studio-kicker">{c.finalCandidateId?'最终保留':'当前选择'}</small><h2>{chosen?.displayName||'尚未选择版本'}</h2>
+    <p>{readableText(decision?.summary)||'等待 Meta 保存选择理由；最新候选仍可在矩阵中查看。'}</p>
+    {decision&&<small>决定于 {date(decision.createdAt)} · 选择不代表稳定收益已证实</small>}
+    <button className="primary" onClick={()=>navigate('compare','decision')}>为什么保留这一版？ →</button>
+   </div>
+  </section>
+  <VersionComparison c={c} compact onEvidence={tablesProps.onEvidence} onStopTrial={tablesProps.onStopTrial} onReport={w.readReport}/>
+  <ResearchPanel c={c} compact onEvidence={w.readEvidence} onReport={w.readReport} onAll={()=>navigate('lab','research')}/>
+  <section className="studio-next-step"><span aria-hidden="true">↗</span><div><small>{ended?'接下来如何阅读':'最近记录的验证计划'}</small><p>{ended?'查看最终选择的依据，或从任务结果回到每次实验。后续研究方向保留在报告中。':next||'尚未记录下一步研究计划。'}</p>{!ended&&next&&<small>计划记录于 {date(recent.recordedAt)}；是否已启动以任务矩阵为准。</small>}</div><button onClick={()=>ended&&latest?w.readReport(latest.id):navigate('rounds')}>{ended&&latest?'阅读最终报告':'查看实验记录'} →</button></section>
+  <div className="studio-path-grid"><button onClick={()=>navigate('lab')}><strong>一个插件为什么被写出来？</strong><span>从用途、动机，一直看到具体来源。</span></button><button onClick={()=>navigate('compare','decision')}><strong>为什么选它，而没有选另一个？</strong><span>查看备选、代价和重新考虑的条件。</span></button></div>
+  <section className="studio-run-strip" aria-label="运行概况"><span>{activityProgress(c)}</span><span>{c.counts.startedTrials} 次已启动实验 · {c.counts.rounds} 轮</span><span>{number(c.usage.confirmedTokens)} token 已确认 · {duration(c.elapsedSeconds)}</span><button onClick={()=>navigate('meta')}>用量、配置与运行详情 →</button>{c.usage.unknownRequests>0&&<strong>仍有 {c.usage.unknownRequests} 个请求用量待核实</strong>}</section>
  </>;
 }

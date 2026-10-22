@@ -1,22 +1,56 @@
-import {useState,useEffect,useRef} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {readResearchRevision,readExcerpt} from '@phyexp/meta-workbench-client';
 import {useResearch,useResource} from '@phyexp/meta-workbench-client/react';
 import {date,tasks} from './common';
-import {trialLabel} from '../readability.mjs';
-const states:any={proposed:'提出方向',testing:'验证中',supported:'已有支持',inconclusive:'尚无结论',failed:'尝试失败',abandoned:'已放弃'};
+import {trialLabel,readableText} from '../readability.mjs';
+import {ReadingLimits} from './reading-layout';
+
+export const researchStates:any={proposed:'提出方向',testing:'正在验证',supported:'观察到支持',inconclusive:'尚无结论',failed:'尝试失败',abandoned:'已放弃'};
+const kinds:any={motivation:'为什么开始尝试',observation:'实验带回的认识',turning_point:'什么改变了判断',annotation:'补充说明'};
+
 export function Anchor({c,anchor,onEvidence}:any){
- const campaignId=c.id;
- const resource=useResource(campaignId),e=resource.value;
+ const resource=useResource(c.id),e=resource.value;
  const round=c.tables?.rounds?.find((r:any)=>r.results?.some((t:any)=>t.id===e?.evidence?.trialId)),trial=round?.results?.find((t:any)=>t.id===e?.evidence?.trialId);
- return <section className="studio-evidence-context"><p><strong>支持的判断：</strong>{anchor.supports}</p><button onClick={()=>resource.load(signal=>readExcerpt(campaignId,anchor,signal))}>核对相关片段</button>{resource.loading&&<p role="status">正在校验原件…</p>}{resource.error&&<p role="alert">{resource.error}</p>}{e&&<>{trial&&<p>{round.versionName||round.versionLabel} · {tasks[trial.task]||trial.task} · {trialLabel(c,trial)}</p>}<p>{e.availability==='available'?'内容摘要与字符范围已核验':e.reason}</p>{e.evidence?.source?.adoption&&<p>历史设计启发 · {e.evidence.source.adoption.sourceCampaignName} · {e.evidence.source.adoption.sourceKind==='report'?'旧报告分析':'原始执行证据'}；不计入当前成绩。</p>}{e.availability==='available'&&<><small>{e.contextBefore}</small><pre>{e.text}</pre><small>{e.contextAfter}</small><button onClick={()=>onEvidence(anchor.evidenceId,anchor.start)}>阅读完整原文 ↗</button></>}</>}</section>
+ return <section className="studio-evidence-context"><p><strong>这段证据支持：</strong>{anchor.supports}</p><button onClick={()=>resource.load(signal=>readExcerpt(c.id,anchor,signal))}>查看支持这一判断的片段 ↗</button>{resource.loading&&<p role="status">正在读取并核验原件…</p>}{resource.error&&<p role="alert">{resource.error}</p>}{e&&<>{trial&&<p>{round.versionName||round.versionLabel} · {tasks[trial.task]||trial.task} · {trialLabel(c,trial)}</p>}{e.evidence?.source?.adoption&&<p>历史设计启发 · {e.evidence.source.adoption.sourceCampaignName} · {e.evidence.source.adoption.sourceKind==='report'?'旧报告分析':'原始执行证据'}；不计入当前成绩。</p>}{e.availability==='available'?<><pre>{e.text}</pre><small>片段已与原件核对</small><details><summary>片段前后的上下文</summary><pre>{e.contextBefore}</pre><pre>{e.contextAfter}</pre></details><button onClick={()=>onEvidence(anchor.evidenceId,anchor.start)}>阅读完整原文 ↗</button></>:<p>{e.reason}</p>}</>}</section>;
 }
-export function ResearchArticle({row,c,onEvidence,onReport}:any){const r=row.record;const labels:any={yes:'已观察到',no:'确认没有',unknown:'未知'};return <article className="studio-research-article"><p className="studio-report-lede">{r.summary}</p><p className="mh-muted">{states[r.state]} · {row.author==='meta'?'Meta 解释':'用户补充'} · 修订 {row.revision} · 记录于 {date(row.recordedAt)}；事实时间 {date(r.factAt)}。解释不等同于效果证明。</p>{r.limitations.length>0&&<p className="mh-notice">局限：{r.limitations.join('；')}</p>}<dl>{[['problem','从什么问题出发'],['hypothesis','为什么值得尝试'],['change','希望改变什么'],['validation','用什么观察验证']].map(([key,label])=><div key={key}><dt><strong>{label}</strong></dt><dd>{r[key]}</dd></div>)}</dl>{r.observations?.map((o:any,i:number)=><section key={i}><h4>插件观察 · {c.tables?.plugins?.find((p:any)=>p.id===o.plugin.pluginKey)?.displayName||o.plugin.pluginKey}</h4><p>加载：{labels[o.loaded]} · 适用条件：{labels[o.applicable]} · 触发：{labels[o.triggered]}</p><p>行为：{o.behavior}</p><p>收益：{o.benefit}</p>{o.anchors.map((a:any,j:number)=><Anchor key={j} c={c} anchor={a} onEvidence={onEvidence}/>)}</section>)}{r.anchors?.map((a:any,i:number)=><Anchor key={i} c={c} anchor={a} onEvidence={onEvidence}/>)}{!r.anchors?.length&&!r.observations?.some((o:any)=>o.anchors.length)&&<p className="mh-muted">未记录可定位的轨迹依据；以上是待验证的解释。</p>}{r.reportIds?.map((id:string)=>onReport?<button key={id} onClick={()=>onReport(id)}>阅读关联报告修订</button>:<p key={id}>关联报告修订：{id}</p>)}{r.nextStep&&<p><strong>下一步研究计划：</strong>{r.nextStep}（实际排队与运行以实验记录为准。）</p>}<details><summary>精确身份、来源与关联</summary><p>代码继承见版本父节点；这里记录问题启发与开发/采用关系，实际使用以 Trial 为准。</p><pre>{JSON.stringify({recordId:row.recordId,revision:row.revision,candidateLinks:row.candidateLinks,...Object.fromEntries(['candidateIds','batchIds','trialIds','reportIds','decisionIds','relatedRecords','plugins'].map(k=>[k,r[k]]))},null,2)}</pre></details></article>}
-export function ResearchPanel({c,onEvidence,onReport,plugins=false,compact=false}:any){
- const [offset,setOffset]=useState(0),[filter,setFilter]=useState(''),[selected,setSelected]=useState<any>(null);
- const view=useResearch(c.id,c.researchRevision,offset),detail=useResource(c.id),host=useRef<HTMLDivElement>(null),trigger=useRef<HTMLElement|null>(null);
- useEffect(()=>{setOffset(0);setSelected(null);setFilter('')},[c.id]);
- useEffect(()=>{if(detail.value)host.current?.focus()},[detail.value]);
- const rows=view.value?.items||[],filtered=rows.filter((r:any)=>!filter||r.plugins.some((p:any)=>p.pluginKey===filter));
- const close=()=>{setSelected(null);detail.clear();trigger.current?.focus({preventScroll:true})};
- return <section aria-label={plugins?'插件开发与采用动机':'研究问题与转折'} className="mh-card"><h2>{plugins?'插件为什么产生，又看到了什么':'研究问题与关键转折'}</h2><p className="mh-muted">按记录时间查看各方向最后保存的认识；实验进度以任务矩阵为准。</p>{view.loading&&<p role="status">正在读取研究概述…</p>}{view.error&&<p role="alert">{view.error}</p>}{!view.loading&&!rows.length&&<p>尚未记录独立的研究解释。已有实验、选择理由与原始报告仍可查阅。</p>}{plugins&&<label>精确插件版本<select value={filter} onChange={e=>setFilter(e.target.value)}><option value="">全部插件及未形成候选的尝试</option>{c.tables?.plugins?.map((p:any)=><option key={p.id} value={p.id}>{p.displayName} · {p.version} · {p.digest?.slice(0,8)}</option>)}</select></label>}{filtered.slice(0,compact?3:20).map((r:any)=><section key={r.recordId} className="studio-research-summary"><small>{states[r.state]} · 记录于 {date(r.recordedAt)} · 修订 {r.revision}</small><p>{r.summary}</p>{r.limitations.length>0&&<p className="mh-muted">局限：{r.limitations.join('；')}</p>}{r.nextStep&&<p className="mh-muted">待验证计划：{r.nextStep}</p>}<button onClick={e=>{trigger.current=e.currentTarget;setSelected(r);detail.load(signal=>readResearchRevision(c.id,r,signal))}}>为什么这样做？查看解释与依据</button></section>)}{plugins&&!filtered.length&&rows.length>0&&<p>此页未记录该精确插件的动机；可继续翻页查看。</p>}{detail.loading&&<p role="status">正在读取解释…</p>}{detail.error&&<p role="alert">{detail.error}</p>}{selected&&detail.value&&<div ref={host} tabIndex={-1} className="studio-inline-detail" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();close()}}}><button onClick={close}>收起解释</button><label>解释修订<select value={detail.value.revision} onChange={e=>detail.load(signal=>readResearchRevision(c.id,{recordId:selected.recordId,revision:Number(e.target.value)},signal))}>{detail.value.revisions?.map((r:any)=><option key={r.revision} value={r.revision}>修订 {r.revision} · {date(r.recordedAt)}</option>)}</select></label><ResearchArticle row={detail.value} c={c} onEvidence={onEvidence} onReport={onReport}/></div>}{!compact&&<div className="mh-actions"><button disabled={!offset} onClick={()=>setOffset(Math.max(0,offset-20))}>上一页研究记录</button><span>共 {view.value?.total??0} 条方向 / 尝试</span><button disabled={view.value?.nextOffset==null} onClick={()=>setOffset(view.value.nextOffset)}>下一页研究记录</button></div>}</section>
+
+export function ResearchArticle({row,c,onEvidence,onReport}:any){
+ const r=row.record,labels:any={yes:'已观察到',no:'确认没有',unknown:'尚不清楚'};
+ return <article className="studio-research-article"><p className="studio-report-lede">{readableText(r.summary)}</p><p className="studio-source-note">{researchStates[r.state]} · {row.author==='meta'?'Meta 解释':'用户补充'} · 修订 {row.revision} · 记录于 {date(row.recordedAt)}；事实截至 {date(r.factAt)}。</p>
+  <ReadingLimits items={r.limitations}/>
+  <div className="studio-explanation-grid">{[['problem','从什么问题出发'],['hypothesis','为什么值得尝试'],['change','希望改变什么'],['validation','用什么观察验证']].map(([key,label])=><section key={key}><h4>{label}</h4><p>{r[key]}</p></section>)}</div>
+  {r.observations?.map((o:any,i:number)=><section key={i} className="studio-observation"><h4>实际观察 · {c.tables?.plugins?.find((p:any)=>p.id===o.plugin.pluginKey)?.displayName||'关联插件'}</h4><div className="studio-mechanism">{[['loaded','插件加载'],['applicable','适用条件出现'],['triggered','机制触发']].map(([k,l])=><div key={k}><small>{l}</small><strong>{labels[o[k]]}</strong></div>)}</div><p><strong>行为变化：</strong>{o.behavior}</p><p><strong>任务收益：</strong>{o.benefit}</p>{o.anchors.map((a:any,j:number)=><Anchor key={j} c={c} anchor={a} onEvidence={onEvidence}/>)}</section>)}
+  {r.anchors?.map((a:any,i:number)=><Anchor key={i} c={c} anchor={a} onEvidence={onEvidence}/>)}
+  {!r.anchors?.length&&!r.observations?.some((o:any)=>o.anchors.length)&&<p className="mh-muted">这条解释没有关联可定位的轨迹片段；不能仅凭文字判断效果。</p>}
+  {r.reportIds?.map((id:string)=>onReport?<button key={id} onClick={()=>onReport(id)}>阅读关联报告修订 ↗</button>:null)}
+  {r.nextStep&&<details><summary>当时提出的下一步</summary><p>{r.nextStep}</p><small>记录于 {date(row.recordedAt)}；当前是否已执行请查看实验记录。</small></details>}
+  <details><summary>准确身份、来源与完整关联</summary><p>代码继承见版本父节点；这里保存问题启发与开发/采用关系，实际使用以实验记录为准。</p><pre>{JSON.stringify({recordId:row.recordId,revision:row.revision,candidateLinks:row.candidateLinks,originalRecord:r,...Object.fromEntries(['candidateIds','batchIds','trialIds','reportIds','decisionIds','relatedRecords','plugins'].map(k=>[k,r[k]]))},null,2)}</pre></details>
+ </article>;
+}
+
+export function SavedResearch({c,reference,onEvidence,onReport}:any){
+ const [revision,setRevision]=useState(reference.revision),detail=useResource(c.id+':'+reference.recordId);
+ useEffect(()=>{setRevision(reference.revision)},[reference.recordId,reference.revision]);
+ useEffect(()=>{detail.load(signal=>readResearchRevision(c.id,{recordId:reference.recordId,revision},signal))},[c.id,reference.recordId,revision]);
+ return <>{detail.loading&&<p role="status">正在读取这次解释…</p>}{detail.error&&<p role="alert">{detail.error}</p>}{detail.value&&<><label className="studio-revision">解释修订<select value={revision} onChange={e=>setRevision(Number(e.target.value))}>{detail.value.revisions?.map((r:any)=><option key={r.revision} value={r.revision}>修订 {r.revision} · {date(r.recordedAt)}</option>)}</select></label><ResearchArticle row={detail.value} c={c} onEvidence={onEvidence} onReport={onReport}/></>}</>;
+}
+
+function ResearchEntry({row,c,onEvidence,onReport}:any){
+ const [open,setOpen]=useState(false),[openedRow,setOpenedRow]=useState(row),trigger=useRef<HTMLElement|null>(null);
+ const shown=open?openedRow:row,labels=(shown.candidateIds||[]).map((id:string)=>c.tables?.versions?.find((v:any)=>v.id===id)?.label).filter(Boolean);
+ return <details className="studio-research-node" open={open} onToggle={e=>{const next=e.currentTarget.open;if(next&&!open)setOpenedRow(row);setOpen(next)}} onKeyDown={e=>{if(e.key==='Escape'&&open){e.stopPropagation();setOpen(false);trigger.current?.focus({preventScroll:true})}}}><summary ref={trigger as any}><small>{kinds[shown.kind]||'研究记录'}{labels.length?' · '+labels.join(' / '):''} · {date(shown.recordedAt)}</small><p>{readableText(shown.summary)}</p><span className="studio-node-state">{researchStates[shown.state]}</span><span className="studio-node-open">{open?'收起解释':'解释与依据 ↗'}</span></summary>
+  {open&&<div className="studio-reading-section-body"><SavedResearch c={c} reference={openedRow} onEvidence={onEvidence} onReport={onReport}/></div>}
+ </details>;
+}
+
+export function ResearchPanel({c,onEvidence,onReport,compact=false,onAll,pluginKey=''}:any){
+ const [offset,setOffset]=useState(0),view=useResearch(c.id,c.researchRevision,offset,pluginKey);
+ useEffect(()=>setOffset(0),[c.id,pluginKey]);
+ const rows=view.value?.items||[],shown=compact?rows.slice(0,3).reverse():rows;
+ return <section className="studio-research-notebook" aria-label="研究问题与转折"><div className="studio-section-title"><div><small className="studio-kicker">RESEARCH / 认识的变化</small><h2>{compact?'研究如何走到这一步？':'相关研究记录'}</h2></div>{compact&&onAll&&<button onClick={onAll}>全部研究记录 →</button>}</div>
+  <p className="mh-muted">{compact?'最近保存的研究节点，按时间先后阅读。':'按记录时间倒序，保留每个方向的最新修订。'}每条反映当时的认识，详细限制与计划可展开核对。</p>
+  {view.loading&&<p role="status">正在读取研究记录…</p>}{view.error&&<p role="alert">{view.error}</p>}{!view.loading&&!rows.length&&<p>尚未记录独立解释；已有实验和原始报告仍可查阅。</p>}
+  <div className={compact?'studio-turning-grid':'studio-research-list'}>{shown.map((r:any)=><ResearchEntry key={r.recordId} row={r} c={c} onEvidence={onEvidence} onReport={onReport}/>)}</div>
+  {!compact&&<div className="mh-actions"><button disabled={!offset||view.loading} onClick={()=>setOffset(Math.max(0,offset-20))}>上一页研究记录</button><span>共 {view.value?.total??0} 条方向 / 尝试</span><button disabled={view.loading||view.value?.nextOffset==null} onClick={()=>setOffset(view.value.nextOffset)}>下一页研究记录</button></div>}
+ </section>;
 }

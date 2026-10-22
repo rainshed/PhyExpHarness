@@ -72,6 +72,36 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(self.store.get('selection_decisions',selected['id']),before)
         self.assertRaises(Conflict,self.store.retain,self.c,h1['id'],'stale',[ev['id']],**args)
         self.assertEqual(self.store.get('campaigns',self.c)['retainedCandidateId'],h0['id'])
+    def test_plugin_reading_filters_before_paging_and_keeps_original_development_revision(self):
+        p={'name':'same','version':'1','digest':'a'*64};other={**p,'digest':'b'*64}
+        h=self.candidate('one',[p]);second=self.candidate('two',[other])
+        origin=self.save()
+        with self.store.connection(True) as db:self.research.bind_candidate(db,self.c,h,[self.ref(origin)])
+        self.research.save(self.c,self.record(kind='turning_point',state='inconclusive'),1,'revision',origin['recordId'])
+        batch=self.store.submit(self.c,h['id'],self.store.get('campaigns',self.c)['config']['tasks'],1,'observe')
+        trial=next(t for t in self.store.list('trials',self.c) if t['batchId']==batch['id'])
+        observed=self.research.save(self.c,self.record(kind='observation',observations=[{
+            'plugin':{'candidateId':h['id'],'pluginKey':plugin_key(p)},'trialId':trial['id'],
+            'loaded':'yes','applicable':'unknown','triggered':'unknown','behavior':'尚无行为证据','benefit':'未知','anchors':[]
+        }]),0,'observed')
+        for i in range(22):
+            self.research.save(self.c,self.record(plugins=[{'candidateId':second['id'],'pluginKey':plugin_key(other)}]),0,'unrelated-'+str(i))
+        first=self.research.overview(self.c,0,1,plugin_key(p));last=self.research.overview(self.c,1,1,plugin_key(p))
+        self.assertEqual(first['total'],2);self.assertEqual(first['nextOffset'],1);self.assertIsNone(last['nextOffset'])
+        rows=first['items']+last['items']
+        self.assertEqual({r['recordId'] for r in rows},{origin['recordId'],observed['recordId']})
+        current=next(r for r in rows if r['recordId']==origin['recordId'])
+        self.assertEqual(current['revision'],2);self.assertEqual(current['developmentRefs'],[self.ref(origin)])
+        observation=next(r for r in rows if r['recordId']==observed['recordId'])
+        self.assertEqual(observation['plugins'],[{'candidateId':h['id'],'pluginKey':plugin_key(p)}])
+        for i in range(22):
+            self.research.save(self.c,self.record(plugins=[{'candidateId':h['id'],'pluginKey':plugin_key(p)}]),0,'related-'+str(i))
+        crowded=self.research.overview(self.c,pluginKey=plugin_key(p))
+        self.assertEqual(crowded['total'],24)
+        self.assertNotIn(origin['recordId'],[r['recordId'] for r in crowded['items']])
+        self.assertEqual(crowded['pluginContext']['developmentRef'],self.ref(origin))
+        self.assertEqual(crowded['pluginContext']['latestObservation']['recordId'],observed['recordId'])
+        self.assertEqual(self.research.overview(self.c,pluginKey='foreign')['total'],0)
     def test_meta_write_reconciles_without_duplicate_and_validates_v4(self):
         args={'record':self.record(),'expectedRevision':0,'idempotencyKey':'api'}
         row=self.api.call(self.c,'research_save',args);self.assertEqual(row,self.api.call(self.c,'research_save',args))

@@ -3,6 +3,17 @@ import {reportContext} from './components/trial-status.mjs';
 export const finite = x => typeof x === 'number' && Number.isFinite(x);
 const stable = x => JSON.stringify(x && typeof x === 'object' ? Array.isArray(x) ? x.map(v => JSON.parse(stable(v))) : Object.fromEntries(Object.keys(x).sort().map(k => [k, JSON.parse(stable(x[k] ?? null))])) : x ?? null);
 export const percent = x => finite(x) ? (x * 100).toFixed(1) + '%' : '—';
+// Translate a small, explicit vocabulary for reading. Never summarize, infer
+// outcomes or rewrite saved records; complete original wording stays available.
+export function readableText(value) {
+  if (typeof value !== 'string') return value;
+  return value.replaceAll('stabilityRule','可核验的稳定完成标准')
+    .replace(/官方(?:分数)?null/g,'官方未提供评分')
+    .replace(/按\s*v4/g,'按当前完成规则')
+    .replace(/\bv4(?=完成分|派生完成分)/g,'任务')
+    .replaceAll('budget_admission_denied','预算准入被拒绝')
+    .replaceAll('ModuleNotFoundError','缺少依赖库的错误');
+}
 export function trialsFor(c, id, task) {
   const live = new Map((c.trials || []).map(t => [t.id, t]));
   const rows = c.tables ? (c.tables.rounds || []).flatMap(r => r.results.map(t => ({...t, candidateId:r.candidateId, ...live.get(t.id)}))) : c.trials || [];

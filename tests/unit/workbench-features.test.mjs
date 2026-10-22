@@ -23,5 +23,13 @@ test('all registered Studio pages render, including report appendices after modu
  }
  assert.equal(new Set(features.map(f=>f.id)).size,features.length);
  for(const feature of features){const output=render(FeaturePage({id:feature.id,...props}));assert.ok(output.length,feature.id);if(feature.id==='reports')assert.match(output,/Fixture summary/);}
+ const overview=render(FeaturePage({id:'overview',...props}));
+ assert.ok(overview.indexOf('这次进化，为什么这样走')<overview.indexOf('每个版本，现在表现怎样'));
+ assert.ok(overview.indexOf('每个版本，现在表现怎样')<overview.indexOf('研究如何走到这一步'));
+ assert.doesNotMatch(overview,/计划收尾：|活动目标、固定配置与请求保护/);
+ assert.match(render(FeaturePage({id:'reports',...props})),/报告当时的逐任务表现/);
+ report.facts.selectionDecisions=[{id:'fixture-decision',createdAt:100,candidateId:'candidate',summary:'保留历史版本',reason:'当时已有完整结果'}];
+ const historical=render(FeaturePage({id:'reports',...props}));
+ assert.match(historical,/为什么当时保留这一版/);assert.doesNotMatch(historical,/为什么现在保留这一版/);
  assert.match(render(FeaturePage({id:'removed',...props})),/此页面当前不可用/);
 });

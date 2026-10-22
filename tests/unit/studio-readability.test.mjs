@@ -58,3 +58,11 @@ test('overview defaults include latest candidate and filtered trial identities r
  assert.equal(trialReport(c,{id:'second'}),'new');
  assert.deepEqual(['queued','running','failed','unknown'].map(state=>trialBucket({state})),['queued','active','ended','unknown']);
 });
+
+test('reading vocabulary translates known technical terms without inventing or truncating a conclusion',async()=>{
+ const {readableText}=await import('../../packages/meta-workbench-studio/client/readability.mjs');
+ assert.equal(readableText('官方null保留；v4完成分为0。没有stabilityRule。'),'官方未提供评分保留；任务完成分为0。没有可核验的稳定完成标准。');
+ assert.equal(readableText('按v4仍计失败；budget_admission_denied。'),'按当前完成规则仍计失败；预算准入被拒绝。');
+ const text='失败仍然保留；nullable 是标识；H1 为 1/2，净收益未知。';
+ assert.equal(readableText(text),text);assert.equal(readableText(null),null);
+});

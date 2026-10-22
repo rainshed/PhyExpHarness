@@ -8,6 +8,7 @@ export function useWorkbench(){
  const [selected,setSelected]=useState(()=>session.store?.read().selected||'');
  const [config,setConfig]=useState<any>(()=>session.store?.read().config||defaults);
  const data=useCampaignData(selected),c=data.campaign;
+ const [readingTarget,setReadingTarget]=useState('');
  const [view,setView]=useState('overview'),[creating,setCreating]=useState(false),[settingsOpen,setSettingsOpen]=useState(false);
  const [error,setError]=useState(session.error),[busy,setBusy]=useState(''),[notice,setNotice]=useState('');
  const [limits,setLimits]=useState<any>(null),[renaming,setRenaming]=useState<any>(null);
@@ -17,13 +18,13 @@ export function useWorkbench(){
  const mounted=useRef(true),actionLock=useRef(false);
  const commands=createCommands({store:session.store});
  const focus=(element:HTMLElement|null)=>{element?.scrollIntoView({block:'start',behavior:'instant'});element?.focus({preventScroll:true})};
- const navigate=(next:string)=>{setView(next);setNavigation(n=>n+1)};
+ const navigate=(next:string,target='')=>{setReadingTarget(target);setView(next);setNavigation(n=>n+1)};
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[]);
  useEffect(()=>{if(data.error)setError(data.error)},[data.error]);
  useEffect(()=>{if(data.selectionMissing)setSelected('')},[data.selectionMissing]);
  useEffect(()=>{try{session.store?.update({config,selected})}catch(e:any){setError('无法保存活动草稿：'+e.message)}},[config,selected]);
  useEffect(()=>{setLimits(null);setRenaming(null)},[selected]);
- useEffect(()=>{if(navigation)focus(creating?formRef.current:contentRef.current)},[navigation,creating]);
+ useEffect(()=>{if(navigation)focus(creating?formRef.current:(readingTarget?contentRef.current?.querySelector<HTMLElement>('[data-reading-anchor="'+readingTarget+'"]'):null)||contentRef.current)},[navigation,creating]);
  useEffect(()=>{if(formError)focus(formErrorRef.current)},[formError]);
  useEffect(()=>{if(view==='reports'&&(report.value||report.error))focus(contentRef.current)},[report.value,report.error]);
  async function act(label:string,fn:()=>Promise<any>){
@@ -77,5 +78,5 @@ export function useWorkbench(){
   evidence,setEvidence:(value:any)=>detail.setValue(value?{kind:'evidence',data:value}:null),source,setSource:(value:any)=>detail.setValue(value?{kind:'source',data:value}:null),
   limits,setLimits,notice,setNotice,models:data.models,modelCatalogNote:data.note,settingsOpen,setSettingsOpen,refreshModels:data.refreshModels,renaming,setRenaming,
   formError,setFormError,limitsError,setLimitsError,setNavigation,contentRef,formRef,formErrorRef,heroRef,detailTrigger,focus,navigate,refresh:data.refresh,
-  act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport,h0Ready:c?.candidates.some((x:any)=>!x.plugins.length&&x.check.status==='passed')};
+  readingTarget,act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport,h0Ready:c?.candidates.some((x:any)=>!x.plugins.length&&x.check.status==='passed')};
 }

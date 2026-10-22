@@ -14,7 +14,7 @@ export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command
 export function CampaignNotices({c}:any){return <>
  {c.state==='paused'&&<p className="mh-notice">已暂停新工作，已启动实验继续；Meta 当前请求中断。墙钟仍在计时，恢复时先对账。</p>}
  {c.state==='closing'&&<p className="mh-notice">正在收尾，等待外部任务终止确认、用量归集和报告。操作受理不代表任务已经停止。</p>}
- {c.stopReason&&<p className="mh-notice">{c.explorationClosed&&c.state==='running'?'探索已关闭，已受理实验继续；原因：':'停止原因：'}{reasons[c.stopReason]||c.stopReason}</p>}
+ {c.stopReason&&<p className={c.state==='finished'?'studio-ended-reason':'mh-notice'}>{c.explorationClosed&&c.state==='running'?'探索已关闭，已受理实验继续；原因：':'停止原因：'}{reasons[c.stopReason]||c.stopReason}</p>}
  {c.config.precedingAttempt&&<p className="mh-notice">前序失败已保留：{c.config.precedingAttempt.trials} 次尝试，已确认 {number(c.config.precedingAttempt.confirmedTokens)} token，未知预留 {number(c.config.precedingAttempt.unknownReservedTokens)} token。此活动使用原总额度的剩余部分。</p>}
  </>}
 

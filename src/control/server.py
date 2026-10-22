@@ -95,8 +95,8 @@ def make_app(service,supervise=True):
     def adopt_source(id:str,request:Request,body:dict):
         user(request);return service.adoptions.adopt(id,**body)
     @app.get('/campaigns/{id}/research')
-    def research(id:str,request:Request,offset:int=0,limit:int=20):
-        user(request);return service.research.overview(id,offset,limit)
+    def research(id:str,request:Request,offset:int=0,limit:int=20,pluginKey:str|None=None):
+        user(request);return service.research.overview(id,offset,limit,pluginKey)
     @app.get('/campaigns/{id}/research/{record}')
     def research_detail(id:str,record:str,request:Request,revision:int):
         user(request);return service.research.detail(id,record,revision)

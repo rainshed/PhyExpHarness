@@ -70,7 +70,7 @@ class Research:
         anchors=row['record'].get('anchors',[])+[a for o in row['record'].get('observations',[]) for a in o['anchors']]
         return {**row,'revisions':[{k:r[k] for k in ['revision','recordedAt','author']} for r in self.store.list('research_records',campaign) if r['recordId']==recordId],'excerpts':[self.evidence.excerpt(campaign,a) for a in anchors],
             'candidateLinks':[r for r in self.store.list('research_links',campaign) if r['recordId']==recordId and r['recordRevision']==revision]}
-    def overview(self,campaign,offset=0,limit=20):
+    def overview(self,campaign,offset=0,limit=20,pluginKey=None):
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=50:raise Refused('Invalid research page')
         with self.store.connection() as db:
             c=self.store._get(db,'campaigns',campaign);all_rows=self.store._list(db,'research_records',campaign)
@@ -79,14 +79,24 @@ class Research:
             links=self.store._list(db,'research_links',campaign)
             def brief(row):
                 record=row['record']
+                linked=[r for r in links if r['recordId']==row['recordId']]
+                plugins=record.get('plugins',[])+[o['plugin'] for o in record.get('observations',[])]+[{'candidateId':r['candidateId'],'pluginKey':p['pluginKey']} for r in linked for p in r['plugins']]
                 return {k:row[k] for k in ['recordId','revision','author','recordedAt']}|{k:record[k] for k in ['kind','state','summary','limitations','nextStep','factAt']}|{
-                    'candidateIds':list(dict.fromkeys(record.get('candidateIds',[])+[r['candidateId'] for r in links if r['recordId']==row['recordId']])),
-                    'plugins':record.get('plugins',[])+[{'candidateId':r['candidateId'],'pluginKey':p['pluginKey']} for r in links if r['recordId']==row['recordId'] for p in r['plugins']]}
+                    'candidateIds':list(dict.fromkeys(record.get('candidateIds',[])+[p['candidateId'] for p in plugins])),
+                    'plugins':list({(p['candidateId'],p['pluginKey']):p for p in plugins}.values()),
+                    'developmentRefs':list({(r['recordId'],r['recordRevision']):{'recordId':r['recordId'],'revision':r['recordRevision']} for r in linked if not pluginKey or any(p['pluginKey']==pluginKey for p in r['plugins'])}.values())}
+            rows=[brief(row) for row in rows]
+            if pluginKey:rows=[r for r in rows if any(p['pluginKey']==pluginKey for p in r['plugins'])]
+            plugin_context={}
+            if pluginKey:
+                development=next((r for r in sorted(links,key=lambda r:r['recordedAt']) if any(p['pluginKey']==pluginKey for p in r['plugins'])),None)
+                plugin_context={'pluginContext':{'developmentRef':{'recordId':development['recordId'],'revision':development['recordRevision']} if development else None,
+                    'latestObservation':next((r for r in rows if r['kind'] in ('observation','turning_point')),None)}}
             # Limits/next plan may be long; main polling carries only a fingerprint, this view is fetched on changes.
             fingerprint=hashlib.sha256(encoded([all_rows,links,c.get('selectionDecisionId')]).encode()).hexdigest()
             return {'schemaVersion':'evolution-view-v1','revision':fingerprint,'observedAt':self.store.clock(),
-                'availability':'available' if rows else 'not_recorded','total':len(rows),'items':[brief(r) for r in rows[offset:offset+limit]],
-                'nextOffset':offset+limit if offset+limit<len(rows) else None,'offset':offset}
+                'availability':'available' if rows else 'not_recorded','total':len(rows),'items':rows[offset:offset+limit],
+                'nextOffset':offset+limit if offset+limit<len(rows) else None,'offset':offset,**plugin_context}
 
     def selection(self,db,c,selected,summary,alternatives,refs):
         """Freeze all explicitly considered alternatives in the selection transaction."""
