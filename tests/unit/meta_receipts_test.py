@@ -8,12 +8,13 @@ from src.control.meta_native_composition import freeze
 from src.control.store import Refused,Conflict,encoded,META_RETENTION_RULE
 from src.control.meta import MetaDriver
 from src.control.meta_context import startup_context
+from src.control.meta_contracts import binding
 
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         legacy.NativeMetaTests.setUp(self)
         c=self.store.get('campaigns',self.c)
-        with patch('src.control.meta_native_composition.prepare_image',return_value='sha256:'+'a'*64):c['config']['metaComposition']=freeze(legacy.ROOT,self.data,c['config'])
+        with patch('src.control.meta_native_composition.prepare_image',return_value='sha256:'+'a'*64), patch('src.control.meta_contracts.binding',return_value=binding('meta-tools-v3')):c['config']['metaComposition']=freeze(legacy.ROOT,self.data,c['config'])
         c['config']['retentionRule']=META_RETENTION_RULE
         self.store.put('campaigns',c)
     def tearDown(self):legacy.NativeMetaTests.tearDown(self)

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from .tables import readable_text, stable, markdown_tables, cell
 
-PRESENTATION_VERSION=6
+PRESENTATION_VERSION=7
 REASONS={'round_limit':'达到轮次上限','trial_limit':'达到实验次数上限','time_limit':'达到探索时间上限，进入收尾',
     'token_threshold':'达到用量软阈值','campaign_deadline':'达到活动截止时间','trial_deadline':'达到单次时限',
     'user_stop':'用户停止','meta_finished':'Meta 主动结束','meta_session_failed':'Meta 会话未正常结束','completed':'执行完成'}
@@ -24,7 +24,7 @@ def project(report,data=None):
         contributions=[{'plugin':p['displayName'],'expected':p['functionSummary'],
             'observed':'原报告未单独评价该插件在本轮的行为，请结合下方原分析和证据查看。',
             'comparison':'没有单独移除该插件的对照。','assessment':'贡献尚无法单独确认。','evidenceRefs':[]} for p in tables['plugins'] if p['id'] in used]
-    reading={'summary':content.get('summary',a['summary']),
+    reading={'summary':content.get('brief',content.get('summary',a['summary'])),
         'process':content.get('process',a.get('observations',[])),
         'problems':content.get('problems',[]),
         'pluginContributions':contributions,'decision':content.get('decision',a['decision']),
@@ -34,7 +34,7 @@ def project(report,data=None):
                  'Meta 提供的过程与插件作用分析。' if 'process' in a else '按原 Meta 分析整理；未单独记录的事项明确留空。',
         'sourceReportId':notes.get('sourceReportId'),
         'evidenceRefs':a.get('evidenceRefs',[])}
-    if report.get('analysisSchema')=='meta-report-analysis-v1':
+    if report.get('analysisSchema') in ('meta-report-analysis-v1','meta-report-analysis-v2'):
         reading['problems']=[('已解决：' if p['status']=='resolved' else '未解决：')+p['description'] for p in content.get('problems',[])]
     # Evidence identifiers remain exact machine links, never rewrite their values.
     refs=reading.pop('evidenceRefs');contribution_refs=[v.get('evidenceRefs',[]) for v in reading['pluginContributions']]
@@ -73,16 +73,24 @@ def render_reading(report):
     if not a['pluginContributions']:lines.append('| 无额外插件 | 固定基线能力 | — | — | 不涉及新增插件贡献 |')
     for key,label in [('decision','最终选择' if not report['batchId'] else '本轮后的决定'),('limitations','尚不能确定的事情')]:
         lines+=['','## '+label,'',*paragraphs(a[key])]
+    for r in report.get('researchRecords',[]):
+        record=r['record']
+        lines+=['','## 研究解释 · '+record['summary'],'',f"来源：{r['author']}；记录时间：{r['recordedAt']}；事实时间：{record['factAt']}；修订：{r['revision']}。"]
+        for key,label in [('problem','问题'),('hypothesis','假设'),('change','改动目的'),('validation','如何验证'),('limitations','局限'),('nextStep','下一步计划')]:lines+=['',label+'：',*paragraphs(record.get(key,[]))]
+        for anchor in record.get('anchors',[]):lines+=['',anchor['supports']+f"（证据 {anchor['evidenceId']}，SHA-256 {anchor['sha256']}，字符 {anchor['start']}–{anchor['end']}）"]
     if f.get('selectionDecisions'):
         lines+=['','## Meta 版本选择记录','','选定是 Meta 判断；证据核验不代表平台认证稳定性或因果提升。以下为决策当时的完整记录摘要。']
         for d in f['selectionDecisions']:
             lines+=['',f"- 决策：{d['id']}；此前保留：{versions.get(d['previousCandidateId'],d['previousCandidateId'] or '未选择')}；本次选定：{versions.get(d['candidateId'],d['candidateId'])}；时间：{d['createdAt']}。",
-                '  理由：'+cell(d['reason']),'  权衡：'+cell(d['tradeoffs']),
+                '  概述：'+cell(d.get('summary') or '未记录独立概述'),'  理由：'+cell(d['reason']),'  权衡：'+cell(d['tradeoffs']),
                 '  Meta 声明的局限：'+cell('；'.join(d['limitations']) or '未另行声明'),
                 '  重新考虑的条件：'+cell(d['reconsiderWhen']),
                 '  平台比较限制：'+cell('；'.join(d['assessment']['comparisonLimitations'])),
                 '  已核验证据：'+cell('、'.join(d['evidenceRefs'])),
                 '  完整的逐任务结果、全部尝试、证据摘要及决策链保存在配套 JSON。']
+            for alternative in d.get('alternatives',[]):
+                lines += ['  备选 '+versions.get(alternative['candidateId'],alternative['candidateId'])+'：'+cell(alternative['reason'])+'；依据：'+cell('、'.join(alternative['evidenceRefs']) or '未另列证据')+'。']
+            if 'alternatives' not in d:lines += ['  未记录备选分析；不能据此认定其他版本已被否决。']
     lines+=['','## 消耗与停止原因','',f"活动：{cfg.get('name','进化活动')}。Solver：{cfg['solver']['model']} / {cfg['solver'].get('reasoningEffort','无')}；Meta：{cfg['meta']['model']} / {cfg['meta'].get('reasoningEffort','无')}。",
         f"活动累计 {c['counts']['rounds']} 轮、{c['counts']['startedTrials']} 次已启动实验；耗时 {c['elapsedSeconds']/60:.1f} 分钟。",
         f"活动累计已确认 {u['confirmedTokens']:,} token；在途预留 {u['inflightReservedTokens']:,}；未知请求 {u['unknownRequests']} 个，保守预留 {u['unknownReservedTokens']:,}。",

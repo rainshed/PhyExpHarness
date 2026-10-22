@@ -13,8 +13,8 @@ from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for, description_for
 from . import resource_planning as planning
 
-SCHEMA_VERSION = 3
-TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions')
+SCHEMA_VERSION = 4
+TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
 LEGACY_RETENTION_RULE = 'public-development-v1'
@@ -303,16 +303,22 @@ class Store:
             self._finish_batches(db,id)
             c=self._save(db,'campaigns',c);self._event(db,id,action,changes=changes)
             return self._remember(db,id,'control',key,payload,c)
-    def candidate(self,campaign,bundle,description,parent=None,check=None):
+    def candidate(self,campaign,bundle,description,parent=None,check=None,research_refs=None):
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
             if c['explorationClosed'] or c['state'] not in ['draft','running']:raise Refused('Search writes are closed')
             if parent and self._get(db,'candidates',parent)['campaignId']!=campaign:raise Refused('Candidate belongs to another Campaign')
             existing=[x for x in self._list(db,'candidates',campaign) if x['bundleId']==bundle['id']]
-            if existing:return existing[0]
+            if research_refs is not None:
+                from .research import Research
+                research=Research(self,self.path.parent);research.resolve(db,campaign,research_refs)
+            if existing:
+                if research_refs is not None:research.bind_candidate(db,campaign,existing[0],research_refs)
+                return existing[0]
             row=self._save(db,'candidates',{'id':identity('candidate'),'campaignId':campaign,'bundleId':bundle['id'],
                 'bundlePath':bundle['path'],'plugins':bundle['plugins'],'metaCompositionId':c['config'].get('metaComposition',{}).get('id'),'parentId':parent,'description':description,
                 'check':check or {'status':'pending'},'createdAt':self.clock()})
+            if research_refs is not None:research.bind_candidate(db,campaign,row,research_refs)
             self._event(db,campaign,'candidate_frozen',candidateId=row['id']);return row
     def update_plan(self,campaign,changes,reason,key,expected_revision,source='meta'):
         if source not in ('meta','user','operator','developer'):raise Refused('Unknown plan source')
@@ -558,7 +564,7 @@ class Store:
             c.update(state='finished',explorationClosed=True,finishedAt=self.clock(),
                 stopReason=reason or c['stopReason'] or 'completed',finalCandidateId=c['retainedCandidateId'])
             c=self._save(db,'campaigns',c);self._event(db,campaign,'finished',reason=c['stopReason']);return c
-    def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None):
+    def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None,summary=None,alternatives=None,researchRefs=None):
         rejection=None
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
@@ -574,7 +580,7 @@ class Store:
             trials=[t for t in self._list(db,'trials',campaign) if t['candidateId']==candidate]
             rule=c['config'].get('retentionRule',LEGACY_RETENTION_RULE)
             if rule==META_RETENTION_RULE:
-                return self._meta_select(db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsiderWhen,meta_request)
+                return self._meta_select(db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsiderWhen,meta_request,summary,alternatives,researchRefs)
             has_result=any(t['score'] is not None for t in trials) if rule==LEGACY_RETENTION_RULE else any(
                 t['state']=='finished' and type(t.get('score')) in [int,float] and math.isfinite(t['score']) for t in trials)
             if not has_result:raise Refused('Retaining a candidate requires a completed official result')
@@ -607,12 +613,16 @@ class Store:
                 if meta_request:
                     previous_id=c.get('retainedCandidateId')
                     previous=[t for t in self._list(db,'trials',campaign) if t['candidateId']==previous_id] if previous_id else []
+                    extra={}
+                    if summary is not None:
+                        from .research import Research
+                        extra=Research(self,self.path.parent).selection(db,c,selected,summary,alternatives,researchRefs)
                     audit=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
                     decision=self._save(db,'selection_decisions',{'id':identity('selection'),'campaignId':campaign,
                         'candidateId':candidate,'bundleId':selected['bundleId'],'previousCandidateId':previous_id,
                         'previousDecisionId':c.get('selectionDecisionId'),'createdAt':self.clock(),'source':'meta-analysis','rule':rule,
                         'reason':reason,'evidenceRefs':refs,'tradeoffs':tradeoffs,'limitations':limitations,'reconsiderWhen':reconsiderWhen,
-                        'assessment':audit,'legacyEligibilityAssessment':assessment,'metaRequest':meta_request,
+                        **extra,'assessment':audit,'legacyEligibilityAssessment':assessment,'metaRequest':meta_request,
                         'selectionRevision':len(self._list(db,'selection_decisions',campaign))+1})
                     c['selectionDecisionId']=decision['id']
                 c['retainedCandidateId']=candidate;c=self._save(db,'campaigns',c)
@@ -621,7 +631,7 @@ class Store:
         # Commit the rejected assessment for audit, without changing the selection.
         raise Refused(rejection)
 
-    def _meta_select(self,db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsider_when,meta_request=None):
+    def _meta_select(self,db,c,selected,trials,reason,refs,tradeoffs,limitations,reconsider_when,meta_request=None,summary=None,alternatives=None,research_refs=None):
         if selected.get('check',{}).get('status')!='passed':raise Refused('Selection requires a checked frozen candidate')
         for key,value in [('reason',reason),('tradeoffs',tradeoffs),('reconsiderWhen',reconsider_when)]:
             if not isinstance(value,str) or not value.strip() or len(value)>16000:raise Refused(key+' must be non-empty text of at most 16000 characters')
@@ -638,6 +648,10 @@ class Store:
             except (KeyError,OSError) as error:raise Refused('Selection evidence unavailable: '+ref) from error
             if hashlib.sha256(data).hexdigest()!=e.get('sha256'):raise Refused('Selection evidence integrity mismatch: '+ref)
             checks.append({'id':ref,'sha256':e['sha256'],'trialId':e.get('trialId'),'kind':e.get('kind')})
+        extra={}
+        if summary is not None:
+            from .research import Research
+            extra=Research(self,self.path.parent).selection(db,c,selected,summary,alternatives,research_refs)
         previous_id=c.get('retainedCandidateId')
         previous=[t for t in self._list(db,'trials',c['id']) if t['candidateId']==previous_id] if previous_id else []
         assessment=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
@@ -646,7 +660,7 @@ class Store:
             **({'metaRequest':meta_request,'selectionRevision':len(self._list(db,'selection_decisions',c['id']))+1} if meta_request else {}),
             'previousDecisionId':c.get('selectionDecisionId'),'createdAt':self.clock(),'source':'meta-analysis',
             'rule':META_RETENTION_RULE,'reason':reason,'tradeoffs':tradeoffs,'limitations':limitations,
-            'reconsiderWhen':reconsider_when,'evidenceRefs':refs,'verifiedEvidence':checks,'assessment':assessment,
+            **extra,'reconsiderWhen':reconsider_when,'evidenceRefs':refs,'verifiedEvidence':checks,'assessment':assessment,
             'usage':self.usage(c['id'],db),'counts':self._counts(db,c['id']),
             'context':{'campaignRevision':c['revision'],'state':c['state'],'deadline':c.get('deadline'),
                 'remainingSeconds':max(0,c['deadline']-self.clock()) if c.get('deadline') else c['config']['wallTimeSeconds'],

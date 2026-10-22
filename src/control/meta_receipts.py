@@ -7,7 +7,7 @@ import stat
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from .store import Refused,Conflict,encoded
-from .meta_contracts import ANALYSIS,CONTRACTS,ROOT
+from .meta_contracts import ANALYSIS,CONTRACTS,ROOT,analysis_for,version
 from src.evidence.files import atomic_json
 
 RECEIPT_SCHEMA=json.loads((ROOT/'receipt.schema.json').read_text())
@@ -127,9 +127,12 @@ class Receipts:
                 'trialCount':sum(t['candidateId']==row['id'] for t in trials)}))
         return items
     def report_navigation(self,campaign):
+        ANALYSIS=analysis_for(self.service,campaign)
         schema=self.files.publish(campaign,'schema:'+ANALYSIS['$id'],encoded(ANALYSIS),kind='query',source={'archive':'report-analysis.schema.json'})
         template=self.files.publish(campaign,'template:'+ANALYSIS['$id'],encoded(ANALYSIS['examples'][0]),kind='query',source={'archive':'report-analysis.json'})
         return {'analysisSchema':compact(schema),'analysisTemplate':compact(template)}
+    def research(self,campaign,row):
+        return receipt(row['record']['summary'],self.publish(campaign,'research:'+row['id'],row),recordId=row['recordId'],revision=row['revision'])
     def report(self,campaign,row):
         return receipt('分析报告已保存。',self.publish(campaign,'report:'+row['id'],row),reportId=row['id'],analysisRevision=row['analysisRevision'],factsId=row['factsSha256'])
     def decision(self,campaign,row):
@@ -148,7 +151,8 @@ class Receipts:
         file=self.publish(campaign,'diagnostic:'+hashlib.sha256(encoded(errors).encode()).hexdigest(),{'errors':errors,'operation':operation,'schemaVersion':ANALYSIS['$id'] if operation=='report_save' else 'meta-tools-v3'})
         return receipt('提交未生效；按诊断文件修正后使用新的幂等键。',file,status='rejected',committed=False,code=code,errorCount=len(errors),**(self.report_navigation(campaign) if operation=='report_save' else {}))
     def save_report(self,campaign,args,request):
-        schema=CONTRACTS['meta-tools-v3']['report_save']['input'];errors=[]
+        ANALYSIS=analysis_for(self.service,campaign)
+        schema=CONTRACTS[version(self.service,campaign)]['report_save']['input'];errors=[]
         def add(pointer,expected,actual,hint):errors.append({'pointer':pointer,'expected':expected,'actual':actual,'hint':hint})
         def validate(value,schema,prefix=''):
             for error in Draft202012Validator(schema).iter_errors(value):
@@ -230,10 +234,13 @@ class Receipts:
             from src.execution.bundle.manifest import verify
             candidate=self.api._candidate(campaign,args['candidateId'])
             if verify(candidate['bundlePath'])['id']!=candidate['bundleId']:raise Refused('Frozen candidate identity mismatch')
-            self.store.retain(campaign,args['candidateId'],args['reason'],args['evidenceRefs'],**{k:args[k] for k in ['tradeoffs','limitations','reconsiderWhen','expectedSelectionRevision']},meta_request=request)
+            self.store.retain(campaign,args['candidateId'],args['reason'],args['evidenceRefs'],**{k:args[k] for k in ['tradeoffs','limitations','reconsiderWhen','expectedSelectionRevision']},meta_request=request,**{k:args[k] for k in ['summary','alternatives','researchRefs'] if k in args})
             return self.reconciled(campaign,op,request)
         if op=='report_save':return self.save_report(campaign,args,request)
         result=self.api._call(campaign,op,args)
+        if op=='research_save':return self.research(campaign,result)
+        if op in ['research_list','research_read','evidence_excerpt']:
+            return receipt('研究解释与核验后的片段见文件。',self.snapshot(campaign,op,args,result))
         if op=='report_get_facts':
             # Keep the original facts identity, publish a derived view with usable paths.
             facts=json.loads((self.service.data/'campaigns'/campaign/'report-facts'/(result['factsId']+'.json')).read_text())['facts']

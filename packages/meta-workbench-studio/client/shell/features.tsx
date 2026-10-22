@@ -10,11 +10,11 @@ import {CampaignDetails} from '../components/campaign';
 import {ResourcePlan} from '../components/resource-plan';
 
 export const features=[
- {id:'overview',title:'活动概览',icon:'▦',render:({w,c,readEvidence,...props}:any)=><><Overview w={{...w,readEvidence}} {...props}/><CampaignDetails c={c}/><ResourcePlan c={c}/></>},
+ {id:'overview',title:'进化概览',icon:'▦',render:({w,c,readEvidence,...props}:any)=><><Overview w={{...w,readEvidence}} {...props}/><CampaignDetails c={c}/><ResourcePlan c={c}/></>},
  {id:'compare',title:'版本对比',icon:'⌘',render:Comparison},
  {id:'rounds',title:'实验记录',icon:'☷',render:Experiments},
  {id:'reports',title:'研究报告',icon:'▤',render:({w,readEvidence,tablesProps}:any)=><Reports w={{...w,readContextEvidence:readEvidence}} tablesProps={tablesProps}/>},
- {id:'lab',title:'插件与版本详情',icon:'◇',render:Lab},
+ {id:'lab',title:'插件与动机',icon:'◇',render:Lab},
  {id:'meta',title:'运行详情',icon:'⌁',render:Runtime},
  {id:'exports',title:'获取 Harness',icon:'↓',render:Exports},
 ];

@@ -6,7 +6,7 @@ import {isolatedSession} from '../execution/host/isolation.mjs';
 import {nativeEntries,presets} from '../../packages/meta-harness/composition-native.mjs';
 import {reviewSchema} from '../../packages/meta-harness/stop-review.mjs';
 import {MetaOutputs} from './meta_outputs.mjs';
-const READ=new Set(['campaign_status','materials_list','materials_search','materials_read','evidence_list','evidence_read','sdk_search','sdk_read','sdk_inspect']);
+const READ=new Set(['campaign_status','materials_list','materials_search','materials_read','evidence_list','evidence_read','sdk_search','sdk_read','sdk_inspect','research_list','research_read','evidence_excerpt']);
 const validateReview=new Ajv().compile(reviewSchema);
 // One activity research boundary (main + native children), separate stop-review boundary.
 export class MetaHost{

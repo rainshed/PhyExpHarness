@@ -1,26 +1,35 @@
-"""Explicit protocol registry. Historical compositions never inherit the latest tools."""
+"""Exact protocol registry. Historical compositions retain their sealed tools and schemas."""
 import hashlib
 import json
 from pathlib import Path
 from .store import Refused,encoded
 
 ROOT=Path(__file__).resolve().parents[2]/'packages/meta-harness'
-ANALYSIS=json.loads((ROOT/'report-analysis.schema.json').read_text())
-CONTRACTS={v:json.loads((ROOT/file).read_text())['operations'] for v,file in
-    [('meta-tools-v2','contracts-v2.json'),('meta-tools-v3','contracts.json')]}
-# Both model registration and backend validation resolve this one schema.
-CONTRACTS['meta-tools-v3']['report_save']['input']['properties']['analysis']=ANALYSIS
-def binding():
-    return {'version':'meta-tools-v3','receiptVersion':'meta-tool-receipt-v1','analysisVersion':ANALYSIS['$id'],
-        'files':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-            ['contracts.json','receipt.schema.json','report-analysis.schema.json','domain-tools.mjs','output-context.mjs']}}
+ROOTS={'meta-tools-v3':ROOT/'protocols/meta-tools-v3','meta-tools-v4':ROOT}
+ANALYSES={v:json.loads((root/'report-analysis.schema.json').read_text()) for v,root in ROOTS.items()}
+ANALYSIS=ANALYSES['meta-tools-v4']
+CONTRACTS={'meta-tools-v2':json.loads((ROOT/'contracts-v2.json').read_text())['operations']}
+for v,root in ROOTS.items():
+    CONTRACTS[v]=json.loads((root/'contracts.json').read_text())['operations']
+    CONTRACTS[v]['report_save']['input']['properties']['analysis']=ANALYSES[v]
+CONTRACTS['meta-tools-v4']['research_save']['input']['properties']['record']=json.loads((ROOT/'research.schema.json').read_text())
+
+def binding(protocol='meta-tools-v4'):
+    root=ROOTS[protocol]
+    files=['contracts.json','receipt.schema.json','report-analysis.schema.json','domain-tools.mjs','output-context.mjs']
+    if protocol=='meta-tools-v4':files.append('research.schema.json')
+    return {'version':protocol,'receiptVersion':'meta-tool-receipt-v1','analysisVersion':ANALYSES[protocol]['$id'],
+        'files':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in files}}
 
 def version(service,campaign):
     ref=service.store.get('campaigns',campaign)['config'].get('metaComposition',{})
     declared=ref.get('toolContract')
     if declared is None:return 'meta-tools-v2'
-    if declared!=binding():raise Refused('Exact frozen Meta tool protocol is unavailable')
+    protocol=declared.get('version')
+    if protocol not in ROOTS or declared!=binding(protocol):raise Refused('Exact frozen Meta tool protocol is unavailable')
     manifest=json.loads((service.data/'meta-compositions'/ref['id']/'manifest.json').read_text())
     if hashlib.sha256(encoded({k:v for k,v in manifest.items() if k!='id'}).encode()).hexdigest()!=ref['id'] or manifest.get('toolContract')!=declared:
         raise Refused('Frozen Meta tool protocol integrity mismatch')
-    return declared['version']
+    return protocol
+
+def analysis_for(service,campaign):return ANALYSES.get(version(service,campaign),ANALYSES['meta-tools-v3'])

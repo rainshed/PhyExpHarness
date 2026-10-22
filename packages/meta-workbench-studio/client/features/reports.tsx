@@ -1,3 +1,4 @@
+import {ResearchArticle} from '../components/research';
 import {TrialList} from '../components/trial-list';
 import React,{useEffect} from 'react';
 import {API,number,duration,date,reasons} from '../components/common';
@@ -11,7 +12,7 @@ import {comparison,trialsFor,reportGroups,reportKey,reportTitle,reportCampaign} 
 import {VersionComparison} from '../components/version-comparison';
 
 function ReportArticle({report,w,tablesProps}:any){const a=report.reading||report.analysis,f=report.facts,c=reportCampaign(report),incomplete=report.kind==='status_summary'||report.status==='analysis_incomplete';
- const referenced=(id:string)=>w.readContextEvidence?w.readContextEvidence(id,c):w.readEvidence(id);
+ const referenced=(id:string,offset=0)=>w.readContextEvidence?w.readContextEvidence(id,c,offset):w.readEvidence(id,offset);
  const contextEvidence=(id:string)=>{const e=f.evidence.find((e:any)=>e.trialId===id);if(e)referenced(e.id);else w.setNotice('此报告快照未包含该实验的归档证据。')};
  const contributions=(a.pluginContributions||[]).filter((p:any)=>p.evidenceRefs?.length || p.observed&&!p.observed.startsWith('原报告未单独评价'));
  const missing=(a.pluginContributions?.length||0)-contributions.length;
@@ -20,6 +21,7 @@ function ReportArticle({report,w,tablesProps}:any){const a=report.reading||repor
  <VersionComparison key={report.id} c={c} onEvidence={contextEvidence} compact/>
  <section><h3>成本与代价</h3><p>活动累计已确认 {number(c.usage.confirmedTokens)} token · 墙钟 {duration(c.elapsedSeconds)}。</p><p>Solver {number(f.usageByRole?.solver?.confirmedTokens)} token；Meta 设计与报告 {number(f.usageByRole?.meta?.confirmedTokens)} token。</p>{c.usage.unknownRequests>0&&<p className="mh-notice">还有 {c.usage.unknownRequests} 个请求用量待核实，未按零处理。</p>}<p>停止原因：{reasons[c.stopReason]||c.stopReason||'尚未停止'}。</p>{a.problems?.length>0&&<Text value={a.problems}/>}</section>
  <section><h3>局限与下一步</h3>{(!incomplete||a.limitations?.some?.((v:any)=>v!=='Meta 完整分析尚未完成。'))&&<Text value={a.limitations}/>} {a.hypotheses?.length>0&&<Text value={a.hypotheses}/>}<p className="mh-muted">{f.generalization}</p>{c.finishAssessment&&<p>Meta 结束依据：{c.finishAssessment.reason}</p>}</section>
+ {report.researchRecords?.map((row:any)=><details key={row.id}><summary>{row.record.summary} · 解释修订 {row.revision}</summary><ResearchArticle row={row} c={c} onEvidence={referenced} onReport={w.readReport}/></details>)}
  <div className="studio-appendices"><h3>过程与追溯</h3><details><summary>过程观察与插件作用</summary><Text value={a.process||a.observations}/>{contributions.map((p:any,i:number)=><section key={i}><h4>{p.plugin}</h4><dl>{[['expected','预期作用'],['observed','实际观察'],['comparison','与对照相比'],['assessment','判断']].map(([k,title])=><React.Fragment key={k}><dt>{title}</dt><dd>{p[k]}</dd></React.Fragment>)}</dl>{p.evidenceRefs?.map((id:string,j:number)=><button key={id} onClick={()=>referenced(id)}>作用依据 {j+1}</button>)}</section>)}{missing>0&&<details><summary>{missing} 项插件未单独记录贡献</summary><Text value={(a.pluginContributions||[]).filter((p:any)=>!contributions.includes(p)).map((p:any)=>p.plugin)}/></details>}</details>
  <details><summary>Meta 选择历史与比较局限</summary><SelectionDecisions decisions={f.selectionDecisions} tables={report.tables} readEvidence={referenced}/></details>
  <details><summary>Meta 运行、资源与停止审查</summary><MetaComposition campaign={c} composition={f.metaComposition} observations={f.metaObservations} sessions={f.metaSessions} reviews={f.stopReviews}/></details>

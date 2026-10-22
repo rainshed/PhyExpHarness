@@ -87,7 +87,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
     batches = sorted(batches, key=lambda b: b['round'])
     batch_candidates={b['id']:b['candidateId'] for b in batches}
     trials=[{**t,'candidateId':t.get('candidateId',batch_candidates.get(t.get('batchId')))} for t in trials]
-    labels = {c['id']: f'H{i}' for i, c in enumerate(candidates)}
+    labels = {c['id']: c.get('versionLabel',f'H{i}') for i, c in enumerate(candidates)}
     lookup = {c['id']: c for c in candidates}
     if batch_id:
         focus = next(b for b in batches if b['id'] == batch_id)

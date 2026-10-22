@@ -117,6 +117,34 @@
         ],
         "additionalProperties": false
       }
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "researchRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "recordId",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
     }
   },
   "required": [
@@ -125,10 +153,12 @@
     "hypotheses",
     "limitations",
     "decision",
-    "evidenceRefs"
+    "evidenceRefs",
+    "brief",
+    "researchRefs"
   ],
   "additionalProperties": false,
-  "$id": "meta-report-analysis-v1",
+  "$id": "meta-report-analysis-v2",
   "examples": [
     {
       "summary": "说明本轮观察。",
@@ -136,7 +166,9 @@
       "hypotheses": [],
       "limitations": [],
       "decision": "说明后续决定。",
-      "evidenceRefs": []
+      "evidenceRefs": [],
+      "brief": "说明本轮观察。",
+      "researchRefs": []
     }
   ]
 }

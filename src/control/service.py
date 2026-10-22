@@ -45,6 +45,10 @@ class ControlService:
         self.quantum=Path(quantum_harbor).resolve();self.base_url=base_url
         self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
         self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
+        from .research import Research
+        self.research=Research(self.store,self.data)
+        from src.evidence.adoptions import Adoptions
+        self.adoptions=Adoptions(self)
         self.materials=Materials(self);self.stop_runtime=StopRuntime(self)
         from .meta_api import MetaAPI
         self.meta_api=MetaAPI(self)
@@ -178,7 +182,9 @@ class ControlService:
         value['executionProtection']=self.execution_policy(campaign)
         value['comparisonIssues']=comparison_issues(value['trials'])
         value['retentionRuleDescription']=retention_rule_description(value['config'])
-        value['selectionDecisions']=self.store.list('selection_decisions',campaign)
+        value['selectionDecisions']=[{k:r.get(k) for k in ['id','candidateId','previousCandidateId','createdAt','summary','limitations']}|{'detailsAvailable':True} for r in self.store.list('selection_decisions',campaign)]
+        value['researchRevision']=[len(self.store.list(t,campaign)) for t in ['research_records','research_links','source_adoptions']]
+        value['observedAt']=self.store.clock()
         value['taskEvaluation']=evaluation(value['trials'],value['config']['tasks'],value['candidates'],value['config'])
         value['tables']=self.reports.tables(campaign,context=value)
         return value
@@ -189,7 +195,7 @@ class ControlService:
         resolved=resolve_bundle(baseline['bundlePath'])
         policy=resolved.assets.get('src/execution/host/stream-policy.json')
         return json.loads(policy.read_text()) if policy else None
-    def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False):
+    def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False,research_refs=None):
         c=self.store.get('campaigns',campaign)
         recipe=json.loads((self.source/'recipes/h0-sol.json').read_text())
         recipe.update(c['config']['solver']);recipe['modules']=[]
@@ -237,7 +243,7 @@ class ControlService:
         if check_only:
             files=[self.meta_api.files.publish(campaign,'check:'+logs.name+':'+p.name,p.read_bytes(),kind='check',source={'archive':p.name},version=bundle['id']) for p in sorted(logs.iterdir()) if p.is_file()]
             return {'checkId':logs.name,'status':check['status'],'bundleId':bundle['id'],'files':files,'trialCreated':False}
-        row=self.store.candidate(campaign,bundle,description,parent,check)
+        row=self.store.candidate(campaign,bundle,description,parent,check,research_refs)
         if display_name and isinstance(display_name,str):
             row['displayName']=display_name.strip()[:80];row=self.store.put('candidates',row)
         return row
@@ -554,7 +560,7 @@ class ControlService:
                 if prior:
                     if prior['payload']!=args:raise Refused('Freeze idempotency key conflicts with prior input')
                     return {'operationId':prior['id'],'state':prior['state'],'result':prior.get('result'),'error':prior.get('error')}
-                return self._operation(campaign,'freeze',args,lambda:self.build_candidate(campaign,args['plugins'],args['description'],args.get('parent'),args.get('displayName')))
+                return self._operation(campaign,'freeze',args,lambda:self.build_candidate(campaign,args['plugins'],args['description'],args.get('parent'),args.get('displayName'),research_refs=args.get('researchRefs')))
         if operation=='batch_submit':
             if planning.enabled(c['config']) and not self.store.list('batches',campaign):
                 if args['tasks']!=c['config']['tasks'] or args['repeats']!=1 or self.store.get('candidates',args['candidateId'])['plugins']:

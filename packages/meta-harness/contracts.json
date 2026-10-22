@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v3",
+  "version": "meta-tools-v4",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -214,12 +214,36 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "researchRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "recordId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "recordId",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
           }
         },
         "required": [
           "plugins",
           "description",
-          "idempotencyKey"
+          "idempotencyKey",
+          "researchRefs"
         ],
         "additionalProperties": false
       },
@@ -419,6 +443,68 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "candidateId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "evidenceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "candidateId",
+                "reason",
+                "evidenceRefs"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "researchRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "recordId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "recordId",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
           }
         },
         "required": [
@@ -429,7 +515,10 @@
           "limitations",
           "reconsiderWhen",
           "expectedSelectionRevision",
-          "idempotencyKey"
+          "idempotencyKey",
+          "summary",
+          "alternatives",
+          "researchRefs"
         ],
         "additionalProperties": false
       },
@@ -751,6 +840,467 @@
       },
       "write": false,
       "description": "Read an export operation and validation status; never resubmit on a lost response."
+    },
+    "research_save": {
+      "plugin": "reporting",
+      "write": true,
+      "description": "Save a human-readable research attempt, observation, turning point or sourced historical annotation. Independent summary first; unknown is not no. Immutable revisions; create expectedRevision=0. No candidate required.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "record": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "motivation",
+                  "observation",
+                  "turning_point",
+                  "annotation"
+                ],
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "proposed",
+                  "testing",
+                  "supported",
+                  "inconclusive",
+                  "failed",
+                  "abandoned"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 600
+              },
+              "problem": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "hypothesis": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "change": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "validation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "observations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": {
+                      "type": "object",
+                      "properties": {
+                        "candidateId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pluginKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      },
+                      "required": [
+                        "candidateId",
+                        "pluginKey"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "trialId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "loaded": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "applicable": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "triggered": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "behavior": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16000
+                    },
+                    "benefit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16000
+                    },
+                    "anchors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "evidenceId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "start": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "end": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "unit": {
+                            "const": "characters",
+                            "type": "string"
+                          },
+                          "supports": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1200
+                          }
+                        },
+                        "required": [
+                          "evidenceId",
+                          "sha256",
+                          "start",
+                          "end",
+                          "unit",
+                          "supports"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    }
+                  },
+                  "required": [
+                    "plugin",
+                    "trialId",
+                    "loaded",
+                    "applicable",
+                    "triggered",
+                    "behavior",
+                    "benefit",
+                    "anchors"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                },
+                "maxItems": 100
+              },
+              "nextStep": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "anchors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "evidenceId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "unit": {
+                      "const": "characters",
+                      "type": "string"
+                    },
+                    "supports": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1200
+                    }
+                  },
+                  "required": [
+                    "evidenceId",
+                    "sha256",
+                    "start",
+                    "end",
+                    "unit",
+                    "supports"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "candidateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "batchIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "trialIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "reportIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "decisionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "relatedRecords": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "recordId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "recordId",
+                    "revision"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "plugins": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "candidateId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "pluginKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "candidateId",
+                    "pluginKey"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "factAt": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "kind",
+              "state",
+              "summary",
+              "problem",
+              "hypothesis",
+              "change",
+              "validation",
+              "limitations",
+              "nextStep",
+              "factAt"
+            ],
+            "additionalProperties": false,
+            "$id": "evolution-research-v1",
+            "description": "Authored explanation, not official scores. Character offsets count Unicode characters; references bind exact immutable revisions."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "record",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "research_list": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read scoped research summaries with exact revision references; details via research_read.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    "research_read": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read one immutable research revision and checked evidence excerpts.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "recordId",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence_excerpt": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read a checked character range supporting a claim; full original remains available.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit": {
+            "const": "characters",
+            "type": "string"
+          },
+          "supports": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        },
+        "required": [
+          "evidenceId",
+          "sha256",
+          "start",
+          "end",
+          "unit",
+          "supports"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "receiptVersion": "meta-tool-receipt-v1"

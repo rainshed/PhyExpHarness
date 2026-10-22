@@ -111,13 +111,13 @@ test('raw PTY tail survives preview truncation; reviewer has a separate workspac
  }finally{await host.dispose();}
 });
 
-test('all seven v3 receipts remain compact after actual native rendering and preserve path reads',async()=>{
+test('all seven v4 receipts remain compact after actual native rendering and preserve path reads',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-seven-receipts-'));let step=0;const seen=[];
  const config={id:'receipt-main',model,deadline:Date.now()/1000+90,workRoot:path.join(dir,'work'),sessionRoot:path.join(dir,'sessions'),pluginWorkspace:path.join(dir,'plugins'),filesRoot:path.join(dir,'files')};
  for(const p of [config.workRoot,config.sessionRoot,config.pluginWorkspace,...['evidence','materials','sdk','versions','outputs'].map(n=>path.join(config.filesRoot,n))])fs.mkdirSync(p,{recursive:true});
  fs.writeFileSync(path.join(config.filesRoot,'materials','full.json'),JSON.stringify({text:'长'.repeat(30000)+'FULL_FILE_TAIL'}));
- const analysis={summary:'x',observations:[],hypotheses:[],limitations:[],decision:'x',evidenceRefs:[]};
- const inputs={campaign_status:{},candidate_list:{},evidence_list:{},sdk_read:{id:'fixture'},results_compare:{},candidate_retain:{candidateId:'candidate',reason:'x',evidenceRefs:['e'],tradeoffs:'x',limitations:[],reconsiderWhen:'x',expectedSelectionRevision:0,idempotencyKey:'selection'},report_save:{factsId:'a'.repeat(64),analysis,expectedReportRevision:0,idempotencyKey:'report'}};
+ const analysis={brief:'x',researchRefs:[],summary:'x',observations:[],hypotheses:[],limitations:[],decision:'x',evidenceRefs:[]};
+ const inputs={campaign_status:{},candidate_list:{},evidence_list:{},sdk_read:{id:'fixture'},results_compare:{},candidate_retain:{summary:'x',alternatives:[],researchRefs:[],candidateId:'candidate',reason:'x',evidenceRefs:['e'],tradeoffs:'x',limitations:[],reconsiderWhen:'x',expectedSelectionRevision:0,idempotencyKey:'selection'},report_save:{factsId:'a'.repeat(64),analysis,expectedReportRevision:0,idempotencyKey:'report'}};
  const names=Object.keys(inputs);const adapter={async *stream(request){
   seen.push(request);
   if(step<names.length){const name=names[step++];yield*call(name,inputs[name],name);}

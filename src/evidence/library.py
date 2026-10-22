@@ -93,3 +93,23 @@ class EvidenceLibrary:
         except UnicodeDecodeError:return {k:v for k,v in row.items() if k!='path'}|{'encoding':'binary','previewAvailable':False}
         return {k:v for k,v in row.items() if k!='path'}|{'offset':offset,'offsetUnit':'characters','total':len(text),'text':text[offset:offset+limit],
             'nextOffset':offset+limit if offset+limit<len(text) else None}
+
+    def excerpt(self,campaign,anchor):
+        """Unicode character anchors, checked against immutable bytes on every read."""
+        result={'anchor':anchor,'availability':'unavailable'}
+        try:row=self.store.get('evidence',anchor.get('evidenceId'))
+        except (KeyError,TypeError):return {**result,'availability':'unavailable','reason':'原始证据不存在'}
+        if row['campaignId']!=campaign:return {**result,'availability':'unauthorized','reason':'证据未纳入当前活动'}
+        result.update(evidence={k:v for k,v in row.items() if k!='path'})
+        if anchor.get('unit')!='characters':return {**result,'availability':'unsupported','reason':'此定位格式尚不支持；需要 Unicode 字符范围'}
+        try:data=Path(row['path']).read_bytes()
+        except OSError:return {**result,'reason':'原始文件缺失'}
+        if hashlib.sha256(data).hexdigest()!=row['sha256'] or anchor.get('sha256')!=row['sha256']:
+            return {**result,'availability':'stale','reason':'证据内容摘要不匹配'}
+        try:text=data.decode('utf-8')
+        except UnicodeDecodeError:return {**result,'availability':'unsupported','reason':'二进制证据无法按字符定位'}
+        start,end=anchor.get('start'),anchor.get('end')
+        if type(start) is not int or type(end) is not int or not 0<=start<end<=len(text) or end-start>16000:
+            return {**result,'availability':'invalid_range','reason':'字符范围失效或超过 16000 字符'}
+        return {**result,'availability':'available','text':text[start:end],'contextBefore':text[max(0,start-160):start],
+            'contextAfter':text[end:end+160],'totalCharacters':len(text),'originalOffset':start,'offsetUnit':'characters'}

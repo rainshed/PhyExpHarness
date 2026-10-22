@@ -29,7 +29,7 @@ class MetaAPI:
         self.service=service;self.store=service.store;self.files=FileViews(service)
         self.contract=CONTRACTS['meta-tools-v2'];self.lock=threading.RLock();self.receipts=Receipts(self)
     def call(self,campaign,operation,args):
-        protocol=version(self.service,campaign);v3=protocol=='meta-tools-v3'
+        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4')
         spec=CONTRACTS[protocol].get(operation)
         if not spec:raise Refused('Unknown Meta v2 operation')
         # The review grant is attached by the outside host, never part of the model schema.
@@ -70,11 +70,13 @@ class MetaAPI:
             atomic_json(file,{**receipt,'state':state,'result':result})
             return result
     def _reconcile(self,campaign,operation,key):
-        kind={'batch_submit':'batch','campaign_plan_update':'resource-plan','trial_conditions_accept':'trial-conditions'}.get(operation)
+        kind={'batch_submit':'batch','campaign_plan_update':'resource-plan','trial_conditions_accept':'trial-conditions','research_save':'research-save'}.get(operation)
         if kind:
             with self.store.connection() as db:
                 row=db.execute('SELECT result FROM commands WHERE campaign=? AND kind=? AND key=?',(campaign,kind,key)).fetchone()
-                if row:return json.loads(row['result'])
+                if row:
+                    value=json.loads(row['result'])
+                    return self.receipts.research(campaign,value) if operation=='research_save' else value
         kind={'candidate_freeze':'freeze','candidate_check':'candidate_check','export_create':'export'}.get(operation)
         if kind:
             row=next((r for r in self.store.list('operations',campaign) if r['kind']==kind and r['payload'].get('idempotencyKey')==key),None)
@@ -89,6 +91,10 @@ class MetaAPI:
     def _call(self,campaign,op,args):
         service=self.service;c=self.store.get('campaigns',campaign)
         if c['state'] in ['draft','finished','failed']:raise Refused('Meta session is not active')
+        if op=='research_save':return service.research.save(campaign,**args)
+        if op=='research_list':return service.research.overview(campaign,**args)
+        if op=='research_read':return service.research.detail(campaign,**args)
+        if op=='evidence_excerpt':return service.evidence.excerpt(campaign,args)
         if op=='campaign_status':
             result=service.meta_call(campaign,op,args)
             requests=self.requests(campaign)

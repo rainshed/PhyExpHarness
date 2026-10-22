@@ -131,12 +131,13 @@ class Materials:
                                lambda: encoded(activity_state(self.service, campaign)), version='live')
         if include('guide'):
             native=self.store.get('campaigns',campaign)['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
-            from src.control.meta_contracts import version,ANALYSIS
+            from src.control.meta_contracts import version,analysis_for
+            ANALYSIS=analysis_for(self.service,campaign)
             guides=GUIDES_NATIVE if native else GUIDES
-            if native and version(self.service,campaign)=='meta-tools-v3':
+            if native and version(self.service,campaign) in ('meta-tools-v3','meta-tools-v4'):
                 guides={
                     'interface':GUIDES_NATIVE['interface'].replace('full 视图','完整快照文件').replace('campaign_status.metaRequests','campaign_status.file 的 requests').replace('原生 v2','原生 v3')+' campaign_status/candidate_list 输入为空对象，evidence_list 可按 batchId/trialId 过滤但不分页。七个精简工具只返回描述和完整文件路径；原生 read/grep/bash 按需读取正文。sdk_read 只接受 id，同版本导航见 /sdk/index.json。',
-                    'reporting':'meta-report-analysis-v1：report_get_facts 返回 factsId、完整事实、analysisSchema 和 analysisTemplate 路径。report_save 只传 factsId、expectedReportRevision、idempotencyKey，以及 analysis / analysisFile 中恰好一个；推荐先用原生工具写 /work/analysis/*.json，再提交路径和 SHA-256。合法最小结构与正式 schema：'+encoded(ANALYSIS)}
+                    'reporting':ANALYSIS['$id']+'：report_get_facts 返回 factsId、完整事实、analysisSchema 和 analysisTemplate 路径。report_save 只传 factsId、expectedReportRevision、idempotencyKey，以及 analysis / analysisFile 中恰好一个；推荐先用原生工具写 /work/analysis/*.json，再提交路径和 SHA-256。合法最小结构与正式 schema：'+encoded(ANALYSIS)}
             for name, text in guides.items():
                 yield self._record('guide:' + name, 'guide', name, '平台工具契约', lambda t=text: t, version='2' if native else '1')
         if include('task'):
@@ -175,11 +176,13 @@ class Materials:
             for e in self.store.list('evidence', campaign):
                 t = trials.get(e['trialId'], {})
                 yield self._record('evidence:' + e['id'], 'evidence', e['kind'],
-                    {'evidenceId':e['id'],'archive':e['source'].get('archive'),'policy':e['policy']},
+                    {'evidenceId':e['id'],'archive':e['source'].get('archive'),'policy':e['policy'],**({'adoption':e['source']['adoption']} if e['source'].get('adoption') else {})},
                     lambda r=e: checked_text(Path(r['path']).parent, Path(r['path']).name, r['sha256']),
                     evidenceId=e['id'], trialId=e['trialId'], batchId=t.get('batchId'), task=t.get('task'),
                     candidateId=t.get('candidateId'), version=e['sha256'], sha256=e['sha256'])
         if include('analysis'):
+            for r in self.store.list('research_records',campaign):
+                yield self._record('analysis:research:'+r['id'],'analysis',r['record']['summary'],{'author':r['author'],'classification':'authored-research'},lambda row=r:encoded(row),version=r['revision'])
             for r in self.store.list('reports', campaign):
                 trials=r.get('facts',{}).get('trials',[])
                 yield self._record('analysis:' + r['id'], 'analysis', ('总报告' if not r['batchId'] else '每轮报告') + ' · 分析修订 ' + str(r['analysisRevision']),

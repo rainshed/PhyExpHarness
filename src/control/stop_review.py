@@ -118,7 +118,7 @@ class StopRuntime:
             if action=='call':
                 actor=agents.get(data.get('agentId'))
                 if not actor:raise Refused('Unregistered native caller')
-                if actor['preset']!='phyexp-meta' and data.get('operation') not in READ_OPERATIONS:raise Refused('Child is read-only')
+                if actor['preset']!='phyexp-meta' and data.get('operation') not in READ_OPERATIONS|{'research_list','research_read','evidence_excerpt'}:raise Refused('Child is read-only')
                 if data.get('operation')=='campaign_finish' and data.get('input',{}).get('condition')=='exhausted':
                     review=store._get(db,'stop_reviews',data['input'].get('reviewId',''))
                     if not owns_review(store,db,session,review):raise Refused('Stop approval belongs to a different main session')

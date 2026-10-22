@@ -75,15 +75,15 @@ test('native registered report parameters expose complete nested schema and enfo
  const {apply}=await import('../../packages/meta-harness/domain-reporting.mjs');const tools=[];
  apply({tools:{register:t=>tools.push(t)},systemPrompt:{section(){}},metaControl:{}},{pluginId:'meta-reporting'});
  const report=tools.find(t=>t.name==='report_save');const schema=report.parameters.properties.analysis;
- assert.deepEqual(schema.required,['summary','observations','hypotheses','limitations','decision','evidenceRefs']);
+ assert.deepEqual(schema.required,['summary','observations','hypotheses','limitations','decision','evidenceRefs','brief','researchRefs']);
  assert.deepEqual(schema.properties.problems.items.required,['status','description']);
  assert.deepEqual(schema.properties.problems.items.properties.status.enum,['resolved','unresolved']);
  assert.equal(schema.additionalProperties,false);
- const analysis={summary:'ok',observations:[],hypotheses:[],limitations:[],decision:'ok',evidenceRefs:[]};
+ const analysis={brief:'简短结论',researchRefs:[],summary:'ok',observations:[],hypotheses:[],limitations:[],decision:'ok',evidenceRefs:[]};
  const input={factsId:'a'.repeat(64),expectedReportRevision:0,idempotencyKey:'key',analysis};
  validateInput('report_save',input);
  assert.throws(()=>validateInput('report_save',{...input,analysisFile:{path:'/work/analysis/a.json',sha256:'a'.repeat(64)}}));
- assert.throws(()=>validateInput('report_save',{...input,analysis:{summary:'only',problems:{}}}));
+ assert.throws(()=>validateInput('report_save',{...input,analysis:{brief:'简短结论',researchRefs:[],summary:'only',problems:{}}}));
  assert.throws(()=>validateInput('report_save',{...input,analysis:{...analysis,title:'silently discarded before'}}));
 });
 test('receipt rendering preserves complete JSON and refuses oversized responses',async()=>{

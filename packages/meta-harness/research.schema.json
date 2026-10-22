@@ -1,0 +1,341 @@
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "motivation",
+        "observation",
+        "turning_point",
+        "annotation"
+      ],
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "testing",
+        "supported",
+        "inconclusive",
+        "failed",
+        "abandoned"
+      ],
+      "type": "string"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16000
+    },
+    "hypothesis": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16000
+    },
+    "change": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16000
+    },
+    "validation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16000
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "object",
+            "properties": {
+              "candidateId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "pluginKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "candidateId",
+              "pluginKey"
+            ],
+            "additionalProperties": false
+          },
+          "trialId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "loaded": {
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "applicable": {
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "triggered": {
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "behavior": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "benefit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "anchors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "evidenceId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unit": {
+                  "const": "characters",
+                  "type": "string"
+                },
+                "supports": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1200
+                }
+              },
+              "required": [
+                "evidenceId",
+                "sha256",
+                "start",
+                "end",
+                "unit",
+                "supports"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "plugin",
+          "trialId",
+          "loaded",
+          "applicable",
+          "triggered",
+          "behavior",
+          "benefit",
+          "anchors"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "maxItems": 100
+    },
+    "nextStep": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "anchors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit": {
+            "const": "characters",
+            "type": "string"
+          },
+          "supports": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        },
+        "required": [
+          "evidenceId",
+          "sha256",
+          "start",
+          "end",
+          "unit",
+          "supports"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "candidateIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "maxItems": 100
+    },
+    "batchIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "maxItems": 100
+    },
+    "trialIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "maxItems": 100
+    },
+    "reportIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "maxItems": 100
+    },
+    "decisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "maxItems": 100
+    },
+    "relatedRecords": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "recordId",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "candidateId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "pluginKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "candidateId",
+          "pluginKey"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "factAt": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "kind",
+    "state",
+    "summary",
+    "problem",
+    "hypothesis",
+    "change",
+    "validation",
+    "limitations",
+    "nextStep",
+    "factAt"
+  ],
+  "additionalProperties": false,
+  "$id": "evolution-research-v1",
+  "description": "Authored explanation, not official scores. Character offsets count Unicode characters; references bind exact immutable revisions."
+}

@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {watchCampaign} from './queries.mjs';
+import {watchCampaign,readResearch} from './queries.mjs';
 import {LatestRequest,api} from './transport.mjs';
 import {readModelCatalog} from './model-catalog.mjs';
 
@@ -41,4 +41,11 @@ export function useResource(scope:string){
   catch(e:any){setError(e.message);setLoading(false);return {current:true,error:e};}
  };
  return {value,setValue,loading,error,load,clear};
+}
+
+// Fetch explanations only when their durable revision changes, never every poll.
+export function useResearch(campaign:string,revision:unknown,offset=0){
+ const resource=useResource(campaign);
+ useEffect(()=>{if(campaign)resource.load(signal=>readResearch(campaign,offset,signal))},[campaign,JSON.stringify(revision),offset]);
+ return resource;
 }

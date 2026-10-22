@@ -3,3 +3,4 @@ export {defaults} from './defaults.mjs';
 export {createDraftStore} from './storage.mjs';
 export {createCommands} from './commands.mjs';
 export {watchCampaign} from './queries.mjs';
+export {readResearch,readResearchRevision,readSelection,readExcerpt} from './queries.mjs';

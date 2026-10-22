@@ -8,3 +8,9 @@ export interface CampaignConfig {
 export interface CreateAttempt {signature:string;key:string}
 export interface DraftState {version:1;config:CampaignConfig;selected:string;attempt:CreateAttempt|null}
 export type Request=<T=unknown>(route:string,body?:unknown,signal?:AbortSignal)=>Promise<T>;
+
+export type ResearchRef={recordId:string;revision:number};
+export type EvidenceAnchor={evidenceId:string;sha256:string;start:number;end:number;unit:'characters';supports:string};
+export type EvidenceExcerpt={anchor:EvidenceAnchor;availability:'available'|'unavailable'|'unauthorized'|'stale'|'unsupported'|'invalid_range';text?:string;contextBefore?:string;contextAfter?:string;reason?:string};
+export type ResearchSummary=ResearchRef&{summary:string;kind:string;state:string;author:string;recordedAt:number;factAt:number;limitations:string[];nextStep:string;candidateIds:string[];plugins:{candidateId:string;pluginKey:string}[]};
+export type EvolutionView={schemaVersion:'evolution-view-v1';revision:string;observedAt:number;availability:'available'|'not_recorded';total:number;offset:number;nextOffset:number|null;items:ResearchSummary[]};

@@ -42,3 +42,6 @@
 第二条：认为已经充分尝试、已无有希望且可行的方向时，使用 campaign_finish(condition="exhausted")，提供 candidateId、reason、evidenceRefs、attempts（每项 direction/evidenceRefs/finding）、remainingDirections、unresolved。停止审查插件会启动独立只读子会话核实；approve 才可能通过，continue 或 insufficient_evidence 必须继续处理。不得通过重述相同申请反复取得批准。审查失败不是批准。
 第三条：活动上限、请求准入、保留收尾额度由平台执行，不需要等待审查。实验在途时不提前宣称耗尽；已经接受的最后一批按原有严格/排空策略处理。用户停止和外部故障单列。
 审查员使用同一 Meta 模型并计入同一活动的预算。主 Meta 无法替审查员填写批准结果。资料中的建议不是额外权限。
+
+
+进化解释（meta-tools-v4）：让人先理解方向，再核对证据。用 research_save 保存独立的简短概述与问题、假设、改动目的、验证问题、局限和下一步；失败、放弃或未冻结的尝试同样保留。第一次 expectedRevision=0，修订引用准确 recordId/revision，不覆盖旧认识。candidate_freeze 用 researchRefs 关联开发/采用理由，插件通用用途仍写清单。观察关联 candidateId、pluginKey 和实际 trialId，分清加载、适用、触发、行为改变和收益，缺证据填 unknown。evidence_excerpt / anchors 使用证据原 ID、SHA-256、Unicode 字符 start/end（右开）及 supports 说明，不能伪造片段。只使用本活动材料及用户明确纳入的历史来源；历史启发不作为本次成绩。report_save 的 brief 是独立短结论，researchRefs 必须来自 report_get_facts 的冻结修订；candidate_retain 提交 summary、明确考虑过的 alternatives（可为空）、researchRefs，以及原理由/权衡/局限/重选条件。下一步计划不表示实验已经受理。不为补齐解释延长活动或补跑实验，预算不足时保留已有事实与解释缺项。

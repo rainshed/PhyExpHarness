@@ -72,10 +72,12 @@ class Reports:
             t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
         trials=trial_diagnostics(trials,self.root.parent,c['config'])
         for t in trials:t.pop('summary',None)
-        candidates=[candidate for candidate in self.store.list('candidates',campaign)
+        candidates=[{**candidate,'versionLabel':f'H{index}'} for index,candidate in enumerate(sorted(self.store.list('candidates',campaign),key=lambda c:(c.get('createdAt',0),c['id'])))
             if not batch_id or any(t['candidateId']==candidate['id'] for t in trials)]
         roles={lease['id']:lease['role'] for lease in self.store.list('leases',campaign)}
         decisions=self.store.list('selection_decisions',campaign)
+        research=self.store.list('research_records',campaign)
+        research_refs={a['evidenceId'] for r in research for a in r['record'].get('anchors',[])+[a for o in r['record'].get('observations',[]) for a in o['anchors']]}
         decision_refs={ref for d in decisions for ref in d['evidenceRefs']}
         by_role={role:{'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in usage if roles.get(r['leaseId'])==role),
             'unknownReservedTokens':sum(r['reservedTokens'] for r in usage if roles.get(r['leaseId'])==role and r['status']=='unknown')}
@@ -85,8 +87,8 @@ class Reports:
             'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
             'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
             'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
-            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs or any(e['trialId']==t['id'] for t in trials)],
-            'selectionDecisions':decisions,
+            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials)],
+            'selectionDecisions':decisions,'researchRecords':research,'researchLinks':self.store.list('research_links',campaign),
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
             'comparisonRule':retention_rule_description(c['config'])}
     def save(self,campaign,analysis,batch_id=None,author='meta',facts=None,expected_revision=None,meta_request=None,analysis_schema=None,analysis_sha=None):
@@ -100,16 +102,21 @@ class Reports:
         allowed={x['id'] for x in facts['evidence']}
         if set(refs)-allowed:raise Refused('Unknown or unrelated evidence reference')
         if any(t.get('startedAt') for t in facts['trials']) and not refs:raise Refused('Analysis needs evidence references')
-        optional={'process','problems','pluginContributions'}
+        optional={'process','problems','pluginContributions','researchRefs'}
         for key in optional & analysis.keys():
             if not isinstance(analysis[key],list):raise Refused(key+' must be an array')
         for item in analysis.get('pluginContributions',[]):
             if not isinstance(item,dict) or not all(isinstance(item.get(k),str) for k in ['plugin','expected','observed','comparison','assessment']):raise Refused('Plugin contribution requires plain-language fields')
             if not isinstance(item.get('evidenceRefs',[]),list) or any(x not in allowed for x in item.get('evidenceRefs',[])):raise Refused('Invalid contribution evidence')
+        research=[]
+        for ref in analysis.get('researchRefs',[]):
+            row=next((r for r in facts.get('researchRecords',[]) if r['recordId']==ref.get('recordId') and r['revision']==ref.get('revision')),None)
+            if row is None:raise Refused('Research revision outside report facts snapshot')
+            research.append(row)
         record={'id':identity('report'),'campaignId':campaign,'batchId':batch_id,'kind':'round' if batch_id else 'final',
             **({'metaRequest':meta_request,'analysisSchema':analysis_schema,'analysisSha256':analysis_sha} if meta_request else {}),
             'author':author,'status':'analysis','facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
-            'analysis':{k:analysis[k] for k in fields | (optional & analysis.keys())},'createdAt':self.store.clock(),
+            'researchRecords':research,'analysis':{k:analysis[k] for k in fields | ((optional|{'brief'}) & analysis.keys())},'createdAt':self.store.clock(),
             'tables':build_tables(facts['candidates'],facts['batches'],facts['trials'],facts['campaign'],read_annotations(self.root.parent),batch_id)}
         return self._persist(record,expected_revision)
     def status_summary(self,campaign,reason):

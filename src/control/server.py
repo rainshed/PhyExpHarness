@@ -80,6 +80,32 @@ def make_app(service,supervise=True):
     @app.get('/campaigns/{id}')
     def campaign(id:str,request:Request):
         user(request);return service.status(id)
+    @app.get('/campaigns/{id}/selections/{decision}')
+    def selection(id:str,decision:str,request:Request):
+        user(request);row=service.store.get('selection_decisions',decision)
+        if row['campaignId']!=id:raise Refused('Decision outside Campaign')
+        return row
+    @app.get('/campaigns/{id}/sources')
+    def sources(id:str,request:Request):
+        user(request);return service.adoptions.list(id)
+    @app.get('/campaigns/{id}/sources/{source}')
+    def source_read(id:str,source:str,request:Request,offset:int=0):
+        user(request);return service.adoptions.read(id,source,offset)
+    @app.post('/campaigns/{id}/sources')
+    def adopt_source(id:str,request:Request,body:dict):
+        user(request);return service.adoptions.adopt(id,**body)
+    @app.get('/campaigns/{id}/research')
+    def research(id:str,request:Request,offset:int=0,limit:int=20):
+        user(request);return service.research.overview(id,offset,limit)
+    @app.get('/campaigns/{id}/research/{record}')
+    def research_detail(id:str,record:str,request:Request,revision:int):
+        user(request);return service.research.detail(id,record,revision)
+    @app.post('/campaigns/{id}/research')
+    def research_save(id:str,request:Request,body:dict):
+        user(request);return service.research.save(id,**body,author='user')
+    @app.post('/campaigns/{id}/excerpt')
+    def excerpt(id:str,request:Request,body:dict):
+        user(request);return service.evidence.excerpt(id,body)
     @app.get('/campaigns/{id}/events')
     def events(id:str,request:Request,after:int=0):
         user(request);return service.store.events(id,after)

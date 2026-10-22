@@ -3,6 +3,8 @@ import Ajv from 'ajv';
 import contract from './contracts.json' with {type:'json'};
 import analysis from './report-analysis.schema.json' with {type:'json'};
 import receiptSchema from './receipt.schema.json' with {type:'json'};
+import research from './research.schema.json' with {type:'json'};
+contract.operations.research_save.input.properties.record=research;
 contract.operations.report_save.input.properties.analysis=analysis;
 
 export const operations=contract.operations;
@@ -18,10 +20,11 @@ export function validateInput(name,input){
 }
 // Native schema annotations express requiredness per property, including nested objects.
 export function nativeSchema(schema){
- const {required,$id,examples,minLength,pattern,uniqueItems,...result}=schema;
+ const {required,$id,examples,minLength,maxLength,minItems,maxItems,minimum,maximum,const:constant,pattern,uniqueItems,...result}=schema;
  // The native DSL lacks these validation keywords; retain them in descriptions
  // and enforce the authoritative schema in JS and Python.
- const constraints=[minLength!==undefined?`Minimum length: ${minLength}.`:null,pattern?`Must match ${pattern}.`:null,uniqueItems?'Items must be unique.':null].filter(Boolean);
+ if(constant!==undefined)result.enum=[constant];
+ const constraints=[...Object.entries({maxLength,minItems,maxItems,minimum,maximum}).filter(([,v])=>v!==undefined).map(([k,v])=>`${k}: ${v}.`),minLength!==undefined?`Minimum length: ${minLength}.`:null,pattern?`Must match ${pattern}.`:null,uniqueItems?'Items must be unique.':null].filter(Boolean);
  if(constraints.length)result.description=[result.description,...constraints].filter(Boolean).join(' ');
  if(schema.properties)result.properties=Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,{...nativeSchema(value),...(required?.includes(key)?{required:true}:{})}]));
  if(schema.items)result.items=nativeSchema(schema.items);
