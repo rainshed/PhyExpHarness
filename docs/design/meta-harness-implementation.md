@@ -111,9 +111,10 @@ src/
   exporting/                 # 按候选清单及插件引用组装项目与压缩包
 packages/
   meta-harness/              # Meta 工具注册、受限后台客户端、开发资料查询入口
-  meta-workbench/            # 经典 UI 与共享客户端业务
-  meta-workbench-studio/     # 新 UI 插件包；独立面板与 ./client
-  meta-workbench-bridge/     # 新旧 UI 共用的固定宿主 API 桥
+  meta-workbench-client/     # 目标：独立公共客户端，待从经典目录提取
+  meta-workbench-studio/     # Studio UI；迁移后作为默认版本
+  meta-workbench-bridge/     # 所有 UI 共用的固定宿主 API 桥
+  meta-workbench/            # 迁移起点：经典 UI 与共享源码，解除依赖后移除
     host/                    # 用户身份的后台连接与事件桥接
     client/                  # 主面板、导航入口、React 视图与主题接入
 schemas/                     # 有版本的数据契约及兼容性样例
@@ -128,6 +129,8 @@ reports/                     # 本地研究、开发与验收记录；被 Git �
 ```
 
 ### 3.2 职责与依赖约束
+
+- **UI 版本可独立删除。** 按[UI 模块化设计](meta-workbench-modularity.md)分开公共客户端与具体界面；禁止 UI 相互依赖，公共层不得引用具体 UI。导航、页面、焦点与样式归各版 UI，公共组件按稳定复用需求建立。当前 Studio 对经典目录的引用是待消除的迁移债务。
 
 - **执行依赖必须闭合。** `src/execution/` 只依赖明确声明的运行库、执行所需的契约和固定运行资产；不得直接或间接导入 `control/`、`evidence/`、`reporting/`、`exporting/`、平台插件包或旧兼容层 `src/runtime/`、`src/integrations/`。执行侧的审计和官方结果采集保留在执行部分，平台读取它的产物。控制服务可以通过明确入口调用执行能力，执行能力不能回调 Campaign 服务才能完成一次运行。
 - **平台持有业务规则。** `src/control/` 组织证据、报告、导出及其异步操作，持有 Meta 会话的启动、通知和恢复；这些能力不放进 UI 生命周期。`src/exporting/` 负责打包，真实独立验收的预算与调度仍由控制服务受理，导出器不自行启动未记账实验。
@@ -461,7 +464,7 @@ Trial 阶段建议为 `reserved / starting / executing / evaluating / collecting
 
 ## 9. UI 信息架构与交互
 
-新工作台的布局、完整功能对应关系、共享宿主桥和新旧插件生命周期见[新工作台 UI 插件设计](meta-workbench-studio.md)。经典工作台保留，新 UI 通过独立面板接入同一控制后台。
+通用依赖、版本注册、状态隔离与增删规则见[UI 模块化设计](meta-workbench-modularity.md)；Studio 布局与功能对应关系见[Studio 设计](meta-workbench-studio.md)。经典版并存是迁移起点，目标先保留 Studio，再按需新增独立方案；经典版不是永久保留要求。
 
 ### 9.1 原生插件接入与生命周期
 

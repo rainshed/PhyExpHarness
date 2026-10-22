@@ -28,6 +28,7 @@
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
 | Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
 | 新 UI、插件并存与切换 | [新工作台设计](docs/design/meta-workbench-studio.md) |
+| UI 公共能力、版本独立与增删边界 | [UI 模块化设计](docs/design/meta-workbench-modularity.md) |
 | 开发推进、验证与验收规则 | [开发任务书](docs/plans/meta-harness-development.md) |
 | 安装、构建、运行、恢复与已知限制 | [运行说明](docs/operations/meta-harness.md) |
 | 模型流保护、失败诊断与离线回放 | [运行说明](docs/operations/meta-harness.md#模型请求保护与故障诊断) |
