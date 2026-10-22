@@ -519,7 +519,7 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 
 同键同参数重放已提交报告时不重新读取后来改变的草稿。报告/保留事务记录请求关联；若已提交但文件发布失败，返回 `committed`，用原参数原键重试修复回执，不能据此创建第二次提交。旧报告、官方评分、轨迹和旧活动协议不回写。
 
-无 `toolContract` 的历史活动仍走 v2，未知版本或摘要不匹配明确拒绝；恢复活动前须恢复对应协议实现，不可自动升级。七工具之外的业务接口仍沿用原有返回，本次未承诺所有工具已精简。测试包括 `python3 -m unittest discover -s tests/unit -p "meta_receipts_test.py"` 及上方原生/评分链路入口。
+无 `toolContract` 的历史活动仍走 v2，未知版本或摘要不匹配明确拒绝；恢复活动前须恢复对应协议实现，不可自动升级。协议解析兼容不替代依赖兼容：旧会话仍需要其冻结的依赖锁及匹配运行环境；出现 `Restore matching Meta dependency lock first` 时应恢复对应依赖环境，不能重写冻结摘要绕过检查。七工具之外的业务接口仍沿用原有返回，本次未承诺所有工具已精简。测试包括 `python3 -m unittest discover -s tests/unit -p "meta_receipts_test.py"` 及上方原生/评分链路入口。
 
 收尾状态摘要会明确缺失报告数量和下一份 batchId；完整清单在状态文件 `data.closeout`。失败实验仍需独立轮报告，总报告不替代它；已关闭探索时无需再次调用 campaign_finish。收尾可暂停/恢复，暂停不会被监督轮询自动撤销，恢复不重新开放实验或增加原预算。新增回归入口：`python3 tests/contracts/meta_runtime.py --native --final-first`。
 
@@ -546,4 +546,6 @@ python3 tests/fixtures/evolution_workbench.py --data-dir /absolute/new-synthetic
 PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1:18562 PHYEXP_UI_PORT=18561 node scripts/workbench.mjs
 ```
 
-夹具包含三版本、两任务、运行与排队、同名异内容插件、跨活动来源、三个解释修订和旧报告快照。单元/契约检查与合成 UI 检查不证明科学收益；真实模型 E2E 的配置、结果和限制另存本地 `reports/development/meta-harness/evolution-readability/`。
+夹具包含三版本、两任务、运行与排队、同名异内容插件、跨活动来源、三个解释修订和旧报告快照。追加 `--large` 可生成 26 条研究记录与长中文正文，用于检查 20 条分页及窄屏阅读。单元/契约检查与合成 UI 检查不证明科学收益。
+
+2026-10-22 的真实模型 E2E 已完成 10 比特 Hamiltonian 学习的三次实验：基线成功 1/1，依赖预检候选成功 1/2；候选复核因预算准入失败，Meta 据此保留基线。真实产物覆盖问题来源、插件动机、观察、备选取舍、片段核验及全部尝试的最终报告。过程中人工校准了测试收尾额度，未补跑失败实验；不据此宣称插件有效或研究可全程无干预运行。配置、成本、截图和限制另存本地 `reports/development/meta-harness/evolution-readability/`；验收范围见[开发任务书第 23.3 节](../plans/meta-harness-development.md#233-本次实施与验收结果)。
