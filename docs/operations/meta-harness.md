@@ -47,7 +47,7 @@ node scripts/workbench.mjs
 
 默认只加载 Studio 和独立 API 桥。经典 UI 已移除，公共客户端位于 `packages/meta-workbench-client/`。版本清单为 `profiles/meta-workbench/uis.json`，包含默认版本和各 UI 对应的包；通用规则见[UI 模块化设计](../design/meta-workbench-modularity.md)，Studio 页面见[设计文档](../design/meta-workbench-studio.md)。
 
-Studio 的主要入口为「活动概览」「版本对比」「实验记录」「研究报告」。成功率按版本与任务展示，保留分母、覆盖及可比较性说明；报告与证据继续使用历史快照。
+Studio 的主要入口为「进化概览」「版本对比」「实验记录」「研究报告」「插件与动机」。成功率按版本与任务展示，保留分母、覆盖及可比较性说明；报告与证据继续使用历史快照。
 
 ```sh
 # 构建清单中的全部 UI（当前只有 Studio）
@@ -509,13 +509,13 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 
 容器契约依赖 Docker 和可用运行镜像；`PHYEXP_META_TEST_IMAGE` 可指定已准备好的 Meta 镜像。最后一项贯通官方验证器，脚本故意不提交科学答案，正确结果是官方零分及明确的未提交归因。它验证 Meta 能读完整材料、运行 Python、写插件、检查/冻结/提交，再从后台读到第二次官方结果，不用于宣称科学通过。
 
-### Meta v3 业务回执与报告
+### Meta v4 业务回执、研究解释与报告
 
-新活动冻结 `meta-tools-v3`、`meta-tool-receipt-v1` 和 `meta-report-analysis-v1` 及渲染摘要。`evidence_list`、`sdk_read`、`results_compare`、`candidate_retain`、`campaign_status`、`candidate_list`、`report_save` 返回描述、必要状态/计数和完整文件路径，实际模型回执上限 4 KiB。原生 read/grep/bash 仍按请求返回内容；原始终端捕获保留。业务回执归档标为 `business-receipt`，不冒充原始证据全文。
+新活动冻结 `meta-tools-v4`、`meta-tool-receipt-v1`、`meta-report-analysis-v2`、`evolution-research-v1` 及渲染摘要。v3 精确资产归档在 `packages/meta-harness/protocols/meta-tools-v3/`，旧活动仍使用原 v3 契约及报告 v1。`evidence_list`、`sdk_read`、`results_compare`、`candidate_retain`、`campaign_status`、`candidate_list`、`report_save` 返回描述、必要状态/计数和完整文件路径，实际模型回执上限 4 KiB。原生 read/grep/bash 仍按请求返回内容；原始终端捕获保留。业务回执归档标为 `business-receipt`，不冒充原始证据全文。
 
 `campaign_status` 和 `candidate_list` 使用空对象，`evidence_list` 可带 batchId/trialId、无分页，`sdk_read` 仅带文档 id，同版本文档导航为 `/sdk/index.json`。状态和通知通过完整快照文件提供历史详情，快照非全库原子事务；写操作仍校验修订。不可用原件保留目录条目及原因。
 
-报告优先先写 `/work/analysis/*.json`，再提交 path/sha256。`report_get_facts` 提供同版本正文 schema 与最小模板；直接 analysis 对象使用同一规则。problems 必须为数组，元素含 status（resolved/unresolved）、description，可附 evidenceRefs。未声明字段拒绝保存；所有已知格式和引用错误进入诊断文件，`rejected/committed=false` 不占未决操作。修正参数必须换幂等键。
+新报告另需独立简短 `brief` 与准确 `researchRefs`（可为空）。报告优先先写 `/work/analysis/*.json`，再提交 path/sha256。`report_get_facts` 提供同版本正文 schema 与最小模板；直接 analysis 对象使用同一规则。problems 必须为数组，元素含 status（resolved/unresolved）、description，可附 evidenceRefs。未声明字段拒绝保存；所有已知格式和引用错误进入诊断文件，`rejected/committed=false` 不占未决操作。修正参数必须换幂等键。
 
 同键同参数重放已提交报告时不重新读取后来改变的草稿。报告/保留事务记录请求关联；若已提交但文件发布失败，返回 `committed`，用原参数原键重试修复回执，不能据此创建第二次提交。旧报告、官方评分、轨迹和旧活动协议不回写。
 
@@ -526,3 +526,24 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 原生 Meta 进程已退出时，如果活动正在收尾、所有实验和后台操作均已结束，且每轮分析和最终分析均已保存，后台会直接完成活动，不再要求最后一条模型回复。报告提交后发生的额度拒绝或连接故障仍保留在 Meta 会话与用量记录中，不补跑模型、不覆盖报告。暂停中的活动、仍有在途工作或缺少分析的活动不适用此完成条件。回归入口：`python3 -m unittest discover -s tests/unit -p 'meta_closeout_test.py'`。 原生隔离验证：`python3 tests/contracts/meta_runtime.py --native --closeout-budget-denial`，使用本地模拟供应商重现报告提交后最后一次请求被预算拒绝，不调用外部模型。
 
 Studio 的活动页面提供“暂停收尾”。报告文件必须是 `/work/analysis` 内的普通文件；符号链接、目录与管道会被拒绝，修正后用新的幂等键提交。
+
+### 进化过程的分层阅读
+
+概览直接呈现基线、当前保留、最新候选的逐任务成功率、成功数/分母和在途状态。点任务单元格查对应实验，点版本查全部实验，再进入本轮报告或原始证据。矩阵不会因为缺少研究解释而消失。历史报告使用当时快照；新报告不再将非基线的单轮版本重新编号为 H0。
+
+「插件与动机」先显示插件用途和研究概述，再展开问题、假设、改动、验证、局限、计划和来源。解释修订可切换；同名同版本号但内容不同的插件按摘要区分。选择详情明确列出 Meta 考虑的备选，保存当时名称、结果、成本和解释修订。当前表现变化不覆盖旧选择。
+
+「显式纳入历史来源」支持选择其他活动的具体证据或报告修订、填写用途并选择访问范围。默认仅用户阅读；选择授权 Meta/研究角色后才建立目标活动的受控引用。来源任务须在当前任务范围内，未纳入的跨活动 ID 仍拒绝。历史成绩不进入当前矩阵。事后说明通过「补充有来源的历史解释」追加，需原报告与事实时间，保留用户署名和整理时间。
+
+技术契约、路由与边界见[进化可读性设计第 9 节](../design/evolution-readability.md#9-已落地的契约与接口)。后端无需迁移既有分析或插件；重启时创建增量表。新旧活动各自核对冻结协议，研究材料不进入 Solver 或导出执行项目。
+
+可复现的工程检查：
+
+```sh
+python3 -m unittest discover -s tests/unit -p 'evolution_test.py'
+python3 tests/fixtures/evolution_workbench.py --data-dir /absolute/new-synthetic-data --port 18562
+# 另开终端，从相同数据目录启动真实 Studio；仅使用合成数据，无模型调用。
+PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1:18562 PHYEXP_UI_PORT=18561 node scripts/workbench.mjs
+```
+
+夹具包含三版本、两任务、运行与排队、同名异内容插件、跨活动来源、三个解释修订和旧报告快照。单元/契约检查与合成 UI 检查不证明科学收益；真实模型 E2E 的配置、结果和限制另存本地 `reports/development/meta-harness/evolution-readability/`。
