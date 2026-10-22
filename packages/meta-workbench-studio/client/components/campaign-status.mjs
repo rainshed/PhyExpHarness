@@ -31,8 +31,9 @@ export function campaignStatus(c={}) {
  const meta=currentMeta(c),live=['running','closing'].includes(c.state);
  const attention=live&&['needs_attention','failed'].includes(meta?.state);
  const recovering=live&&meta?.state==='recovering';
+ const manualRecovery=recovering&&(meta?.recovery?.userResumedAt!=null||meta?.recoveryRequested===true);
  const recoveryReason=meta?.recovery?.reason||meta?.recoveryReason;
  const label=attention?'需要处理':recovering?'正在恢复':labels[c.state]||'状态待核实';
- return {label,attention,recovering,meta,reason:attention||recovering?metaFailureReason(meta):'',
+ return {label,attention,recovering,manualRecovery,meta,reason:attention||recovering?metaFailureReason(meta):'',
   recoveryNote:recoveryReason==='recovery_exhausted'?'自动恢复次数已用完。':recoveryReason==='nonrecoverable'?'此故障不适合自动重试，需先处理原因。':'自动恢复已停止。'};
 }

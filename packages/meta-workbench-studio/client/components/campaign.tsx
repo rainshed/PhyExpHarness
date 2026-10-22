@@ -12,15 +12,18 @@ export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command
  </div>;
 }
 
-export function CampaignNotices({c,onDetails}:any){const status=campaignStatus(c);return <>
+export function CampaignNotices({c,onDetails,onResume,busy='',connected=true}:any){const status=campaignStatus(c);return <>
  {status.attention&&<section className="studio-attention" role="alert" aria-label="活动需要处理">
   <h3>需要处理 · Meta 已停止推进</h3>
   <p><strong>{status.reason}。</strong>{status.recoveryNote}</p>
   <p>{c.counts?.activeTrials?`已启动的 ${c.counts.activeTrials} 次实验仍由后台继续执行；Meta 暂时无法分析结果和安排后续研究。`:'当前没有正在执行的实验；后续研究需恢复 Meta 才能继续。'}{c.counts?.reservedTrials>0&&`另有 ${c.counts.reservedTrials} 次已受理实验等待后台调度。`}</p>
-  <p>处理原因后，点击“{c.state==='closing'?'暂停收尾':'暂停新工作'}”，再点击“恢复活动”。墙钟仍在计时。</p>
-  {onDetails&&<button onClick={onDetails}>查看中断详情 →</button>}
+  <p>{c.remainingSeconds===0?'活动已到截止时间，无法恢复。':'处理原因后，点击“恢复活动”即可继续。墙钟仍在计时。'}</p>
+  <div className="mh-actions">
+   {onResume&&<button className="primary" disabled={!!busy||!connected||c.remainingSeconds===0} onClick={onResume}>{busy==='resume'?'正在提交恢复…':'恢复活动'}</button>}
+   {onDetails&&<button onClick={onDetails}>查看中断详情 →</button>}
+  </div>
  </section>}
- {status.recovering&&<section className="mh-notice" role="status" aria-label="Meta 正在恢复"><strong>Meta 正在自动恢复</strong><p>{status.reason}。后台正在尝试接续会话，已受理实验仍由后台监督。</p></section>}
+ {status.recovering&&<section className="mh-notice" role="status" aria-label="Meta 正在恢复"><strong>{status.manualRecovery?'Meta 正在恢复':'Meta 正在自动恢复'}</strong><p>{status.manualRecovery?'恢复请求已受理，后台正在接续 Meta 会话。':status.reason+'。后台正在尝试接续会话。'}已受理实验仍由后台监督。</p></section>}
  {c.state==='paused'&&<p className="mh-notice">已暂停新工作，已启动实验继续；Meta 当前请求中断。墙钟仍在计时，恢复时先对账。</p>}
  {c.state==='closing'&&!status.attention&&!status.recovering&&<p className="mh-notice">正在收尾，等待外部任务终止确认、用量归集和报告。操作受理不代表任务已经停止。</p>}
  {c.stopReason&&<p className={c.state==='finished'?'studio-ended-reason':'mh-notice'}>{c.explorationClosed&&c.state==='running'?'探索已关闭，已受理实验继续；原因：':'停止原因：'}{reasons[c.stopReason]||c.stopReason}</p>}

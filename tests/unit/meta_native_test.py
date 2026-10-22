@@ -142,6 +142,20 @@ class NativeMetaTests(unittest.TestCase):
             self.assertTrue(entered.wait(2))
             try:second.start(self.c);self.assertEqual(calls,[self.c])
             finally:release.set();thread.join(5)
+    def test_direct_resume_reaches_supervisor_once_without_pausing_trials(self):
+        self.store.put('meta_sessions',{'id':'blocked','campaignId':self.c,'state':'needs_attention',
+            'runtimeVersion':'meta-runtime-v2','nativeSessionId':'native',
+            'recovery':{'reason':'recovery_exhausted','failure':{'code':'model_transport_error'}}})
+        self.store.control(self.c,'resume','direct-resume')
+        driver=MetaDriver(self.service)
+        def launch(campaign):
+            self.store.put('meta_sessions',{'id':'new','campaignId':campaign,'state':'running','pid':123,
+                'output':str(self.data/'new-session'),'runtimeVersion':'meta-runtime-v2','previousSessionId':'blocked'})
+        with patch.object(driver,'_start',side_effect=launch) as start,patch.object(self.service,'_process_alive',return_value=True):
+            driver.tick(self.c);driver.tick(self.c)
+        self.assertEqual(start.call_count,1)
+        self.assertEqual(self.store.list('meta_sessions',self.c)[-1]['state'],'running')
+        self.assertEqual(self.store.status(self.c)['state'],'running')
     def test_export_operation_publishes_readable_archive_and_replays_receipt(self):
         candidate=self.store.candidate(self.c,{'id':'fixture','path':str(self.data/'bundle'),'plugins':[]},'fixture',check={'status':'passed'})
         archive=self.data/'harness.zip';archive.write_bytes(b'PK\x00\xfffixture')

@@ -58,6 +58,62 @@ class ControlTests(unittest.TestCase):
         self.client.headers['Authorization']='Bearer '+token
         self.assertEqual(self.client.get('/models').status_code,403)
 
+    def test_direct_resume_is_atomic_and_replays_do_not_clear_later_failures(self):
+        store=self.service.store;before=store.get('campaigns',self.c)
+        failure={'reason':'recovery_exhausted','failure':{'code':'model_transport_error'}}
+        store.put('meta_sessions',{'id':'blocked','campaignId':self.c,'state':'needs_attention','recovery':failure})
+        store.put('trials',{'id':'in-flight','campaignId':self.c,'state':'running','startedAt':time.time()})
+        trial=store.get('trials','in-flight');usage=store.usage(self.c)
+        body={'action':'resume','idempotencyKey':'direct-resume','expectedRevision':before['revision']}
+        response=self.client.post('/campaigns/'+self.c+'/control',json=body)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['state'],'running')
+        self.assertEqual(response.json()['deadline'],before['deadline'])
+        self.assertEqual(response.json()['config'],before['config'])
+        session=store.get('meta_sessions','blocked')
+        self.assertEqual(session['state'],'recovering');self.assertEqual(session['recovery']['nextAttempt'],0)
+        self.assertEqual(session['recovery']['state'],'recovering')
+        self.assertEqual(session['recovery']['failure'],failure['failure'])
+        self.assertIn('userResumedAt',session['recovery'])
+        self.assertEqual(store.get('trials','in-flight'),trial);self.assertEqual(store.usage(self.c),usage)
+        self.assertEqual(self.client.post('/campaigns/'+self.c+'/control',json={**body,'idempotencyKey':'double-click'}).status_code,409)
+        store.put('meta_sessions',{'id':'later-failure','campaignId':self.c,'state':'needs_attention','recovery':failure})
+        later=store.get('meta_sessions','later-failure')
+        replay=self.client.post('/campaigns/'+self.c+'/control',json=body)
+        self.assertEqual(replay.json(),response.json())
+        self.assertEqual(store.get('meta_sessions','later-failure'),later)
+        self.assertEqual([e['type'] for e in store.events(self.c) if e['type'] in ['pause','resume']],['resume'])
+
+    def test_direct_resume_rejects_healthy_expired_or_unauthorized_requests(self):
+        store=self.service.store;url='/campaigns/'+self.c+'/control'
+        body={'action':'resume','idempotencyKey':'not-blocked'}
+        self.assertEqual(self.client.post(url,json=body).status_code,403)
+        store.put('meta_sessions',{'id':'blocked','campaignId':self.c,'state':'needs_attention'})
+        _,token=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        self.assertEqual(self.client.post(url,json=body).status_code,403)
+        self.client.headers['Authorization']='Bearer '+self.service.user_token
+        c=store.get('campaigns',self.c);c['deadline']=time.time()-1;store.put('campaigns',c)
+        self.assertEqual(self.client.post(url,json=body).status_code,403)
+        self.assertEqual(store.get('meta_sessions','blocked')['state'],'needs_attention')
+
+    def test_direct_resume_preserves_closeout_and_validation_failure_keeps_attention(self):
+        from unittest.mock import patch
+        store=self.service.store
+        store.control(self.c,'stop','close')
+        store.put('meta_sessions',{'id':'blocked','campaignId':self.c,'state':'needs_attention'})
+        body={'action':'resume','idempotencyKey':'resume-closeout'};url='/campaigns/'+self.c+'/control'
+        with patch('src.control.service.verify_meta',side_effect=Refused('Restore matching Meta dependency lock first')):
+            c=store.get('campaigns',self.c);c['config']['metaComposition']={'id':'fixture'};store.put('campaigns',c)
+            response=self.client.post(url,json=body)
+            self.assertEqual(response.status_code,403)
+            self.assertEqual(store.get('meta_sessions','blocked')['state'],'needs_attention')
+        with patch('src.control.service.verify_meta'):
+            response=self.client.post(url,json=body)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['state'],'closing');self.assertTrue(response.json()['explorationClosed'])
+        self.assertEqual(response.json()['stopReason'],'user_stop')
+
     def test_user_meta_and_solver_identities_cannot_cross_authority(self):
         self.assertEqual(self.client.get('/health').status_code,200)
         lease,token=self.service.lease(self.c,'meta',time.time()+60)

@@ -15,6 +15,7 @@ def meta_status(sessions):
     return {
         'sessionId': latest['id'], 'state': latest['state'],
         'recoveryReason': recovery.get('reason'),
+        'recoveryRequested': recovery.get('userResumedAt') is not None,
         'failure': {k: public[k] for k in ('code', 'message', 'detectedAt') if k in public} if public else None,
         'connectionTimedOut': transport.get('errorCode') in ('ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'),
     }

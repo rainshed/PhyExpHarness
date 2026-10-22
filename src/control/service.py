@@ -32,7 +32,7 @@ from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, DEFAULT_RULE
 from src.evidence.materials import Materials,snapshot_tasks
 from .meta_context import activity_state
-from .meta_composition import freeze as freeze_meta, POLICY as STOP_POLICY
+from .meta_composition import freeze as freeze_meta, verify as verify_meta, POLICY as STOP_POLICY
 from .stop_review import StopRuntime
 from .processes import reap_children
 from . import resource_planning as planning
@@ -269,12 +269,11 @@ class ControlService:
                     seen.add(endpoint)
                     checked=network_preflight(model,route,environment=self.providers.environment(model['provider'],route))
                     with self.store.connection(True) as db:self.store._event(db,campaign,'network_preflight',provider=model['provider'],**checked)
-        if action=='resume':self._verify_task_images(c['config'])
-        result=self.store.control(campaign,action,key,expected_revision,changes)
         if action=='resume':
-            for row in self.store.list('meta_sessions',campaign):
-                if row['state']=='needs_attention':
-                    row.update(state='interrupted',recovery={'userResumedAt':time.time()});self.store.put('meta_sessions',row)
+            self._verify_task_images(c['config'])
+            if c['config'].get('metaComposition'):
+                verify_meta(self.data,c['config']['metaComposition'],self.source)
+        result=self.store.control(campaign,action,key,expected_revision,changes)
         if action=='start' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
         # User stop ends experiments but leaves the remaining Meta budget available for reports.
         if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)

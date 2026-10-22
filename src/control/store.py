@@ -270,12 +270,24 @@ class Store:
                 if c['state'] not in ['running','closing']:raise Refused('Only a running or closing Campaign can pause')
                 c['state']='paused'
             elif action=='resume':
-                if c['state']!='paused':raise Refused('Campaign is not paused')
+                sessions=self._list(db,'meta_sessions',id)
+                latest=sessions[-1] if sessions else None
+                needs_attention=bool(latest and latest['state']=='needs_attention')
+                if c['state']!='paused':
+                    if c['state'] not in ['running','closing'] or not needs_attention:
+                        raise Refused('活动未暂停，且当前 Meta 无需恢复；请刷新状态。')
+                    if self.clock()>=c['deadline']:raise Refused('活动已到截止时间，无法恢复。')
                 if c['explorationClosed']:
                     c['state']='closing'
                 elif self.clock()>=c['deadline']-(0 if planning.enabled(c['config']) else c['config']['reserveSeconds']):
                     c.update(state='closing',explorationClosed=True,stopReason='time_limit')
                 else:c['state']='running'
+                # Commit the explicit recovery intent with its idempotency receipt.
+                # Replaying this command must not clear a later session's failure.
+                if needs_attention and self.clock()<c['deadline']:
+                    latest.update(state='recovering',recovery={**(latest.get('recovery') or {}),
+                        'state':'recovering','userResumedAt':self.clock(),'automaticRecovery':False,'retryAt':self.clock(),'nextAttempt':0})
+                    self._save(db,'meta_sessions',latest)
             elif action in ['stop','finish']:
                 if c['state'] in ['finished','failed']:raise Refused('Campaign already finalized')
                 if action=='finish' and c['config'].get('stopPolicy')=='stop-review-v1':

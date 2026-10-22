@@ -30,6 +30,9 @@ test('recoverable and nonrecoverable failures have distinct actionable descripti
  session.state='needs_attention';session.recovery={reason:'nonrecoverable',failure:{code:'accounting_auth_failed'}};
  assert.match(campaignStatus({state:'running',metaSessions:[session]}).recoveryNote,/不适合自动重试/);
  assert.equal(metaFailureReason(session),'后台请求凭证验证失败');
+ session.state='recovering';session.recovery.userResumedAt=123;
+ assert.equal(campaignStatus({state:'running',metaSessions:[session]}).manualRecovery,true);
+ assert.equal(campaignStatus({state:'running',metaStatus:{state:'recovering',recoveryRequested:true}}).manualRecovery,true);
 });
 test('missing failure details stay unknown and raw errors are not used as the headline',()=>{
  assert.equal(campaignStatus({state:'running'}).label,'运行中');
@@ -47,11 +50,21 @@ test('notice separates stopped research from active experiments and supplies a d
  const {CampaignNotices}=sandbox.module.exports;
  const render=node=>node==null||typeof node==='boolean'?'':Array.isArray(node)?node.map(render).join(''):typeof node!=='object'?String(node):render(node.props?.children);
  const c={state:'running',metaSessions:[blocked()],config:{},counts:{activeTrials:2,reservedTrials:1}};
- const notice=CampaignNotices({c,onDetails(){}}),text=render(notice);
+ let resumed=0;const onResume=()=>resumed++;
+ const notice=CampaignNotices({c,onDetails(){},onResume}),text=render(notice);
  assert.match(text,/需要处理 · Meta 已停止推进/);assert.match(text,/连接模型服务超时/);
  assert.match(text,/已启动的 2 次实验仍由后台继续执行/);assert.match(text,/另有 1 次已受理实验/);
- assert.match(text,/暂停新工作.*恢复活动/);assert.match(text,/查看中断详情/);assert.match(text,/墙钟仍在计时/);
+ assert.match(text,/点击“恢复活动”即可继续/);assert.doesNotMatch(text,/暂停新工作/);assert.match(text,/查看中断详情/);assert.match(text,/墙钟仍在计时/);
  assert.equal(notice.props.children[0].props.role,'alert');
+ const elements=node=>Array.isArray(node)?node.flatMap(elements):node&&typeof node==='object'?[node,...elements(node.props?.children)]:[];
+ const resumeButton=props=>elements(CampaignNotices({c,onResume,...props})).find(node=>node.type==='button');
+ assert.equal(resumeButton({}).props.disabled,false);resumeButton({}).props.onClick();assert.equal(resumed,1);
+ assert.equal(resumeButton({busy:'resume'}).props.disabled,true);assert.equal(render(resumeButton({busy:'resume'})),'正在提交恢复…');
+ assert.equal(resumeButton({connected:false}).props.disabled,true);
+ c.remainingSeconds=0;assert.equal(resumeButton({}).props.disabled,true);assert.match(render(CampaignNotices({c,onResume})),/已到截止时间/);
+ delete c.remainingSeconds;
+ const pending={...c,metaSessions:[{...blocked(),state:'recovering',recovery:{userResumedAt:123}}]};
+ const pendingText=render(CampaignNotices({c:pending,onResume}));assert.match(pendingText,/恢复请求已受理/);assert.doesNotMatch(pendingText,/自动恢复|需要处理/);
  c.counts.activeTrials=0;assert.match(render(CampaignNotices({c})),/当前没有正在执行的实验/);
  c.metaSessions.push({state:'running'});assert.doesNotMatch(render(CampaignNotices({c})),/需要处理|连接模型服务超时/);
 });
