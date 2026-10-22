@@ -5,6 +5,7 @@ export function apply(ctx){
  ctx.subagents.registerProvider({name:'meta-isolated',inheritsParentContext:false,
   capabilities:{agentOptions:false,agentPreset:true,outputSchema:true,depthLimit:true},
   async start(request){
+   if(request.agentPreset!=='phyexp-stop-reviewer')throw new Error('The isolated backend only supports stop review; use native spawn for research');
    const run=await channel('child_start',{preset:request.agentPreset,prompt:request.prompt,outputSchema:request.outputSchema},request.signal);
    let disposed=false;
    const result=(async()=>{

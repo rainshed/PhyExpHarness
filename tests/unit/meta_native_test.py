@@ -107,6 +107,23 @@ class NativeMetaTests(unittest.TestCase):
         self.assertEqual(recovery({'error':'integrity mismatch'},0,100,1000)['state'],'needs_attention')
         self.assertEqual(recovery({},0,100,101)['state'],'needs_attention')
         self.assertEqual(self.store.get('campaigns',self.c)['state'],'running')
+    def test_native_research_registration_and_accounting_remain_scoped_after_host_replacement(self):
+        runtime=self.service.stop_runtime
+        for attempt in ['first','restored']:
+            self.store.put('meta_sessions',{'id':attempt,'campaignId':self.c,'leaseId':attempt,'state':'running','runtimeVersion':'meta-runtime-v2','nativeSessionId':'main'})
+            runtime.dispatch(attempt,'register',{'agentId':'main','preset':'phyexp-meta','isolated':True,'isolationScope':'activity-research','runnerId':'main','tools':['campaign_status']})
+            runtime.dispatch(attempt,'register',{'agentId':'research','parentAgentId':'main','preset':'phyexp-researcher','isolated':True,'isolationScope':'activity-research','runnerId':'main','tools':['campaign_status','send_message']})
+            with self.assertRaises(Refused):runtime.dispatch(attempt,'call',{'agentId':'research','operation':'batch_submit','input':{}})
+            with self.assertRaises(Refused):runtime.dispatch(attempt,'register',{'agentId':'writer','preset':'phyexp-researcher','isolated':True,'tools':['batch_submit']})
+            with self.assertRaises(Refused):runtime.dispatch(attempt,'register',{'agentId':'review','preset':'phyexp-stop-reviewer','isolated':True,'tools':[]})
+            request='request-'+attempt
+            self.store.reserve(self.c,attempt,request,100,'meta')
+            runtime.dispatch(attempt,'model_request',{'id':request,'agentId':'research'})
+            self.store.settle(self.c,attempt,request,30,False)
+            self.assertEqual(self.store.get('usage',request)['metaAgentId'],'research')
+            self.assertEqual(self.store.get('usage',request)['metaPreset'],'phyexp-researcher')
+        self.assertEqual(self.store.usage(self.c)['confirmedTokens'],60)
+
     def test_recovered_session_reads_prior_review_without_another_vote(self):
         old=self.store.put('meta_sessions',{'id':'old','campaignId':self.c,'runtimeVersion':'meta-runtime-v2','nativeSessionId':'native','state':'recovering'})
         new=self.store.put('meta_sessions',{'id':'new','campaignId':self.c,'runtimeVersion':'meta-runtime-v2','nativeSessionId':'native','state':'running','previousSessionId':'old'})

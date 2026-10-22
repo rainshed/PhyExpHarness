@@ -21,7 +21,7 @@ test('native Meta loads six typed plugins and applicable native tools in a real 
   const session=host.create(config.id,'meta');await session.request('initialize',{...model,cwd:'/work'});
   const events=await session.prompt(config.id,'Inspect capabilities.',45000);
   assert.equal(events.filter(e=>e.type==='turn/end').at(-1)?.data.reason.kind,'completed');
-  const names=schemas.map(s=>s.name);for(const name of ['bash','read','write','campaign_finish','candidate_check','materials_read','report_get_facts','subagent'])assert.ok(names.includes(name),name+' unavailable: '+names.join(','));
+  const names=schemas.map(s=>s.name);for(const name of ['bash','read','write','campaign_finish','candidate_check','materials_read','report_get_facts','subagent','send_message','interrupt_agent','list_agents'])assert.ok(names.includes(name),name+' unavailable: '+names.join(','));
   assert.equal(schemas.find(s=>s.name==='batch_submit').parameters.properties.input,undefined);
   assert.ok(calls.some(c=>c.action==='register'));await session.shutdown();
  }finally{await host.dispose();}
@@ -57,9 +57,9 @@ test('long native command, human answer, research delegation and persisted sessi
  try{
   let session=host.create(config.id,'meta');await session.request('initialize',{...model,cwd:'/work'});await session.prompt(config.id,'Run persistent fixture.',80000);await session.request('session/wait',{sessionId:config.id},30000);
   assert.ok(childCalls>=2);assert.equal(questionCalls,1);
-  const child=[...host.children.values()][0];assert.equal(child.result.stopReason,'completed');
-  const published=JSON.parse(fs.readFileSync(path.join(config.filesRoot,'materials','agents',child.id,'index.json')));
-  assert.ok(published.artifacts.some(r=>r.path.endsWith('analysis/result.txt')));
+  assert.equal(host.children.size,0,'native research must not use the isolated backend');
+  assert.equal(fs.readFileSync(path.join(config.workRoot,'analysis/result.txt'),'utf8').trim(),'RESEARCH_ARTIFACT');
+  assert.ok(calls.some(r=>r.sessionId!==config.id));
   await session.shutdown();await host.dispose();
   phase=1;mainCalls=0;host=makeHost(1);session=host.create(config.id,'meta');await session.request('initialize',{...model,cwd:'/work'});
   await session.request('session/resume',{sessionId:config.id});const events=await session.prompt(config.id,'Verify persisted state.',45000);

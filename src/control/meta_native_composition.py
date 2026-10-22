@@ -123,14 +123,14 @@ def freeze(source,data,config):
     files={k:v for group in groups.values() for k,v in group.items()}
     lock=json.loads((source/'package-lock.json').read_text());package='@deepseek-ai/dsh-sdk-minimal';framework=lock['packages']['node_modules/'+package]
     system=system_prompt({**config,'stopPolicy':'stop-review-v1'})
-    system['text']+='\n\n原生工作环境（meta-runtime-v2）：\n使用原生文件、搜索、编辑、终端、任务、技能与会话工具开展研究。插件目录位于 /work/plugins，分析笔记位于 /work/analysis；候选工具接受插件目录相对路径。完整材料索引为 /evidence/index.json，终端完整输出索引为 /outputs/index.json。返回预览不等于文件全文，按路径自行检索。普通子代理与审查者在各自隔离工作区运行。业务工具直接传对象参数，写操作带稳定的 idempotencyKey；请求结果未知时先核对后台记录，不重复创建。candidate_retain 的预期选择修订来自 campaign_status.selectionRevision。report_get_facts 取得不可变事实快照后，report_save 提交 analysis 或带摘要的 analysisFile、factsId 与 expectedReportRevision（首次为 0）；每个报告修订永久保留。\n'
-    system.update(version='meta-system-v7',sha256=hashlib.sha256(system['text'].encode()).hexdigest())
+    system['text']+='\n\n原生工作环境（meta-runtime-v2）：\n使用原生文件、搜索、编辑、终端、任务、技能与会话工具开展研究。插件目录位于 /work/plugins，分析笔记位于 /work/analysis；候选工具接受插件目录相对路径。完整材料索引为 /evidence/index.json，终端完整输出索引为 /outputs/index.json。返回预览不等于文件全文，按路径自行检索。普通研究子代理使用原生 spawn，与主 Meta 共享授权文件和持久会话存储；cwd 遵循原生指定/继承规则。使用 send_message 追问或续接，interrupt_agent 中断当前工作；恢复后先用 list_agents 和会话查询核对原子任务，再决定继续，不盲目重做未知副作用。研究子代理无额外五分钟总时限，仍受原活动截止和预算限制。停止审查者独立隔离。业务工具直接传对象参数，写操作带稳定的 idempotencyKey；请求结果未知时先核对后台记录，不重复创建。candidate_retain 的预期选择修订来自 campaign_status.selectionRevision。report_get_facts 取得不可变事实快照后，report_save 提交 analysis 或带摘要的 analysisFile、factsId 与 expectedReportRevision（首次为 0）；每个报告修订永久保留。\n'
+    system.update(version='meta-system-v8',sha256=hashlib.sha256(system['text'].encode()).hexdigest())
     from .meta_contracts import binding
     document={'toolContract':binding(),'version':VERSION,'composition':composition,'files':files,'groups':{k:{'id':digest(v),'files':v} for k,v in groups.items()},
         'framework':{'package':package,**{k:framework[k] for k in ['version','resolved','integrity']}},
         'systemPrompt':system,'reviewerPrompt':(plugin/'reviewer.md').read_text(),
         'runnerImage':prepare_image(source,data),'stopPolicy':'stop-review-v1','lockSha256':files['package-lock.json'],
-        'capabilities':json.loads((plugin/'capabilities.json').read_text()),'runtimeVersion':'meta-runtime-v2','recovery':{'additionalAttempts':2,'delaysSeconds':[2,10]},'hostBoundary':'isolated per role; host-bound channels'}
+        'capabilities':json.loads((plugin/'capabilities.json').read_text()),'runtimeVersion':'meta-runtime-v2','recovery':{'additionalAttempts':2,'delaysSeconds':[2,10]},'delegationVersion':'native-research-v1','hostBoundary':'shared activity research Runner; independently isolated stop review; host-bound channels'}
     id=digest(document);root=data/'meta-compositions'/id;root.mkdir(parents=True,exist_ok=True)
     objects=data/'meta-objects/sha256';objects.mkdir(parents=True,exist_ok=True)
     for rel,sha in files.items():

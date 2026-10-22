@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {operations,validateInput} from '../../packages/meta-harness/domain-tools.mjs';
-import {validateNativeComposition} from '../../packages/meta-harness/composition-native.mjs';
+import {validateNativeComposition,nativeEntries,presets} from '../../packages/meta-harness/composition-native.mjs';
 import {MetaOutputs} from '../../src/control/meta_outputs.mjs';
+import {MetaHost} from '../../src/control/meta_host.mjs';
 
 for(const domain of ['campaign','experiments','evidence','reporting'])test(`${domain} is independently scoped, with typed native schemas and direct service calls`,async()=>{
  const {apply}=await import(`../../packages/meta-harness/domain-${domain}.mjs`);const tools=[];const calls=[];
@@ -36,6 +37,39 @@ test('complete and interrupted output survives restart and capacity refuses addi
  const second=new MetaOutputs(root,{maxBytes:20});assert.equal(second.entries.get('one').status,'interrupted');assert.equal(second.entries.get('one').completeness,'partial');
  second.open('two','terminal');assert.throws(()=>second.append('two',0,Buffer.alloc(20).toString('base64')),/capacity/);assert.equal(second.entries.get('two').completeness,'partial');
  assert.equal(fs.readFileSync(path.join(root,'one.log'),'utf8'),'完整尾部');
+});
+test('research uses native continuation and scoped tools; isolated adapter only admits review',async()=>{
+ const source=JSON.parse(fs.readFileSync(new URL('../../packages/meta-harness/composition-native.json',import.meta.url)));
+ const entries=nativeEntries(source,{role:'meta',systemPrompt:'fixture'});
+ assert.ok(entries.some(e=>e.name==='@deepseek-ai/dsh-subagent-spawn-in-process'));
+ const main=entries.find(e=>e.id==='active-meta-preset').config.plugins;
+ assert.equal(main.find(e=>e.name==='@deepseek-ai/dsh-tool-subagent').config.provider,'spawn');
+ assert.ok(main.some(e=>e.name==='@deepseek-ai/dsh-tool-subagent-control/list-agents'));
+ const research=entries.find(e=>e.id==='research-declaration').config.plugins;
+ assert.ok(research.some(e=>e.name==='@deepseek-ai/dsh-tool-subagent-control'));
+ assert.ok(research.some(e=>e.id==='meta-evidence'));
+ assert.ok(!research.some(e=>e.id==='meta-experiments'||e.id==='meta-stop-review'));
+ let provider;const {apply}=await import('../../packages/meta-harness/isolated-subagent.mjs');
+ apply({subagents:{registerProvider:p=>provider=p}});
+ await assert.rejects(provider.start({agentPreset:presets.research}),/only supports stop review/);
+ const reviewer=nativeEntries(source,{role:'reviewer',reviewerPrompt:'fixture'});
+ assert.ok(!reviewer.some(e=>e.name==='@deepseek-ai/dsh-subagent-spawn-in-process'));
+});
+test('host registers native children in the research boundary and preserves actor attribution',async()=>{
+ const calls=[];const host=new MetaHost({config:{id:'attempt'},api:async(_route,body)=>{calls.push(body);return {ok:true};}});
+ const binding={id:'main',role:'meta',agents:new Map()};
+ const send=async(action,input)=>{let last;for await(const value of host.handle(binding,'meta',{action,input}))last=value;return last;};
+ await send('register',{agentId:'main',preset:presets.meta});
+ await send('register',{agentId:'child',parentAgentId:'main',preset:presets.research});
+ await send('call',{agentId:'child',operation:'campaign_status',input:{}});
+ assert.equal(calls.at(-1).input.agentId,'child');
+ assert.equal(calls[1].input.runnerId,'main');assert.equal(calls[1].input.isolationScope,'activity-research');
+ await assert.rejects(send('call',{agentId:'child',operation:'batch_submit'}),/Read-only/);
+ await assert.rejects(send('call',{agentId:'unknown',operation:'campaign_status'}),/Unregistered/);
+ await assert.rejects(send('register',{agentId:'forged',preset:presets.reviewer}),/identity mismatch/);
+ await assert.rejects(send('register',{agentId:'other',parentAgentId:'foreign',preset:presets.research}),/parent identity mismatch/);
+ await assert.rejects(send('register',{agentId:'child',preset:presets.meta}),/identity mismatch/);
+ await assert.rejects(send('child_start',{preset:presets.research,prompt:'research'}),/Unsupported child preset/);
 });
 test('native registered report parameters expose complete nested schema and enforce exclusive inputs',async()=>{
  const {apply}=await import('../../packages/meta-harness/domain-reporting.mjs');const tools=[];

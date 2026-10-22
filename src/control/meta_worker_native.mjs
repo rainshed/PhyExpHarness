@@ -21,7 +21,8 @@ const budget=budgetGate({deadline:config.deadline*1000,softTokenLimit:config.sof
 function save(){
  if(gateway)Object.assign(summary,gateway.diagnostics(summary));summary.cursor=cursor;summary.accounting=budget.snapshot();
  const redact=value=>credentials?credentials.redact(value):value;
- const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
+ // Child events live in their native sessions; keep the main archive unambiguous.
+ const events=session?.messages.filter(m=>m.method==='session.event'&&m.params.sessionId===nativeId).map(m=>m.params.event)||[];
  fs.writeFileSync(path.join(logs,'events.json'),redact(JSON.stringify(events))+'\n');
  const file=path.join(logs,'summary.json');fs.writeFileSync(file+'.tmp',redact(JSON.stringify(summary,null,2))+'\n');fs.renameSync(file+'.tmp',file);
 }
@@ -43,8 +44,11 @@ try{
  while(Date.now()<config.deadline*1000){
   if(prompt){
    summary.status='running';save();
-   const events=await session.prompt(nativeId,prompt,Math.max(1,config.deadline*1000-Date.now()));
-   summary.turnEnd=events.filter(e=>e.type==='turn/end').at(-1)?.data.reason;
+   await session.prompt(nativeId,prompt,Math.max(1,config.deadline*1000-Date.now()));
+   // Let the native manager deliver child messages and settle owned research
+   // before the controller issues another idle nudge. No separate child timer.
+   await session.request('session/wait',{sessionId:nativeId},Math.max(1,config.deadline*1000-Date.now()));
+   summary.turnEnd=session.messages.filter(m=>m.method==='session.event'&&m.params.sessionId===nativeId&&m.params.event.type==='turn/end').at(-1)?.params.event.data.reason;
    if(summary.turnEnd?.kind!=='completed')throw new Error('Meta turn did not complete');
    summary.turns++;summary.status='waiting';save();prompt=null;
    if(pendingCursor!==null){await api('/meta-sessions/'+config.id+'/ack',{cursor:pendingCursor});cursor=pendingCursor;pendingCursor=null;}

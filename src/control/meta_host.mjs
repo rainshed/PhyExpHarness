@@ -8,9 +8,9 @@ import {reviewSchema} from '../../packages/meta-harness/stop-review.mjs';
 import {MetaOutputs} from './meta_outputs.mjs';
 const READ=new Set(['campaign_status','materials_list','materials_search','materials_read','evidence_list','evidence_read','sdk_search','sdk_read','sdk_inspect']);
 const validateReview=new Ajv().compile(reviewSchema);
-// One controller-authenticated host, distinct untrusted OS boundary per role.
+// One activity research boundary (main + native children), separate stop-review boundary.
 export class MetaHost{
- constructor({config,frozen,root,logs,api,gateway,modelInfo,image}){Object.assign(this,{config,frozen,root,logs,api,gateway,modelInfo,image});this.children=new Map();this.runners=new Map();this.pendingReview=null;}
+ constructor({config,frozen,root,logs,api,gateway,modelInfo,image,sessionFactory=isolatedSession}){Object.assign(this,{config,frozen,root,logs,api,gateway,modelInfo,image,sessionFactory});this.children=new Map();this.runners=new Map();this.pendingReview=null;}
  runtime(action,input){return this.api('/meta-sessions/'+this.config.id+'/runtime',{action,input});}
  create(id,role,{outputSchema,reviewId,resume=false}={}){
   const {config}=this;
@@ -20,17 +20,19 @@ export class MetaHost{
   const sessionRoot=role==='meta'?config.sessionRoot:path.join(childRoot,'session');
   fs.mkdirSync(work,{recursive:true});fs.mkdirSync(sessionRoot,{recursive:true});
   const outputRoot=path.join(config.filesRoot,'outputs',role==='meta'?'main':id);const outputs=new MetaOutputs(outputRoot);
-  const binding={id,role,reviewId,outputs,outputSchema,logs};
+  const binding={id,role,reviewId,outputs,outputSchema,logs,agents:new Map()};
   const mounts=[`type=bind,source=${path.join(this.root,'packages/meta-harness')},target=/opt/phyexp/meta-plugin,readonly`,
    `type=bind,source=${work},target=/work`,`type=bind,source=${sessionRoot},target=/session`,
    ...['evidence','materials','sdk','versions'].map(name=>`type=bind,source=${path.join(config.filesRoot,name)},target=/${name},readonly`),
    `type=bind,source=${outputRoot},target=/outputs,readonly`,
    ...(role==='meta'?[`type=bind,source=${config.pluginWorkspace},target=/work/plugins`]:[])];
-  const session=isolatedSession({executionRoot:path.join(this.root,'src/execution'),logs,image:this.image,
+  const session=this.sessionFactory({executionRoot:path.join(this.root,'src/execution'),logs,image:this.image,
    gateway:{stream:(request,signal)=>{
-    if(request.sessionId!==id)throw new Error('Model channel identity mismatch');return this.gateway.stream(request,signal);
-   },abort:()=>this.gateway.channels.get(id)?.abort()},
-   config:{nativeMeta:true,modelInfo:this.modelInfo,fixedModel:config.model,plugins:nativeEntries(this.frozen.composition,{role,systemPrompt:this.frozen.systemPrompt.text,reviewerPrompt:this.frozen.reviewerPrompt,compositionId:this.frozen.id,outputSchema})},mounts,
+    if(!binding.agents.has(request.sessionId))throw new Error('Model channel identity mismatch');return this.gateway.stream(request,signal);
+   },abort:()=>{for(const agentId of binding.agents.keys())this.gateway.channels.get(agentId)?.abort();}},
+   // Native cold resume uses route defaults for per-activation output limits.
+   // Advertise the frozen cap there as well as on the initial SDK handshake.
+   config:{nativeMeta:true,modelInfo:{...this.modelInfo,...(config.model.maxTokens!==undefined?{defaultMaxTokens:config.model.maxTokens}:{})},fixedModel:config.model,plugins:nativeEntries(this.frozen.composition,{role,systemPrompt:this.frozen.systemPrompt.text,reviewerPrompt:this.frozen.reviewerPrompt,compositionId:this.frozen.id,outputSchema})},mounts,
    handler:(op,payload,signal)=>this.handle(binding,op,payload,signal)});
   this.runners.set(id,{session,binding});return session;
  }
@@ -46,13 +48,19 @@ export class MetaHost{
   if(action==='output_close'){yield outputs.close(input.id,'complete');return;}
   if(action==='tool_output'){yield outputs.tool(input);return;}
   if(action==='register'){
-   if(input.agentId!==id||input.preset!==presets[role])throw new Error('Runner identity mismatch');
-   yield await this.runtime('register',{...input,agentId:id,preset:presets[role],reviewId:binding.reviewId,isolated:true});return;
+   const research=role==='meta'&&input.preset===presets.research&&input.agentId!==id;
+   if(typeof input.agentId!=='string'||!/^[-\w]+$/.test(input.agentId)||(!research&&(input.agentId!==id||input.preset!==presets[role])))throw new Error('Runner identity mismatch');
+   if(research&&input.parentAgentId!==id)throw new Error('Research parent identity mismatch');
+   if(binding.agents.has(input.agentId)&&binding.agents.get(input.agentId)!==input.preset)throw new Error('Registered role identity mismatch');
+   const receipt=await this.runtime('register',{...input,reviewId:binding.reviewId,isolated:true,isolationScope:role==='meta'?'activity-research':'stop-review',runnerId:id});
+   binding.agents.set(input.agentId,input.preset);yield receipt;return;
   }
-  if(action==='observe'){yield await this.runtime(action,{...input,agentId:id});return;}
+  const actor=input.agentId??id;
+  if(['observe','call'].includes(action)&&!binding.agents.has(actor))throw new Error('Unregistered Runner caller');
+  if(action==='observe'){yield await this.runtime(action,{...input,agentId:actor});return;}
   if(action==='call'){
-   if(role!=='meta'&&!READ.has(input.operation))throw new Error('Read-only child role');
-   yield await this.runtime('call',{...input,agentId:id});return;
+   if(binding.agents.get(actor)!==presets.meta&&!READ.has(input.operation))throw new Error('Read-only child role');
+   yield await this.runtime('call',{...input,agentId:actor});return;
   }
   if(action==='child_output'){
    if(role==='meta'||!binding.outputSchema||binding.structured)throw new Error('Structured output unavailable');
@@ -71,7 +79,7 @@ export class MetaHost{
   }
   if(action==='child_start'){
    if([...this.children.values()].filter(c=>!c.result).length>=2)throw new Error('Child capacity reached');
-   const role=input.preset===presets.research?'research':input.preset===presets.reviewer?'reviewer':null;
+   const role=input.preset===presets.reviewer?'reviewer':null;
    if(!role)throw new Error('Unsupported child preset');
    const review=role==='reviewer'?this.pendingReview:null;
    if(role==='reviewer'&&(!review||review.state!=='pending'||review.replayed||[...this.children.values()].some(c=>c.reviewId===review.id)))throw new Error('No unconsumed stop review');

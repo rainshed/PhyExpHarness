@@ -8,7 +8,7 @@ export async function channel(action,input,signal){
  const error=rows.find(r=>r.error);if(error)throw new Error(error.error);
  return rows.map(r=>r.result).at(-1);
 }
-// No role credentials in this process. The outside host binds every message to its container.
+// Research sessions share one trust domain; the reviewer has a separate host-bound channel.
 export default class MetaControl extends Service{
  static inject=['agentPresets','tools','sessionProjections'];
  constructor(ctx,config){
@@ -25,13 +25,13 @@ export default class MetaControl extends Service{
    if(!ctx.agentPresets.composedPreset(agent.ctx)){
     const persisted=ctx.sessionProjections.stateOf(agent.session,'agentPreset');
     if(persisted){
-     if(persisted!==config.preset)throw new Error('Persisted Meta role identity mismatch');
+     if(persisted!==config.preset&&!(config.preset==='phyexp-meta'&&persisted==='phyexp-researcher'))throw new Error('Persisted Meta role identity mismatch');
      // Restoring a frozen composition is not a preset switch. select() rejects
      // any session with prior turns; mount() is the native resume binding API.
      await ctx.agentPresets.mount(agent.ctx,persisted);
     }else await ctx.agentPresets.select(agent,config.preset);
    }
-   await channel('register',{agentId:agent.session.id,preset:ctx.agentPresets.composedPreset(agent.ctx),plugins:ctx.agentPresets.inspectCompositions(agent.ctx),tools:ctx.tools.schemas(agent).map(t=>t.name)},signal);
+   await channel('register',{agentId:agent.session.id,parentAgentId:agent.session.header.parentSession,preset:ctx.agentPresets.composedPreset(agent.ctx),plugins:ctx.agentPresets.inspectCompositions(agent.ctx),tools:ctx.tools.schemas(agent).map(t=>t.name)},signal);
   });
  }
  actor(agent){return {agentId:agent.session.id};}
