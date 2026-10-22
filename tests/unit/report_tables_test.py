@@ -18,6 +18,32 @@ def batch(id,round,candidate):
     return {'id':id,'round':round,'candidateId':candidate,'tasks':['task'],'repeats':1,'state':'finished','acceptedAt':round*10}
 
 class ReportTablesTests(unittest.TestCase):
+    def test_categories_are_explicit_content_bound_and_do_not_change_execution(self):
+        p=plugin();p['manifest'].update(categories=['prompt-context','tools'],capabilities=['model-gateway'])
+        old=copy.deepcopy(p);other=plugin(digest='b');other['manifest']['capabilities']=['tools']
+        t=build_tables([candidate('a',[p]),candidate('b',[other],at=1)],[],[])
+        self.assertEqual(t['plugins'][0]['categories'],['prompt-context','tools'])
+        self.assertEqual(t['plugins'][1]['categories'],[])
+        self.assertIsNone(t['plugins'][1]['categorySource'])
+        note={'categories':['execution-control'], 'mechanism':'源码复核后的解释', 'source':{'kind':'operator-source-review','label':'冻结源码补充','author':'reviewer','recordedAt':123}}
+        updated=build_tables([candidate('a',[p]),candidate('b',[other],at=1)],[],[],annotations={plugin_key(p):note})
+        self.assertEqual(updated['plugins'][0]['categories'],['execution-control'])
+        self.assertEqual(updated['plugins'][0]['categorySource'],note['source'])
+        self.assertEqual(updated['plugins'][1]['categories'],[])
+        self.assertEqual(updated['versions'],t['versions'])
+        self.assertEqual(t['plugins'][0]['categories'],['prompt-context','tools'])
+        self.assertEqual(p,old)
+
+    def test_plugin_category_schema_preserves_legacy_and_validates_new_metadata(self):
+        from jsonschema import Draft202012Validator
+        root=Path(__file__).resolve().parents[2]
+        validator=Draft202012Validator(json.loads((root/'schemas/execution/plugin.schema.json').read_text()))
+        manifest={'schemaVersion':1,'name':'test','version':'1','entry':'index.mjs','purpose':'test','configSchema':{},'dependencies':[], 'observes':[], 'intervenes':[], 'capabilities':[], 'fallbackBehavior':'propagate','assets':[]}
+        validator.validate(manifest)
+        validator.validate({**manifest,'categories':['prompt-context','tools']})
+        for invalid in [['unknown'],['tools','tools'],'tools',[None]]:
+            self.assertTrue(list(validator.iter_errors({**manifest,'categories':invalid})))
+
     def test_repeats_and_rollback_compare_previous_round_not_parent_or_completion(self):
         cs=[candidate('a',[],at=1),candidate('b',[plugin()],parent='a',at=11),candidate('c',[plugin('other')],parent='a',at=21)]
         bs=[batch('first',1,'a'),batch('second',2,'b'),batch('third',3,'b'),batch('fourth',4,'c'),batch('fifth',5,'a')]

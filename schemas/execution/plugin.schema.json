@@ -91,7 +91,13 @@
     "mechanism": {
       "type": "string",
       "minLength": 1,
-      "description": "Explain how this plugin acts: e.g. advisory system context, callable tool, automatic check, or a combination. State whether it advises, executes or enforces; do not overclaim."
+      "description": "Plain Chinese account of how this plugin works: trigger/input, actions, output and key limitations. Describe advisory versus actual execution in prose, not separate behavior labels or only SDK interface names. Intended mechanism, not verified effectiveness."
+    },
+    "categories": {
+      "type": "array",
+      "items": {"enum": ["prompt-context", "tools", "tool-results", "execution-control", "other"]},
+      "uniqueItems": true,
+      "description": "Optional, multi-select reading categories: 提示与上下文、工具能力、工具结果处理、执行控制与恢复、其他扩展. Missing/empty means not classified. These are not execution permissions or behavior modes."
     }
   },
   "additionalProperties": true

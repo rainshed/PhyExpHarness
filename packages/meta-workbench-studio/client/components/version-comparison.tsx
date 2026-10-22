@@ -1,13 +1,15 @@
-import {useState,useEffect,useRef} from 'react';
-import {number,duration,tasks,reasons} from '../components/common';
+import {useEffect,useRef} from 'react';
+import {number,duration,tasks} from '../components/common';
 import {comparison,defaultVersions,comparisonTasks,taskMean,percent,outcomeNote,trialsFor,versionCost,trialBucket} from '../readability.mjs';
 
 import {TrialList} from './trial-list';
+import {VersionComposition} from './version-composition';
+import {useReadingState} from '../shell/reading-state';
 
-export function VersionComparison({c,onEvidence,onStopTrial,onVersion,onReport,compact=false}:any){
- const [chosen,setChosen]=useState<string[]>(()=>defaultVersions(c)),[common,setCommon]=useState(false),[search,setSearch]=useState(''),[focus,setFocus]=useState<any>(null);
- const defaults=defaultVersions(c).join('|');
- useEffect(()=>{setChosen(defaultVersions(c));setCommon(false);setFocus(null)},[c.id,defaults]);
+export function VersionComparison({c,onEvidence,onStopTrial,onReport,compact=false,showComposition=false,onPlugin,onRename,canRename,readingState,onReadingStateChange}:any){
+ const [state,setState]=useReadingState(()=>({chosen:null,common:false,search:'',focus:null,expanded:[]}),readingState,onReadingStateChange);
+ const chosen=state.chosen??defaultVersions(c),common=state.common??false,search=state.search??'',focus=state.focus??null;
+ const setChosen=(chosen:any)=>setState({chosen,focus:null}),setCommon=(common:boolean)=>setState({common,focus:null}),setSearch=(search:string)=>setState({search}),setFocus=(focus:any)=>setState({focus});
  const versions=c.tables?.versions||[], baseline=versions[0]?.id;
  const selected=versions.filter((v:any)=>chosen.includes(v.id)), scope=comparisonTasks(c,selected,common);
  const visibleTrials=trialsFor(c).filter((t:any)=>chosen.includes(t.candidateId)&&scope.includes(t.task));
@@ -17,12 +19,13 @@ export function VersionComparison({c,onEvidence,onStopTrial,onVersion,onReport,c
  useEffect(()=>{if(focus)detail.current?.focus()},[focus]);
  const close=()=>{setFocus(null);trigger.current?.focus({preventScroll:true})};
 
- const controls=( <div className="studio-compare-controls"><fieldset><legend>参与比较的版本</legend>{versions.filter((v:any)=>v.id===baseline||v.retained||v.final||chosen.includes(v.id)).map((v:any)=><label className="studio-choice" key={v.id}><input type="checkbox" checked={chosen.includes(v.id)} disabled={v.id===baseline} onChange={e=>{setChosen(e.target.checked?[...chosen,v.id]:chosen.filter(id=>id!==v.id));setFocus(null)}}/>{v.label}{v.retained?' · 保留':''}{v.final?' · 冻结':''}{v.id!==baseline&&comparison(c,v.id,baseline).state==='different'?' · 仅参考':''}</label>)}<details className="studio-more-versions"><summary>加入其他候选</summary><label>搜索版本<input value={search} onChange={e=>setSearch(e.target.value)}/></label><div>{versions.filter((v:any)=>v.id!==baseline&&!v.retained&&!v.final&&!chosen.includes(v.id)&&`${v.label} ${v.displayName}`.toLowerCase().includes(search.toLowerCase())).map((v:any)=><label className="studio-choice" key={v.id}><input type="checkbox" checked={false} onChange={()=>{setChosen([...chosen,v.id]);setFocus(null)}}/>{v.displayName}{comparison(c,v.id,baseline).state==='different'?' · 仅参考':''}</label>)}</div></details></fieldset><label className="studio-scope">任务范围<select value={common?'common':'all'} onChange={e=>{setCommon(e.target.value==='common');setFocus(null)}}><option value="all">完整任务集</option><option value="common">共同已测且可评分任务</option></select></label></div>);
+ const controls=( <div className="studio-compare-controls"><fieldset><legend>参与比较的版本</legend>{versions.filter((v:any)=>v.id===baseline||v.retained||v.final||chosen.includes(v.id)).map((v:any)=><label className="studio-choice" key={v.id}><input type="checkbox" checked={chosen.includes(v.id)} disabled={v.id===baseline} onChange={e=>{setChosen(e.target.checked?[...chosen,v.id]:chosen.filter(id=>id!==v.id))}}/>{v.label}{v.retained?' · 保留':''}{v.final?' · 冻结':''}{v.id!==baseline&&comparison(c,v.id,baseline).state==='different'?' · 仅参考':''}</label>)}<details className="studio-more-versions"><summary>加入其他候选</summary><label>搜索版本<input value={search} onChange={e=>setSearch(e.target.value)}/></label><div>{versions.filter((v:any)=>v.id!==baseline&&!v.retained&&!v.final&&!chosen.includes(v.id)&&`${v.label} ${v.displayName}`.toLowerCase().includes(search.toLowerCase())).map((v:any)=><label className="studio-choice" key={v.id}><input type="checkbox" checked={false} onChange={()=>{setChosen([...chosen,v.id])}}/>{v.displayName}{comparison(c,v.id,baseline).state==='different'?' · 仅参考':''}</label>)}</div></details></fieldset><label className="studio-scope">任务范围<select value={common?'common':'all'} onChange={e=>{setCommon(e.target.value==='common')}}><option value="all">完整任务集</option><option value="common">共同已测且可评分任务</option></select></label></div>);
 
- return <section className="studio-comparison" aria-label="按版本与任务比较"><div className="studio-section-title"><div><small className="studio-kicker">PERFORMANCE / 实验表现</small><h2>{c.historical?'报告当时的逐任务表现':'每个版本，现在表现怎样？'}</h2><p className="mh-muted">{common?`共同已测且可评分：${scope.length} / ${c.config.tasks.length} 个任务`:`完整任务集：${scope.length} 个任务`}。每个百分比都保留成功数与分母。</p></div>{onVersion&&<button onClick={onVersion}>版本详情与改名 →</button>}</div>
+ return <section className="studio-comparison" aria-label="按版本与任务比较"><div className="studio-section-title"><div><small className="studio-kicker">PERFORMANCE / 实验表现</small><h2>{c.historical?'报告当时的逐任务表现':'每个版本，现在表现怎样？'}</h2><p className="mh-muted">{common?`共同已测且可评分：${scope.length} / ${c.config.tasks.length} 个任务`:`完整任务集：${scope.length} 个任务`}。每个百分比都保留成功数与分母。</p></div></div>
  <div className="studio-performance-status"><span>已结束看成功率，进行中看进度</span><strong>{c.historical?'当时 · ':''}{active} 运行中 · {queued} 排队</strong></div>
  {compact?<details className="studio-compare-settings"><summary>调整对比版本与任务范围</summary>{controls}</details>:controls}
 
+ {showComposition&&<VersionComposition versions={selected} plugins={c.tables?.plugins} expanded={state.expanded||[]} onExpanded={(expanded:any)=>setState({expanded})} onPlugin={onPlugin} onRename={onRename} canRename={canRename}/>}
  {issues.length>0&&<p className="studio-comparison-warning">{issues.map(({v,condition}:any)=>v.label+'：'+condition.label).join('；')}。展开比较口径可核对原因。</p>}
 
  {common&&<p className="mh-notice">范围已缩小：以下结果不能代表完整任务集。成本仍是该版本全部实验的合计。</p>}

@@ -32,4 +32,15 @@ test('all registered Studio pages render, including report appendices after modu
  const historical=render(FeaturePage({id:'reports',...props}));
  assert.match(historical,/为什么当时保留这一版/);assert.doesNotMatch(historical,/为什么现在保留这一版/);
  assert.match(render(FeaturePage({id:'removed',...props})),/此页面当前不可用/);
+ const plugin={id:'p',name:'review',displayName:'方法审阅',version:'1',digest:'abc',categories:['tools','prompt-context'],functionSummary:'提供方法审阅',mechanism:'调用后返回审阅意见',descriptionSource:{label:'清单说明'}};
+ c.tables.plugins=[plugin];
+ c.tables.versions=[{id:'base',label:'H0',displayName:'H0 · 基线',plugins:[]},{id:'v',label:'H1',displayName:'H1 · 审阅版',plugins:[{pluginId:'p',order:1,config:{enabled:false,limit:null}}]}];
+ const lab=render(FeaturePage({id:'lab',...props}));
+ assert.ok(lab.indexOf('调用后返回审阅意见')<lab.indexOf('为什么想到这个办法'));
+ assert.doesNotMatch(lab,/版本、配置与代码继承|执行版本表/);
+ const compare=render(FeaturePage({id:'compare',...props}));
+ assert.match(compare,/这些版本如何组合/);assert.match(compare,/原始基线 · 无额外插件/);
+ assert.match(compare,/方法审阅/);assert.match(compare,/"enabled": false/);assert.match(compare,/"limit": null/);
+ assert.ok(compare.indexOf('这些版本如何组合')<compare.indexOf('所选任务等权'));
+ assert.doesNotMatch(compare,/版本详情与改名|新增插件|移除插件/);
 });

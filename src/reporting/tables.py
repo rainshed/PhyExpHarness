@@ -9,6 +9,14 @@ import json
 from pathlib import Path
 from src.evidence.outcomes import outcome_summary
 
+PLUGIN_CATEGORIES = {'prompt-context', 'tools', 'tool-results', 'execution-control', 'other'}
+
+
+def plugin_categories(manifest, note):
+    """Use explicit content-bound descriptions only, never infer from permissions."""
+    value = note.get('categories', manifest.get('categories', []))
+    return list(dict.fromkeys(x for x in value if isinstance(x, str) and x in PLUGIN_CATEGORIES)) if isinstance(value, list) else []
+
 
 def stable(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
@@ -111,6 +119,8 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
                 plugin_rows[key] = {'id': key, 'name': p['name'], 'version': p['version'], 'digest': p.get('digest'),
                     'candidateId': c['id'], 'entry': p.get('entry'),
                     'displayName': note.get('displayName') or manifest.get('displayName') or p['name'],
+                    'categories': plugin_categories(manifest, note),
+                    'categorySource': (source if 'categories' in note else {'kind': 'manifest', 'label': '冻结插件清单分类'}) if plugin_categories(manifest, note) else None,
                     'functionSummary': summary, 'mechanism': note.get('mechanism') or manifest.get('mechanism') or
                         ('声明接口：' + '、'.join(map(str, manifest.get('intervenes', []))) if manifest.get('intervenes') else '实现方式尚未说明'),
                     'descriptionSource': source, 'declaration': manifest, 'usedBy': []}

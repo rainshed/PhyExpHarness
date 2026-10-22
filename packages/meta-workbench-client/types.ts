@@ -8,6 +8,9 @@ export interface CampaignConfig {
 export interface CreateAttempt {signature:string;key:string}
 export interface DraftState {version:1;config:CampaignConfig;selected:string;attempt:CreateAttempt|null}
 export type Request=<T=unknown>(route:string,body?:unknown,signal?:AbortSignal)=>Promise<T>;
+export type PluginCategory='prompt-context'|'tools'|'tool-results'|'execution-control'|'other';
+export type PluginDescriptionSource={kind:string;label:string;author?:string;recordedAt?:number;evidence?:string[]};
+export type PluginReading={id:string;name:string;version:string;digest:string;displayName:string;functionSummary:string;mechanism:string;categories?:PluginCategory[];descriptionSource:PluginDescriptionSource;categorySource?:PluginDescriptionSource|null};
 // Optional read-only projection on /campaigns and /campaigns/{id}; lifecycle state is unchanged.
 export type MetaStatus={sessionId:string;state:string;recoveryReason:string|null;recoveryRequested?:boolean;failure:{code:string;message:string;detectedAt?:string}|null;connectionTimedOut:boolean};
 

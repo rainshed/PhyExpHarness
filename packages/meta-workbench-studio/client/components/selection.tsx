@@ -53,11 +53,11 @@ function HistoricalDecision({row,...props}:any){
  return <details className="studio-history-decision" open={open} onToggle={e=>setOpen(e.currentTarget.open)}><summary>{date(row.createdAt)} · {row.summary||'当时的版本选择'}</summary>{open&&<Decision row={row} {...props}/>}</details>;
 }
 
-export function SelectionDecisions({decisions=[],tables,readEvidence,campaignId,onReport}:any){
+export function SelectionDecisions({decisions=[],tables,readEvidence,campaignId,onReport,title,emptyText}:any){
  const [count,setCount]=useState(10),ordered=[...decisions].sort((a,b)=>b.createdAt-a.createdAt);
- if(!ordered.length)return <p className="mh-muted">尚未记录版本选择；任务结果仍可查看。</p>;
+ if(!ordered.length)return <p className="mh-muted">{emptyText||'尚未记录版本选择；任务结果仍可查看。'}</p>;
  const props={tables,readEvidence,campaignId,onReport};
- return <section tabIndex={-1} data-reading-anchor="decision" className="studio-selection-reading" aria-label="版本选择与取舍"><div className="studio-section-title"><div><small className="studio-kicker">DECISION / 理由与取舍</small><h2>{campaignId?'为什么现在保留这一版？':'为什么当时保留这一版？'}</h2></div></div><Decision key={ordered[0].id} row={ordered[0]} {...props}/>
+ return <section tabIndex={-1} data-reading-anchor="decision" className="studio-selection-reading" aria-label="版本选择与取舍"><div className="studio-section-title"><div><small className="studio-kicker">DECISION / 理由与取舍</small><h2>{title||(campaignId?'为什么现在保留这一版？':'为什么当时保留这一版？')}</h2></div></div><Decision key={ordered[0].id} row={ordered[0]} {...props}/>
   {ordered.length>1&&<ReadingSection number="↳" title="此前的选择如何变化？" description="每次决定保留当时的理由、名称和事实。">{ordered.slice(1,count).map((d:any)=><HistoricalDecision key={d.id} row={d} {...props}/>)}{count<ordered.length&&<button onClick={()=>setCount(count+10)}>查看更多历史决定</button>}</ReadingSection>}
  </section>;
 }

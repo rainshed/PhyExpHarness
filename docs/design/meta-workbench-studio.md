@@ -269,8 +269,8 @@ Studio 注册 `phyexp-workbench-studio`，样式限定 `.studio-root`。活动�
 | 页面或组件 | 默认阅读内容与深入路径 | 修改位置 |
 |---|---|---|
 | 进化概览 | 研究问题、主要发现与关键局限、当前选择；接着显示版本任务表现、关键转折与下一步。运行控制、用量和异常仍可直接到达 | `features/overview.tsx` |
-| 插件与动机 | 先用途，再开发/采用理由、问题来源、预期与观察；按需进入报告、片段、配置和冻结源码。不同精确版本与不同采用场景可区分 | `features/lab.tsx`、`components/research.tsx`、`research-sources.tsx`、`tables.tsx` |
-| 版本对比 | 默认逐任务结果与进度，随后解释当前选择、主要备选、成本和历史决定 | `features/comparison.tsx`、`components/version-comparison.tsx`、`selection.tsx`、`readability.mjs` |
+| 插件与动机 | 分类筛选；先用途与机制，再开发/采用理由、问题来源、预期与观察和使用版本；按需进入报告、片段与冻结源码。不同准确内容版本可区分 | `features/lab.tsx`、`components/research.tsx`、`research-sources.tsx`、`tables.tsx` |
+| 版本对比 | 默认显示所选版本的插件组成及对应逐任务结果与进度，随后解释当前选择、主要备选、成本和历史决定；组成详情与改名留在本页 | `features/comparison.tsx`、`components/version-comparison.tsx`、`selection.tsx`、`readability.mjs` |
 | 实验明细 | 轮次、稳定实验编号、状态、耗时、简要结果/原因，提供状态筛选及对应报告/证据。最新状态与历史快照分别展示 | `features/experiments.tsx`、`components/trial-list.tsx`、`round-records.tsx`、`trial-status.*` |
 | 研究报告 | 简短结论、决定、任务表现和局限优先；过程、贡献、完整分析与技术附录按需展开，研究转折链接到具体修订 | `features/reports.tsx`、`components/reading.tsx` |
 | 上下文证据 | 先说明核对哪个判断、哪次实验、相关片段及支持范围，再读完整原文；保留关闭返回、焦点和快照上下文 | `components/evidence.tsx`、`dialogs.tsx`、`shell/use-workbench.tsx`、`index.tsx` |

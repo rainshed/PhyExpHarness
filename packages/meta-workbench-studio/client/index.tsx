@@ -16,7 +16,7 @@ import {campaignStatus} from './components/campaign-status.mjs';
 export const inject=['slots','layout'];
 const navigation=features.map(({id,title,icon})=>[id,title,icon]);
 
-export function Studio(){const w=useWorkbench();const [table,setTable]=useState('plugins');const [menu,setMenu]=useState(false);const [evidenceCampaign,setEvidenceCampaign]=useState<any>(null);const {c,view,creating,settingsOpen}=w;
+export function Studio(){const w=useWorkbench();const [menu,setMenu]=useState(false);const [evidenceCampaign,setEvidenceCampaign]=useState<any>(null);const {c,view,creating,settingsOpen}=w;
  const status=campaignStatus(c||{});
  const readEvidence=(id:string,context:any=c,offset=0)=>{setEvidenceCampaign(typeof context==='number'?c:context);return w.readEvidence(id,typeof context==='number'?context:offset)};
  const open=(id:string)=>{w.setCreating(false);setMenu(false);w.navigate(id)};
@@ -29,7 +29,7 @@ export function Studio(){const w=useWorkbench();const [table,setTable]=useState(
  <header className="studio-campaign" ref={w.heroRef} tabIndex={-1}><div><div className="mh-eyebrow">RESEARCH WORKSPACE</div><h2>{c.config.name||'进化活动'}</h2><div className="studio-model-line"><span className={'mh-badge'+(status.attention?' studio-status-attention':'')}>运行：{status.label}</span><span className="mh-badge">分析：{w.finalReport?.kind==='status_summary'?'未完成':w.finalReport?'已提交':'待提交'}</span><details className="studio-models"><summary>执行配置与版本</summary><span>Solver <b>{c.config.solver.model}</b> · {c.config.solver.reasoningEffort??'无需推理设置'}</span><span>Meta <b>{c.config.meta.model}</b> · {c.config.meta.reasoningEffort??'无需推理设置'}</span><p className="studio-version-line">当前保留：{c.tables.versions.find((v:any)=>v.id===c.retainedCandidateId)?.label||'尚未选择'} · 最新候选：{c.tables.versions.at(-1)?.label||'暂无'} · 最终冻结：{c.tables.versions.find((v:any)=>v.id===c.finalCandidateId)?.label||'尚未冻结'}</p></details></div></div><CampaignActions w={w}/></header>
  <CampaignNotices c={c} onDetails={()=>w.navigate('meta','meta-status')} onResume={()=>w.command('resume')} busy={w.busy} connected={w.connected}/>
  <section ref={w.contentRef} tabIndex={-1} className="studio-page" aria-label="活动内容区">
- <FeaturePage id={view} w={w} c={c} table={table} setTable={setTable} tablesProps={tablesProps} readEvidence={readEvidence} open={open}/>
+ <FeaturePage key={c.id+':'+view} id={view} w={w} c={c} tablesProps={tablesProps} readEvidence={readEvidence} open={open}/>
  </section></>}</div><footer className="studio-footer">PHYEXP / RESEARCH WORKBENCH <span>关闭页面或卸载 UI 不会停止后台</span></footer></div></div><WorkbenchDialogs w={w} evidenceIntro={c&&w.evidence?<EvidenceContext c={evidenceCampaign||c} evidence={w.evidence}/>:null} allowEvidenceDownload/></main>;
 }
 
