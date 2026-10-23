@@ -108,6 +108,9 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         'recipe':recipe, 'deadline':deadline, 'task':task_name, 'softTokenLimit':soft_token_limit,
         'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS,
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
+    if os.environ.get('PHYEXP_REFERENCE_SPEC'):
+        ref=json.loads(Path(os.environ['PHYEXP_REFERENCE_SPEC']).read_text())
+        provenance['reference']={k:ref.get(k) for k in ('mode','modelRef','harnessRef','runtime','modelBindingDigest','changedDimensions')}
     write_json(output / 'provenance.json', provenance)
     write_json(output / 'supervisor.json', {'pid':os.getpid(), 'startedAt':now(), 'deadline':deadline, 'state':'starting'})
     try:
@@ -116,14 +119,15 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
             raise TimeoutError('Insufficient time for startup and official verification')
         # No generated plugin is loaded during this host preflight.
         auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync(process.argv[2])),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
-        subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
-        image = subprocess.run(['docker', 'image', 'inspect', bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
+        if not os.environ.get('PHYEXP_REFERENCE_SPEC'):subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
+        image = subprocess.run(['docker', 'image', 'inspect', os.environ.get('PHYEXP_REFERENCE_IMAGE') or bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
         provenance['runnerImageId'] = image
         solver_deadline = min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
         provenance['solverDeadline']=solver_deadline
+        selected=(ref.get('native') or {}).get('call') or ref['fixedSolver'] if os.environ.get('PHYEXP_REFERENCE_SPEC') else recipe
         config = {'job_name':'harbor', 'jobs_dir':str(output), 'n_attempts':1, 'n_concurrent_trials':1,
             'retry':{'max_retries':0}, 'environment':{'type':'docker','delete':True,'force_build':False},
-            'agents':[{'import_path':bundle['agentEntry'], 'model_name':f'{recipe["provider"]}/{recipe["model"]}',
+            'agents':[{'import_path':bundle['agentEntry'], 'model_name':f'{selected["provider"]}/{selected["model"]}',
                 'override_timeout_sec':max(1,solver_deadline-time.time()),
                 'kwargs':{'bundle_root':str(bundle_root),'deadline':solver_deadline}}],
             'tasks':[{'path':str(task)}], 'verifier':{'disable':False}}
@@ -201,3 +205,7 @@ def main(bundle_root=None, argv=None):
     result = run(bundle_root,args.quantum_harbor,args.task,args.output,deadline,args.soft_token_limit,args.task_image_lock)
     print(json.dumps({k:result.get(k) for k in ['runId','status','officialReward','stopReason']},ensure_ascii=False))
     return 0 if result['status']=='completed' else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

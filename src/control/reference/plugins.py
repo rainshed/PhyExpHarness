@@ -62,6 +62,11 @@ def frozen_contracts(service, campaign):
     """Read the frozen contract blobs, so uninstall never rewrites old protocols."""
     ref = service.store.get('campaigns',campaign)['config'].get('metaComposition',{})
     bindings = ref.get('optionalToolContracts',{})
+    if bindings:
+        from ..meta_native_composition import digest
+        manifest=json.loads((service.data/'meta-compositions'/ref['id']/'manifest.json').read_text())
+        if digest({k:v for k,v in manifest.items() if k!='id'})!=ref['id'] or manifest.get('optionalToolContracts')!=bindings:
+            raise Refused('Frozen optional contract manifest mismatch')
     result = {}
     for plugin, binding in bindings.items():
         if plugin not in IDS.values() or not re.fullmatch(r'[0-9a-f]{64}',binding.get('sha256','')):

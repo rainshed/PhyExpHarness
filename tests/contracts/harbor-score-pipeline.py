@@ -34,12 +34,16 @@ def main():
     parser.add_argument('--task-image-lock', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--native-meta',action='store_true',help='Continue with native Meta investigation, plugin check/freeze and a second official Trial')
+    parser.add_argument('--reference',action='store_true',help='Run a joint native-model + full DeepSeek SDK reference instead of the primary fixture')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     requests = []
     provider_errors = []
     from meta_investigation_fixture import Investigation
     investigation=Investigation()
+    if args.reference and args.native_meta:
+        from meta_reference_fixture import ReferenceInvestigation
+        investigation=ReferenceInvestigation()
 
     class Provider(BaseHTTPRequestHandler):
         def log_message(self, *_): pass
@@ -55,10 +59,10 @@ def main():
                 messages = json.dumps(body['messages'])
                 if is_meta:name,arguments=investigation.reply(body)
                 elif step == 0:
-                    name, arguments = 'bash', {'command': ''}
+                    name, arguments = ('task_bash' if 'task_bash' in names else 'bash'), {'command': ''}
                 elif step == 1:
                     assert 'Only a nonempty command' in messages
-                    name, arguments = 'bash', {'command': "printf 'fixture bridge recovered\\n'"}
+                    name, arguments = ('task_bash' if 'task_bash' in names else 'bash'), {'command': "printf 'fixture bridge recovered\\n'"}
                 elif step == 2:
                     assert 'fixture bridge recovered' in messages
                     name = next(n for n in requests[-1]['tools'] if n.endswith('__list_devices'))
@@ -94,13 +98,23 @@ def main():
     service.store.model_config = {'schemaVersion':1,'providers':{'pipeline-fixture':route}}
     config = {'solver':{'provider':'pipeline-fixture','model':'fixture-model'},
               'meta':{'provider':'pipeline-fixture','model':'fixture-model'},'tasks':[TASK],
-              'maxRounds':3 if args.native_meta else 1,'maxTrials':3 if args.native_meta else 1,'concurrency':1,'wallTimeSeconds':1800,'trialTimeSeconds':900,
+              'maxRounds':5 if args.native_meta or args.reference else 1,'maxTrials':5 if args.native_meta or args.reference else 1,'concurrency':1,'wallTimeSeconds':1800,'trialTimeSeconds':900,
               'softTokenLimit':None,'reserveSeconds':0,'reserveTokens':0,
               'taskImagePolicy':POLICY,'taskImageLocks':{TASK:json.loads(args.task_image_lock.read_text())}}
     defaults=None
+    if args.reference:
+        from src.control.reference.policy import DEFAULT
+        native={'adapter':'pi-ai','pluginVersion':'0.2.1-rc.2','config':{'providers':{'reference-fixture':{'api':'openai-completions','baseURL':route['baseURL'],'apiKeyEnv':'FIXTURE_NATIVE_KEY','models':[{'id':'fixture-model','contextWindow':16000,'maxTokens':1024,'reasoningEfforts':False}]}}},'call':{'provider':'reference-fixture','model':'fixture-model','maxTokens':1024},'info':{},'credentialRef':'FIXTURE_NATIVE_KEY'}
+        service.references.catalog.sync({'version':'native-reference-catalog-v1','bindings':[{'id':'native-'+'a'*64,'provider':'reference-fixture','model':'fixture-model','label':'Native fixture','frozen':native,'credential':{'ref':'FIXTURE_NATIVE_KEY','value':'fixture-key'}}]})
+        model_ref=service.references.catalog.read()['models'][0]['id']
+        config['referencePolicy']={**DEFAULT,'modelEnabled':True,'harnessEnabled':True,'modelRefs':[model_ref],'harnessRefs':['dsh-standard'],'catalogRevision':service.references.catalog.read()['revision']}
+        from src.control.meta_composition import freeze as freeze_meta
+        defaults={**service.references.freeze(config),'metaComposition':freeze_meta(ROOT,service.data,config)}
+        images=json.loads((ROOT/'.runtime/reference-acceptance/images.json').read_text())
+        defaults['referenceBindings']['harnesses']['dsh-standard'].update(images['dsh-standard'])
     if args.native_meta:
         from src.control.meta_composition import freeze as freeze_meta
-        defaults={'stopPolicy':'stop-review-v1','metaComposition':freeze_meta(ROOT,service.data,config)}
+        defaults={**(defaults or {}),'stopPolicy':'stop-review-v1','metaComposition':freeze_meta(ROOT,service.data,config)}
     campaign = service.store.create(config,'pipeline-fixture',defaults=defaults)['id']
     service.workspace(campaign)
     recipe = json.loads((ROOT/'recipes/h0-sol.json').read_text())
@@ -114,6 +128,10 @@ def main():
     candidate = service.build_candidate(campaign,[],'Engineering baseline') if args.native_meta else service.store.candidate(campaign,bundle,'Engineering pipeline fixture',check={'status':'passed'})
     service.store.control(campaign,'start','start')
     service.store.submit(campaign,candidate['id'],[TASK],1,'one')
+    if args.reference:
+        baseline=service.store.list('trials',campaign)[0]
+        service.store.trial_update(baseline['id'],state='cancelled',stopReason='fixture_primary_not_run')
+        service.references.call(campaign,'reference_harness_submit',{'harnessRef':'dsh-standard','modelRef':model_ref,'tasks':[TASK],'repeats':1,'researchQuestion':'Exercise full reference pipeline','expectedPolicyRevision':1,'idempotencyKey':'joint'})
     server = uvicorn.Server(uvicorn.Config(make_app(service,supervise=False),log_level='error',lifespan='off'))
     api_thread = threading.Thread(target=server.run,kwargs={'sockets':[listener]},daemon=True);api_thread.start()
     trial = None
@@ -124,8 +142,8 @@ def main():
             time.sleep(.05)
         trial = service._launch(service.store.claim(campaign))
         while time.monotonic()-start < 600:
-            service._reconcile_trial(service.store.get('trials',trial['id']))
-            row = service.store.get('trials',trial['id'])
+            service._reconcile_trial(service.store.run(trial['id']))
+            row = service.store.run(trial['id'])
             if row['state'] not in ['launching','running']:break
             time.sleep(.5)
         else:raise TimeoutError('Pipeline did not finish')
@@ -147,8 +165,8 @@ def main():
                                      headers={'Authorization':'Bearer '+service.user_token})
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req) as response:
             shown = json.load(response)
-        assert shown['taskEvaluation']['total']['officialScored'] == 1
-        assert shown['trials'][0]['taskAssessment']['category'] == 'failed'
+        assert shown['taskEvaluation']['total']['officialScored'] == (0 if args.reference else 1)
+        assert (shown['references']['runs']['items'][0] if args.reference else shown['trials'][0])['taskAssessment']['category'] == 'failed'
         assert shown['usage']['confirmedTokens'] == 48, shown['usage']
         proof = {'status':'passed','campaignId':campaign,'trialId':row['id'],'officialReward':row['score'],
                  'taskOutcome':row['outcome'],'scriptedProviderRequests':len(requests),'realModelCalls':0,
@@ -169,8 +187,14 @@ def main():
             for child in service.meta_driver.children.values():child.wait(timeout=15)
             service.meta_driver.tick(campaign)
             trials=service.store.list('trials',campaign)
-            assert len(trials)==2 and all(t['score']==0 and t['scoringStatus']=='completed' for t in trials),trials
-            assert len(requests)==8,requests
+            assert len(trials)==2 and all(t['score']==0 and t['scoringStatus']=='completed' for t in trials if t['state']!='cancelled'),trials
+            assert len(requests)==(12 if args.reference else 8),requests
+            if args.reference:
+                refs=service.store.list('reference_runs',campaign)
+                assert {r['reference']['mode'] for r in refs}=={'model-reference','joint-reference'}
+                assert all(r['score']==0 and r['scoringStatus']=='completed' for r in refs)
+                proof['metaReferenceCalls']=investigation.reference_calls
+                proof['referenceRuns']=[r['id'] for r in refs]
             evidence=service.store.list('evidence',campaign)
             assert all(e['policy']=='public-development-full-v2' for e in evidence)
             analysis=service.data/'campaigns'/campaign/'meta-work/analysis/investigation.json'
@@ -182,10 +206,9 @@ def main():
         if service.meta_driver:
             for child in service.meta_driver.children.values():
                 if child.poll() is None:child.terminate();child.wait(timeout=15)
-        if trial:
-            child = service.children.get(trial['id'])
-            if child and child.poll() is None:
-                service.stop_trial(service.store.get('trials',trial['id']),'user_stop')
+        for trial_id,child in service.children.items():
+            if child.poll() is None:
+                service.stop_trial(service.store.run(trial_id),'user_stop')
                 child.wait(timeout=30)
         server.should_exit=True;api_thread.join(10)
         provider.shutdown();provider.server_close();service.pool.shutdown()

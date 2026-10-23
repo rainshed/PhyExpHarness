@@ -65,6 +65,8 @@ class ControlService:
         self.user_token=token_file.read_text().strip()
         from .provider_settings import ProviderSettings
         self.providers=ProviderSettings(self)
+        from .reference.service import References
+        self.references=References(self)
     def authenticate(self,token):
         if secrets.compare_digest(token,self.user_token):return {'role':'user'}
         digest=hashlib.sha256(token.encode()).hexdigest()
@@ -140,8 +142,9 @@ class ControlService:
                     knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2').snapshot(self.data/'knowledge-packs')
                 except (ValueError,OSError) as error:
                     raise Refused('开发资料包尚未准备好；请完成资料构建后重试。此次未创建活动。详情：'+str(error)) from error
+            reference_defaults=self.references.freeze(config) if not replay else {}
             composition=freeze_meta(self.source,self.data,config) if not replay else None
-            campaign=self.store.create(config,key,defaults={'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
+            campaign=self.store.create(config,key,defaults={**reference_defaults,'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **({'executionTimePolicy':planning.execution_time_policy()} if planning.enabled(config) else {}),
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
@@ -169,7 +172,11 @@ class ControlService:
                     self.store._event(db,campaign,'task_images_prepared',tasks=c['config']['tasks'],log=str(log))
             except Exception as error:
                 raise Refused('Task image preparation failed: '+str(error)+'; log: '+str(log)) from error
-        return self.build_candidate(campaign,[],'H0：固定执行基线')
+        candidate=self.build_candidate(campaign,[],'H0：固定执行基线')
+        if c['config'].get('referenceBindings'):
+            from .reference.runtime import prepare_images
+            prepare_images(self,campaign,verify(candidate['bundlePath']))
+        return candidate
     def _verify_task_images(self,config):
         if config.get('taskImagePolicy')==TASK_IMAGE_POLICY:
             try:verify_locks(self.quantum,config['tasks'],config.get('taskImageLocks',{}))
@@ -185,6 +192,7 @@ class ControlService:
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
             exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
             evidence=[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign)])
+        value['references']=self.references.status(campaign)
         value['metaStatus']=meta_status(value['metaSessions'])
         value['executionProtection']=self.execution_policy(campaign)
         value['comparisonIssues']=comparison_issues(value['trials'])
@@ -256,6 +264,9 @@ class ControlService:
         return row
     def control(self,campaign,action,key,expected_revision=None,changes=None):
         c=self.store.get('campaigns',campaign)
+        if action in ('start','resume') and c['config'].get('referenceBindings') and not self.launch_trial_override:
+            from .reference.runtime import preflight as reference_preflight
+            reference_preflight(self,campaign)
         if action=='start':
             candidates=self.store.list('candidates',campaign)
             h0=next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
@@ -280,14 +291,19 @@ class ControlService:
         # User stop ends experiments but leaves the remaining Meta budget available for reports.
         if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)
         if action=='stop':
-            for t in self.store.list('trials',campaign):
+            for t in self.store.runs(campaign):
                 if t['state'] in ['launching','running']:self.stop_trial(t,'user_stop')
         return result
     def _process_alive(self,pid,output):
         if not isinstance(pid,int):return False
         result=subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True)
         return result.returncode==0 and str(output) in result.stdout
+    def references_launch(self,trial):
+        from .reference.runtime import launch
+        return launch(self,trial)
     def _launch(self,trial):
+        if trial.get('reference') and not self.launch_trial_override:
+            return self.references_launch(trial)
         candidate=self.store.get('candidates',trial['candidateId']);bundle=Path(candidate['bundlePath']);manifest=verify(bundle)
         output=self.data/'trials'/trial['launchId']
         lease,token=self.lease(trial['campaignId'],'solver',trial['deadline'],trial['id'])
@@ -363,13 +379,13 @@ class ControlService:
         items=self.evidence.ingest(trial,summary)
         t=self.store.trial_update(trial['id'],**changes)
         c=self.store.get('campaigns',trial['campaignId'])
-        if c['config'].get('retentionRule')!=META_RETENTION_RULE and c['retainedCandidateId'] is None and t['score'] is not None:
+        if not trial.get('reference') and c['config'].get('retentionRule')!=META_RETENTION_RULE and c['retainedCandidateId'] is None and t['score'] is not None:
             self.store.retain(c['id'],t['candidateId'],'首个有官方结果的参考版本；不表示已验证泛化。',[items[0]['id']])
         return t
     def recollect(self,trial_id):
         # Serialize with scheduling/collection. This endpoint never runs Solver or verifier.
         with self.tick_lock:
-            trial=self.store.get('trials',trial_id);campaign=trial['campaignId']
+            trial=self.store.run(trial_id);campaign=trial['campaignId']
             if self.store.get('campaigns',campaign)['state'] not in ['paused','finished','failed']:
                 raise Refused('Pause the Campaign before recovering results')
             if trial['state'] not in ['finished','failed','unknown']:
@@ -389,10 +405,10 @@ class ControlService:
             if not path.exists():path.write_text(encoded(receipt));path.chmod(0o444)
             items=self.evidence.ingest(trial,summary)
             with self.store.connection(True) as db:
-                if self.store._get(db,'trials',trial_id)!=trial:raise Refused('Trial changed during result recovery')
+                if self.store._get(db,self.store.run_table(trial_id),trial_id)!=trial:raise Refused('Trial changed during result recovery')
                 current=self.store._get(db,'campaigns',campaign)
                 if current['state'] not in ['paused','finished','failed']:raise Refused('Campaign resumed during result recovery')
-                self.store._save(db,'trials',{**trial,**changes})
+                self.store._save_run(db,{**trial,**changes})
                 self.store._event(db,campaign,'trial_result_recollected',trialId=trial_id,
                     correction=summary['resultCollection'],previousScore=trial.get('score'),score=changes['score'],
                     receiptSha256=digest,evidenceRefs=[items[0]['id']])
@@ -436,8 +452,9 @@ class ControlService:
             for campaign in self.store.list('campaigns'):
                 id=campaign['id']
                 if campaign['state'] in ['draft','finished','failed']:continue
-                for trial in self.store.list('trials',id):
+                for trial in self.store.runs(id):
                     if trial['state'] in ['launching','running']:
+                        if trial.get('referenceStopPending'):self.stop_trial(trial,'reference_plugin_disabled')
                         try:self._reconcile_trial(trial)
                         except Exception as error:self.store.trial_update(trial['id'],lastCollectionError=str(error))
                 c=self.store.status(id);cfg=c['config'];now=time.time()
@@ -462,7 +479,7 @@ class ControlService:
                 if c['explorationClosed'] and c['counts']['activeTrials']==0 and c['counts']['reservedTrials']==0:
                     self.store.close_admission(id,c['stopReason'] or 'completed',False)
                 if now>=c['deadline']:
-                    for t in self.store.list('trials',id):
+                    for t in self.store.runs(id):
                         if t['state'] in ['launching','running'] and (cfg['stopMode']=='strict' or now>=t['deadline']):self.stop_trial(t,'campaign_deadline')
                     if self.meta_driver:self.meta_driver.interrupt(id,'campaign_deadline')
                 if self.meta_driver:self.meta_driver.tick(id)
@@ -532,7 +549,7 @@ class ControlService:
         if operation=='evidence_list':
             rows=self.store.list('evidence',campaign)
             if args.get('batchId'):
-                ids={t['id'] for t in self.store.list('trials',campaign) if t['batchId']==args['batchId']};rows=[e for e in rows if e['trialId'] in ids]
+                ids={t['id'] for t in self.store.runs(campaign) if t['batchId']==args['batchId']};rows=[e for e in rows if e['trialId'] in ids]
             return [{k:v for k,v in e.items() if k!='path'} for e in rows]
         if operation=='evidence_read':return self.evidence.read(campaign,**args)
         if operation=='report_save':

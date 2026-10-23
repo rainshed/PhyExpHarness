@@ -152,6 +152,14 @@ def render_reading(report):
                     p=next(p for p in tables['plugins'] if p['id']==m['pluginId'])
                     lines.append(f"- {p['displayName']} · {p['version']}：{p['mechanism']}；配置 {stable(m['config'])}。")
                 if not v['plugins']:lines.append('无额外执行插件。')
+    references=f.get('referenceExperiments',{}).get('runs',[])
+    if references:
+        lines+=['','## 独立参考实验','','参考成绩不参与主线候选成绩或稳定完成认证；同时改变模型与 Harness 无法归因于单一因素。','']
+        for mode,title in [('model-reference','参考模型 × 执行候选'),('harness-reference','固定 Solver × 参考 Harness'),('joint-reference','参考模型 × 参考 Harness')]:
+            rows=[r for r in references if r['reference']['mode']==mode]
+            if rows:
+                lines+=['### '+title,'']
+                for row in rows:lines.append('- '+row['task']+' · '+row['state']+' · 官方成绩 '+str(row.get('score') if row.get('score') is not None else '未评分')+' · '+row['reference']['researchQuestion'])
     lines+=['','## 证据与原记录','',f['generalization']]
     evidence={e['id']:e for e in f['evidence']}
     for i,ref in enumerate(a['evidenceRefs'],1):lines.append(f"- 证据 {i}：{evidence.get(ref,{}).get('kind','实验记录')}（工作台可直接打开；精确引用保存在 JSON 中）。")

@@ -12,7 +12,8 @@
     "build": "npm run build:knowledge && npm run build:workbench",
     "build:knowledge": "python3 scripts/build-knowledge.py knowledge/plugin-sdk/reference",
     "build:workbench": "node scripts/build-workbench.mjs",
-    "test:contracts": "node --test tests/contracts/*.test.mjs"
+    "test:contracts": "node --test tests/contracts/*.test.mjs",
+    "test:references": "python3 scripts/reference-images.py && node --test tests/unit/reference-*.test.mjs tests/contracts/reference-harnesses.test.mjs && python3 -m unittest tests.unit.reference_plugins_test tests.unit.reference_runtime_test"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

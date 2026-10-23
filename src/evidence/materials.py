@@ -167,12 +167,15 @@ class Materials:
                                 {'candidateId': c['id'], 'asset': relative}, lambda r=c, p=relative: self._plugin(r, p),
                                 candidateId=c['id'], version=c['bundleId'], sha256=digest)
         if include('experiment'):
+            for b in self.store.list('reference_batches',campaign):
+                yield self._record('experiment:'+b['id'],'experiment','参考实验 · '+b['reference']['mode'],'独立参考实验账本',
+                    lambda r=b: encoded({'batch':r,'runs':[t for t in self.store.list('reference_runs',campaign) if t['batchId']==r['id']]}),batchId=b['id'],candidateId=b['candidateId'],tasks=b['tasks'])
             for b in self.store.list('batches', campaign):
                 yield self._record('experiment:' + b['id'], 'experiment', '第 ' + str(b['round']) + ' 轮实验', '后台实验账本',
                     lambda r=b: self._experiment(campaign, r), batchId=b['id'], candidateId=b['candidateId'],
                     tasks=b['tasks'], version='live', createdAt=b.get('acceptedAt'))
         if include('evidence'):
-            trials = {t['id']: t for t in self.store.list('trials', campaign)}
+            trials = {t['id']: t for t in self.store.runs(campaign)}
             for e in self.store.list('evidence', campaign):
                 t = trials.get(e['trialId'], {})
                 yield self._record('evidence:' + e['id'], 'evidence', e['kind'],
@@ -199,7 +202,7 @@ class Materials:
             if value is not None and (not isinstance(value,str) or not value):raise Refused('Material filters require nonempty identifiers')
         if task is not None and task not in config['tasks']:
             raise Refused('Task outside Campaign')
-        for table, id in [('candidates', candidateId), ('batches', batchId)]:
+        for table, id in [('candidates', candidateId), ('reference_batches' if batchId and batchId.startswith('reference-batch-') else 'batches', batchId)]:
             if id is not None and self.store.get(table, id)['campaignId'] != campaign:
                 raise Refused('Material filter belongs to another Campaign')
         for row in self._records(campaign, kind):

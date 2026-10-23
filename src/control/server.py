@@ -53,6 +53,21 @@ def make_app(service,supervise=True):
     @app.get('/health')
     def health(request:Request):
         user(request);return {'schemaVersion':1,'status':'running','service':'independent-control','campaigns':len(service.store.list('campaigns'))}
+    @app.post('/reference-native-sync')
+    def reference_sync(request:Request,body:dict):
+        user(request);return service.references.catalog.sync(body)
+    @app.get('/references/catalog')
+    def reference_catalog(request:Request):
+        user(request);return service.references.catalog.public()
+    @app.get('/campaigns/{id}/references')
+    def reference_status(id:str,request:Request,offset:int=0,limit:int=50):
+        user(request);return service.references.status(id,{'offset':offset,'limit':limit})
+    @app.post('/campaigns/{id}/references')
+    def reference_policy(id:str,request:Request,body:dict):
+        user(request);return service.references.update(id,body['policy'],body['idempotencyKey'],body['expectedRevision'],body.get('stopRunning',False))
+    @app.post('/campaigns/{id}/references/cancel')
+    def reference_cancel(id:str,request:Request,body:dict):
+        user(request);return service.references.cancel(id,body)
     @app.get('/models')
     def models(request:Request):
         user(request);return service.providers.catalog()
@@ -117,9 +132,9 @@ def make_app(service,supervise=True):
         user(request);return service.store.update_plan(id,body['changes'],body['reason'],body['idempotencyKey'],body['expectedPlanRevision'],source='user')
     @app.post('/trials/{id}/stop')
     def stop_trial(id:str,request:Request):
-        user(request);trial=service.store.get('trials',id)
+        user(request);trial=service.store.run(id)
         if trial['state'] in ['launching','running']:service.stop_trial(trial,'user_stop')
-        return service.store.get('trials',id)
+        return service.store.run(id)
     @app.post('/trials/{id}/recollect')
     def recollect(id:str,request:Request):
         user(request);return service.recollect(id)

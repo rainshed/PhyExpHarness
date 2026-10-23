@@ -1,6 +1,6 @@
 export interface ModelSelection {provider:string;model:string;reasoningEffort?:string|null}
 export interface CampaignConfig {
- name:string;objective:string;solver:ModelSelection;meta:ModelSelection;tasks:string[];
+ referencePolicy?:ReferencePolicy;name:string;objective:string;solver:ModelSelection;meta:ModelSelection;tasks:string[];
  concurrency:number;wallTimeSeconds:number;maxRounds:number|null;maxTrials:number|null;
  trialTimeSeconds:number|null;softTokenLimit:number|null;reserveSeconds:number|null;reserveTokens:number|null;
  stopMode:'strict'|'drain';drainGraceSeconds:number;resourcePolicy?:string;retries:number;
@@ -19,3 +19,5 @@ export type EvidenceAnchor={evidenceId:string;sha256:string;start:number;end:num
 export type EvidenceExcerpt={anchor:EvidenceAnchor;availability:'available'|'unavailable'|'unauthorized'|'stale'|'unsupported'|'invalid_range';text?:string;contextBefore?:string;contextAfter?:string;reason?:string};
 export type ResearchSummary=ResearchRef&{summary:string;kind:string;state:string;author:string;recordedAt:number;factAt:number;limitations:string[];nextStep:string;candidateIds:string[];plugins:{candidateId:string;pluginKey:string}[];developmentRefs?:ResearchRef[]};
 export type EvolutionView={schemaVersion:'evolution-view-v1';revision:string;observedAt:number;availability:'available'|'not_recorded';total:number;offset:number;nextOffset:number|null;items:ResearchSummary[];relationCounts?:{plugin:number;unlinked:number};pluginContext?:{developmentRef:ResearchRef|null;latestObservation:ResearchSummary|null}};
+
+export interface ReferencePolicy {version:'meta-reference-v1';modelEnabled:boolean;harnessEnabled:boolean;modelRefs:string[];harnessRefs:string[];selectionMode:'meta-select'|'pinned-pairs';pairs:{modelRef:string;harnessRef:string}[];catalogRevision?:string;limits?:{model?:{maxTrials?:number|null;softTokenLimit?:number|null};harness?:{maxTrials?:number|null;softTokenLimit?:number|null}}}

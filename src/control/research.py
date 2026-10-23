@@ -24,13 +24,14 @@ class Research:
     def _links(self,db,campaign,record):
         for field,table in [('candidateIds','candidates'),('batchIds','batches'),('trialIds','trials'),('reportIds','reports'),('decisionIds','selection_decisions')]:
             allowed={r['id'] for r in self.store._list(db,table,campaign)}
+            if table in ('trials','batches'):allowed|={r['id'] for r in self.store._list(db,'reference_runs' if table=='trials' else 'reference_batches',campaign)}
             if set(record.get(field,[]))-allowed:raise Refused('Research link outside Campaign: '+field)
         self.resolve(db,campaign,record.get('relatedRecords',[]))
         for p in record.get('plugins',[])+[o['plugin'] for o in record.get('observations',[])]:
             candidate=self.store._get(db,'candidates',p['candidateId'])
             if candidate['campaignId']!=campaign or p['pluginKey'] not in {plugin_key(x) for x in candidate['plugins']}:raise Refused('Exact frozen plugin identity required')
         for o in record.get('observations',[]):
-            t=self.store._get(db,'trials',o['trialId'])
+            t=self.store._get(db,self.store.run_table(o['trialId']),o['trialId'])
             if t['campaignId']!=campaign or t['candidateId']!=o['plugin']['candidateId']:raise Refused('Observation must reference an actual use of this plugin')
         anchors=record.get('anchors',[])+[a for o in record.get('observations',[]) for a in o['anchors']]
         for anchor in anchors:

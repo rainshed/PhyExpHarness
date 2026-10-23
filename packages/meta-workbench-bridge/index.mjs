@@ -1,3 +1,4 @@
+import {captureNativeModels} from './reference-native.mjs';
 export const name='phyexp-meta-workbench-bridge';
 export const inject=['webServer','connection'];
 export function apply(ctx){
@@ -17,7 +18,12 @@ export function apply(ctx){
    if(req.method==='POST'&&!origin){res.writeHead(403).end('Origin required');return;}
    const parsed=new URL(req.url,'http://localhost');
    const route=parsed.pathname.slice('/phyexp/api'.length);
-   if(!/^\/(health|campaigns|candidates|batches|trials|evidence|reports|exports|models|providers|provider-tests|meta-questions)(\/[-a-zA-Z0-9_]+)*$/.test(route)){
+   if(req.method==='GET'&&route==='/references/catalog'){
+    const snapshot=await captureNativeModels(ctx);
+    const sync=await fetch(base+'/reference-native-sync',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(snapshot),signal:AbortSignal.timeout(20000)});
+    if(!sync.ok)throw new Error('Native model snapshot synchronization failed');
+   }
+   if(!/^\/(references|health|campaigns|candidates|batches|trials|evidence|reports|exports|models|providers|provider-tests|meta-questions)(\/[-a-zA-Z0-9_]+)*$/.test(route)){
     res.writeHead(400).end('Invalid route');return;
    }
    let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw new Error('Request too large');}

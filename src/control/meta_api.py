@@ -29,6 +29,13 @@ class MetaAPI:
         self.service=service;self.store=service.store;self.files=FileViews(service)
         self.contract=CONTRACTS['meta-tools-v2'];self.lock=threading.RLock();self.receipts=Receipts(self)
     def call(self,campaign,operation,args):
+        if operation.startswith('reference_'):
+            from .reference.plugins import frozen_contracts
+            spec=frozen_contracts(self.service,campaign).get(operation)
+            if not spec:raise Refused('Reference capability was not frozen for this activity')
+            validate(args,spec['input'])
+            from .meta_receipts import public
+            return public(self.service.references.call(campaign,operation,args))
         protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4')
         spec=CONTRACTS[protocol].get(operation)
         if not spec:raise Refused('Unknown Meta v2 operation')

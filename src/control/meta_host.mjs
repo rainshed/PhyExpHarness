@@ -14,6 +14,7 @@ export class MetaHost{
  runtime(action,input){return this.api('/meta-sessions/'+this.config.id+'/runtime',{action,input});}
  create(id,role,{outputSchema,reviewId,resume=false}={}){
   const {config}=this;
+  const composition={...this.frozen.composition,plugins:this.frozen.composition.plugins.filter(p=>!p.package||config.referencePolicy?.[p.id==='meta-model-reference'?'modelEnabled':'harnessEnabled']!==false)};
   const logs=role==='meta'?this.logs:path.join(this.logs,'review-sessions',id);fs.mkdirSync(logs,{recursive:true});
   const childRoot=path.join(path.dirname(config.workRoot),'meta-children',id);
   const work=role==='meta'?config.workRoot:path.join(childRoot,'work');
@@ -26,14 +27,14 @@ export class MetaHost{
    ...['evidence','materials','sdk','versions'].map(name=>`type=bind,source=${path.join(config.filesRoot,name)},target=/${name},readonly`),
    `type=bind,source=${outputRoot},target=/outputs,readonly`,
    ...(role==='meta'?[`type=bind,source=${config.pluginWorkspace},target=/work/plugins`]:[]),
-   ...this.frozen.composition.plugins.filter(p=>p.enabled&&p.package&&p.roles.includes(role)).map(p=>`type=bind,source=${path.join(this.root,'packages',p.package)},target=/opt/phyexp/optional-plugins/${p.package},readonly`)];
+   ...composition.plugins.filter(p=>p.enabled&&p.package&&p.roles.includes(role)).map(p=>`type=bind,source=${path.join(this.root,'packages',p.package)},target=/opt/phyexp/optional-plugins/${p.package},readonly`)];
   const session=this.sessionFactory({executionRoot:path.join(this.root,'src/execution'),logs,image:this.image,
    gateway:{stream:(request,signal)=>{
     if(!binding.agents.has(request.sessionId))throw new Error('Model channel identity mismatch');return this.gateway.stream(request,signal);
    },abort:()=>{for(const agentId of binding.agents.keys())this.gateway.channels.get(agentId)?.abort();}},
    // Native cold resume uses route defaults for per-activation output limits.
    // Advertise the frozen cap there as well as on the initial SDK handshake.
-   config:{nativeMeta:true,modelInfo:{...this.modelInfo,...(config.model.maxTokens!==undefined?{defaultMaxTokens:config.model.maxTokens}:{})},fixedModel:config.model,plugins:nativeEntries(this.frozen.composition,{role,systemPrompt:this.frozen.systemPrompt.text,reviewerPrompt:this.frozen.reviewerPrompt,compositionId:this.frozen.id,outputSchema})},mounts,
+   config:{nativeMeta:true,modelInfo:{...this.modelInfo,...(config.model.maxTokens!==undefined?{defaultMaxTokens:config.model.maxTokens}:{})},fixedModel:config.model,plugins:nativeEntries(composition,{role,systemPrompt:this.frozen.systemPrompt.text,reviewerPrompt:this.frozen.reviewerPrompt,compositionId:this.frozen.id,outputSchema})},mounts,
    handler:(op,payload,signal)=>this.handle(binding,op,payload,signal)});
   this.runners.set(id,{session,binding});return session;
  }

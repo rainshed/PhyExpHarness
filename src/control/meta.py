@@ -57,7 +57,9 @@ class MetaDriver:
             'providerConfig':route,
             'deadline':c['deadline'],'softTokenLimit':c['config']['softTokenLimit'],'cursor':cursor,
             'knowledgePackId':pack.manifest['id'],'systemPrompt':system,'prompt':json.dumps(prompt,ensure_ascii=False,separators=(',',':'))}
-        if frozen:config.update(metaCompositionRoot=str(frozen),metaCompositionId=composition['id'])
+        if frozen:
+            from .reference.policy import effective
+            config.update(metaCompositionRoot=str(frozen),metaCompositionId=composition['id'],referencePolicy=effective(c))
         if native:
             files=self.service.meta_api.files;files.refresh(campaign)
             prompt['runtimeCapabilities']=files.publish(campaign,'runtime:capabilities',json.dumps(composition['capabilities']),kind='activity',source='frozen-meta-capabilities',version=composition['id'])
@@ -101,7 +103,7 @@ class MetaDriver:
         row=self.store.get('meta_sessions',id);campaign=row['campaignId'];c=self.store.status(campaign)
         events=self.store.events(campaign,after);cursor=max([after,*[e['seq'] for e in events]])
         finished_batches={e.get('batchId') for e in events if e['type']=='batch_finished'}
-        selected=[e for e in events if e['type'] in ['batch_finished','operation_finished','closing','resume','resource_plan_updated','resource_plan_waiting','trial_conditions_required','admission_waiting','admission_denied','limits_changed','meta_question_answered'] or
+        selected=[e for e in events if e['type'] in ['reference_batch_finished','reference_run_finished','reference_policy_changed','batch_finished','operation_finished','closing','resume','resource_plan_updated','resource_plan_waiting','trial_conditions_required','admission_waiting','admission_denied','limits_changed','meta_question_answered'] or
                   (e['type']=='trial_finished' and e.get('batchId') not in finished_batches)]
         finish=self.closeout_ready(campaign)
         if native_config(c):
@@ -160,7 +162,7 @@ class MetaDriver:
                 if review['sessionId']==row['id'] and review['state']=='pending':
                     review.update(state='failed',failure='Owner session ended before review completion',finishedAt=time.time());self.store.put('stop_reviews',review)
             self.store.mark_unknown(row['leaseId'])
-            row.update(state='completed' if summary['status']=='completed' else 'interrupted' if row.get('stopReason')=='pause' else 'failed',
+            row.update(state='completed' if summary['status']=='completed' else 'interrupted' if row.get('stopReason') in ('pause','reference_policy_changed') else 'failed',
                 finishedAt=time.time(),summary=summary);self._save_session(row)
             if row['state']=='failed':
                 if native_config(c):

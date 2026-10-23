@@ -1,0 +1,94 @@
+import {DEFAULT_STREAM_POLICY} from '../host/stream_guard.mjs';
+// Protocol-preserving host gateway. No credentials or upstream addresses enter a Runner.
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+export function wireBinding(runtime,harness){
+ const profile=runtime.wireProfile,model=runtime.model;
+ const doc=JSON.parse(fs.readFileSync(runtime.credentials.credentialFile));
+ const deepseek=runtime.raw.adapter==='deepseek';
+ const protocol=deepseek?'anthropic':profile.api==='anthropic-messages'?'anthropic':profile.api==='openai-responses'?'responses':null;
+ if(protocol!==(harness==='codex'?'responses':'anthropic'))throw new Error('Reference protocol is incompatible');
+ const secret=doc.refs[profile.apiKeyEnv||runtime.raw.auth?.env];
+ if(!secret)throw new Error('Explicit API-key credential required for this reference adapter');
+ const baseURL=profile.baseURL||runtime.raw.baseURL||(deepseek?'https://api.deepseek.com/anthropic':null);
+ if(!baseURL)throw new Error('Explicit native provider URL required');
+ const url=new URL(baseURL);
+ if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('Invalid upstream URL');
+ return {model,protocol,deepseek,baseURL:baseURL.replace(/\/+$/,''),headers:{...(profile.headers||{}),...(protocol==='anthropic'?{'x-api-key':secret,'anthropic-version':'2023-06-01'}:{authorization:'Bearer '+secret})}};
+}
+export function fixedRequest(binding,payload){
+ if(payload.method!=='POST')throw new Error('Only model POST requests are permitted');
+ const route=payload.path.split('?')[0];
+ const allowed=binding.protocol==='responses'?['/responses','/responses/compact']:['/v1/messages','/v1/messages/count_tokens'];
+ if(!allowed.includes(route))throw new Error('Reference model endpoint not allowed');
+ const body=JSON.parse(payload.body);
+ if(body.model!==binding.model.model)throw new Error('Reference model mismatch; auxiliary/fallback models must use the same binding');
+ const cap=binding.model.maxTokens;
+ const effort=binding.model.reasoningEffort;
+ if(binding.protocol==='responses'){
+  if(!route.endsWith('/compact')){
+   if(cap!==undefined)body.max_output_tokens=cap;
+   if(effort!==undefined)body.reasoning={...body.reasoning,effort};
+  }
+ }else if(!route.endsWith('/count_tokens')){
+  if(cap!==undefined)body.max_tokens=cap;
+  if(binding.deepseek){
+   body.thinking={type:effort==='off'?'disabled':'enabled'};
+   if(effort==='off')delete body.output_config;else body.output_config={effort:effort||'high'};
+  }else{
+   if(effort===undefined||effort==='off'){body.thinking={type:'disabled'};delete body.output_config;}
+   else{body.thinking={type:'adaptive'};body.output_config={...body.output_config,effort};}
+  }
+ }
+ // Preserve the provider-native message/tool/reasoning history byte-for-byte as JSON values.
+ return {route,body};
+}
+export class WireGateway{
+ constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl});this.active=new Set();this.stopped=false;}
+ record(row){fs.appendFileSync(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
+ abort(){this.stopped=true;for(const ctl of this.active)ctl.abort();}
+ async *stream(payload,signal){
+  if(this.stopped||Date.now()>=this.deadline)throw new Error('Reference deadline reached');
+  const {route,body}=fixedRequest(this.binding,payload),id='reference-request-'+crypto.randomUUID();
+  const ctl=new AbortController();this.active.add(ctl);
+  const bound=AbortSignal.any([ctl.signal,signal||new AbortController().signal,AbortSignal.timeout(Math.max(1,Math.min(DEFAULT_STREAM_POLICY.requestTimeoutMs,this.deadline-Date.now())))]);
+  let idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
+  let reserved=false,usage={},finished=false,buffer='';
+  const observe=row=>{
+   const u=row.response?.usage||row.message?.usage||row.usage;
+   if(u)usage={...usage,...u};
+   if(row.type==='response.completed'||row.type==='message_stop')finished=true;
+   if(row.model&&row.model!==this.binding.model.model)this.record({type:'server_model_identity',id,requested:this.binding.model.model,actual:row.model});
+  };
+  try{
+   await this.budget.reserve(id,body,{signal:bound});reserved=true;
+   this.record({type:'admitted',id,model:this.binding.model,endpoint:route});
+   const root=this.binding.baseURL;
+   const url=root+(root.endsWith('/v1')&&route.startsWith('/v1/')?route.slice(3):route);
+   const response=await this.fetchImpl(url,{method:'POST',headers:{...this.binding.headers,'content-type':'application/json',...(payload.headers?.['anthropic-beta']?{'anthropic-beta':payload.headers['anthropic-beta']}:{})},body:JSON.stringify(body),signal:bound,redirect:'error'});
+   const type=response.headers.get('content-type')||'application/json';
+   yield {status:response.status,headers:{'content-type':type}};
+   const decoder=new TextDecoder();let size=0;
+   for await(const bytes of response.body){
+    clearTimeout(idle);idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
+    size+=bytes.length;if(size>32*1024*1024)throw new Error('Oversized reference response');
+    buffer+=decoder.decode(bytes,{stream:true});
+    if(type.includes('event-stream')){
+     let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(line.startsWith('data:')&&line.slice(5).trim()!=='[DONE]'){try{observe(JSON.parse(line.slice(5)));}catch{}}}
+    }
+    yield {bytes:Buffer.from(bytes).toString('base64')};
+   }
+   if(!type.includes('event-stream')){try{const data=JSON.parse(buffer);observe(data);finished=response.ok&&!data.error;}catch{}}
+   if(route.endsWith('/count_tokens')&&response.ok){usage={total_tokens:0};finished=true;}
+   if(!response.ok)finished=false;
+  }finally{
+   clearTimeout(idle);this.active.delete(ctl);
+   if(reserved){
+    const input=usage.input_tokens,output=usage.output_tokens;
+    const total=usage.total_tokens??(Number.isFinite(input)&&Number.isFinite(output)?input+output+(usage.cache_read_input_tokens||0)+(usage.cache_creation_input_tokens||0):null);
+    const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:input,outputTokens:output,cacheReadTokens:usage.cache_read_input_tokens||0,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
+    this.record({type:'settled',id,...result});await this.budget.settle(id,result);
+   }
+  }
+ }
+}

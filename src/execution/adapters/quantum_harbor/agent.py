@@ -33,7 +33,11 @@ class DeepSeekHarborAgent(BaseAgent):
         self.deadline = float(deadline)
         self.recipe_path = self.bundle_root / 'recipe.json'
         self.recipe = json.loads(self.recipe_path.read_text())
-        expected = f'{self.recipe["provider"]}/{self.recipe["model"]}'
+        selected=self.recipe
+        if os.environ.get('PHYEXP_REFERENCE_SPEC'):
+            ref=json.loads(Path(os.environ['PHYEXP_REFERENCE_SPEC']).read_text())
+            selected=(ref.get('native') or {}).get('call') or ref['fixedSolver']
+        expected = f'{selected["provider"]}/{selected["model"]}'
         if self.model_name != expected:
             raise ValueError(f'Model must match the frozen recipe: {expected}')
         # Sibling of agent/, outside the model-writable /logs/agent mount.
@@ -137,7 +141,7 @@ asyncio.run(main())
                 await self.connect_mcp(environment, endpoints, tunnels)
                 with (self.host_logs / 'worker.log').open('w') as log:
                     proc = await asyncio.create_subprocess_exec(
-                        'node', str(Path(__file__).with_name('worker.mjs')),
+                        'node', str(Path(__file__).parents[2]/'reference/dsh-worker.mjs' if os.environ.get('PHYEXP_REFERENCE_SPEC') else Path(__file__).with_name('worker.mjs')),
                         str(self.host_logs), str(self.bundle_root), socket_path, str(int(self.deadline * 1000)),
                         stdout=log, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
                     code = await proc.wait()

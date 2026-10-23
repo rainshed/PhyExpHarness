@@ -13,8 +13,8 @@ from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for, description_for
 from . import resource_planning as planning
 
-SCHEMA_VERSION = 4
-TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions')
+SCHEMA_VERSION = 5
+TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
 LEGACY_RETENTION_RULE = 'public-development-v1'
@@ -240,10 +240,20 @@ class Store:
             'inflightReservedTokens':sum(r['reservedTokens'] for r in rows if r['status']=='inflight'),
             'unknownReservedTokens':sum(r['reservedTokens'] for r in rows if r['status']=='unknown'),
             'unknownRequests':sum(r['status']=='unknown' for r in rows),'requests':len(rows),'limitKind':'soft'}
+    @staticmethod
+    def run_table(id):
+        return 'reference_runs' if id.startswith('reference-run-') else 'trials'
+    def _runs(self,db,campaign=None):
+        return self._list(db,'trials',campaign)+self._list(db,'reference_runs',campaign)
+    def runs(self,campaign=None):
+        with self.connection() as db:return self._runs(db,campaign)
+    def run(self,id):return self.get(self.run_table(id),id)
+    def _save_run(self,db,row):return self._save(db,self.run_table(row['id']),row)
     def _counts(self,db,campaign):
-        trials=self._list(db,'trials',campaign)
-        return {'rounds':len(self._list(db,'batches',campaign)),
-            'trials':sum(t['state']!='cancelled' for t in trials),
+        trials=self._runs(db,campaign)
+        return {'rounds':len(self._list(db,'batches',campaign))+len(self._list(db,'reference_batches',campaign)),
+            'referenceTrials':sum(t['id'].startswith('reference-run-') for t in trials),
+            'trials':sum(t['state']!='cancelled' or t.get('startedAt') is not None for t in trials),
             'startedTrials':sum(t.get('startedAt') is not None for t in trials),
             'activeTrials':sum(t['state'] in ['launching','running'] for t in trials),
             'reservedTrials':sum(t['state']=='reserved' for t in trials)}
@@ -252,7 +262,7 @@ class Store:
             c=self._get(db,'campaigns',id);c['counts']=self._counts(db,id);c['usage']=self.usage(id,db)
             c['elapsedSeconds']=max(0,(c.get('finishedAt') or self.clock())-c['startedAt']) if c['startedAt'] else 0
             c['remainingSeconds']=max(0,c['deadline']-self.clock()) if c['deadline'] else c['config']['wallTimeSeconds']
-            c['resourcePlanning']=planning.view(c,self._list(db,'trials',id))
+            c['resourcePlanning']=planning.view(c,self._runs(db,id))
             if c.get('selectionDecisionId'):
                 c['selectionDecision']=self._get(db,'selection_decisions',c['selectionDecisionId'])
             return c
@@ -296,8 +306,8 @@ class Store:
                 elif action=='finish' and changes and changes.get('reason'):
                     c['finishAssessment']={'source':'meta-analysis','reason':changes['reason'],'recordedAt':self.clock()}
                 c.update(state='closing',explorationClosed=True,stopReason='user_stop' if action=='stop' else (c['stopReason'] or 'meta_finished'))
-                for t in self._list(db,'trials',id):
-                    if t['state']=='reserved':t.update(state='cancelled',stopReason=c['stopReason']);self._save(db,'trials',t)
+                for t in self._runs(db,id):
+                    if t['state']=='reserved':t.update(state='cancelled',stopReason=c['stopReason']);self._save_run(db,t)
             elif action=='limits':
                 if c['state'] in ['finished','failed']:raise Refused('Finalized Campaign is immutable')
                 allowed={'maxRounds','maxTrials','concurrency','wallTimeSeconds','trialTimeSeconds','softTokenLimit','reserveSeconds','reserveTokens','stopMode','drainGraceSeconds'}
@@ -341,7 +351,7 @@ class Store:
             c=self._get(db,'campaigns',campaign)
             if not planning.enabled(c['config']):raise Refused('Legacy activity has no resource planning interface')
             if c['state'] not in ('draft','running','paused'):raise Refused('Resource planning closed')
-            if c['explorationClosed'] and not any(t['state'] in ('reserved','launching','running') for t in self._list(db,'trials',campaign)):
+            if c['explorationClosed'] and not any(t['state'] in ('reserved','launching','running') for t in self._runs(db,campaign)):
                 raise Refused('Resource planning closed')
             if type(expected_revision) is not int or expected_revision!=(c.get('resourcePlan') or {}).get('revision',0):raise Conflict('Resource plan revision changed')
             if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('Plan reason required')
@@ -350,13 +360,13 @@ class Store:
             c['resourcePlan']={**values,'revision':expected_revision+1,'source':source,'reason':reason,'updatedAt':self.clock()}
             c=self._save(db,'campaigns',c)
             self._event(db,campaign,'resource_plan_updated',plan=c['resourcePlan'])
-            return self._remember(db,campaign,'resource-plan',key,payload,planning.view(c,self._list(db,'trials',campaign)))
+            return self._remember(db,campaign,'resource-plan',key,payload,planning.view(c,self._runs(db,campaign)))
     def accept_trial_conditions(self,campaign,trial_id,seconds,key,reason):
         payload={'trialId':trial_id,'trialTimeSeconds':seconds,'reason':reason}
         with self.connection(True) as db:
             prior=self._idem(db,campaign,'trial-conditions',key,payload)
             if prior:return prior
-            c=self._get(db,'campaigns',campaign);t=self._get(db,'trials',trial_id)
+            c=self._get(db,'campaigns',campaign);t=self._get(db,self.run_table(trial_id),trial_id)
             if not planning.enabled(c['config']) or c['state']!='running' or t['campaignId']!=campaign or t['state']!='reserved':raise Refused('Only pending activity trials may change conditions')
             if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('Condition adjustment reason required')
             if type(seconds) is not int or not 0<seconds<=t['executionSettings']['trialTimeSeconds']:raise Refused('Only explicit shortening of pending conditions is supported')
@@ -365,20 +375,25 @@ class Store:
             previous=t['executionSettings']
             t['executionSettings']={**previous,'trialTimeSeconds':seconds,'allowShortened':True}
             t['conditionAdjustment']={'previous':previous,'reason':reason,'time':self.clock()}
-            t.pop('conditionsRequired',None);t=self._save(db,'trials',t)
+            t.pop('conditionsRequired',None);t=self._save_run(db,t)
             self._event(db,campaign,'trial_conditions_accepted',trialId=t['id'],**t['conditionAdjustment'])
             return self._remember(db,campaign,'trial-conditions',key,payload,t)
-    def submit(self,campaign,candidate,tasks,repeats,key,execution=None):
+    def submit(self,campaign,candidate,tasks,repeats,key,execution=None,*,reference=None):
         payload={'candidateId':candidate,'tasks':tasks,'repeats':repeats}
         if execution is not None:payload['execution']=execution
+        if reference is not None:payload['reference']=reference
+        kind='reference-batch' if reference is not None else 'batch'
         with self.connection(True) as db:
-            prior=self._idem(db,campaign,'batch',key,payload)
+            prior=self._idem(db,campaign,kind,key,payload)
             if prior:return prior
             c=self._get(db,'campaigns',campaign);cfg=c['config'];counts=self._counts(db,campaign)
             if c['state']!='running' or c['explorationClosed']:raise Refused('Exploration admission closed')
             if self.clock()>=c['deadline']-planning.reserves(c)[0]:raise Refused('Exploration time unavailable; inspect user deadline and adjustable plan reserve')
             selected=self._get(db,'candidates',candidate)
             if selected['campaignId']!=campaign or selected['check']['status']!='passed':raise Refused('Candidate is not checked for this Campaign')
+            if reference is not None:
+                from .reference.policy import admit_reference
+                admit_reference(self,db,c,reference,len(tasks)*repeats)
             settings=planning.trial_settings(c,selected,execution) if planning.enabled(cfg) else {k:cfg[k] for k in ['solver','trialTimeSeconds']}
             if not tasks or len(set(tasks))!=len(tasks) or any(t not in cfg['tasks'] for t in tasks) or type(repeats) is not int or repeats<1:
                 raise Refused('Invalid task/repeat plan')
@@ -388,20 +403,21 @@ class Store:
             u=self.usage(campaign,db)
             if cfg['softTokenLimit'] is not None and u['confirmedTokens']+u['inflightReservedTokens']+u['unknownReservedTokens']>=cfg['softTokenLimit']-planning.reserves(c)[1]:
                 raise Refused('Exploration token threshold reached')
-            batch=self._save(db,'batches',{'id':identity('batch'),'campaignId':campaign,'candidateId':candidate,'round':counts['rounds']+1,
-                'tasks':tasks,'repeats':repeats,'testSettings':settings,'plannedTrials':planned,'state':'accepted','acceptedAt':self.clock()})
+            extra={'reference':reference} if reference is not None else {}
+            batch=self._save(db,'reference_batches' if reference is not None else 'batches',{'id':identity('reference-batch' if reference is not None else 'batch'),'campaignId':campaign,'candidateId':candidate,'round':counts['rounds']+1,
+                'tasks':tasks,'repeats':repeats,'testSettings':settings,'plannedTrials':planned,'state':'accepted','acceptedAt':self.clock(),**extra})
             for task in tasks:
                 for repeat in range(repeats):
-                    self._save(db,'trials',{'id':identity('trial'),'campaignId':campaign,'batchId':batch['id'],'candidateId':candidate,
+                    self._save(db,'reference_runs' if reference is not None else 'trials',{'id':identity('reference-run' if reference is not None else 'trial'),'campaignId':campaign,'batchId':batch['id'],'candidateId':candidate,
                         'launchId':identity('launch'),'task':task,'repeat':repeat,'state':'reserved','startedAt':None,
-                        'score':None,'usage':{},'stopReason':None,**({'executionSettings':settings} if planning.enabled(cfg) else {})})
+                        'score':None,'usage':{},'stopReason':None,**extra,**({'executionSettings':settings} if planning.enabled(cfg) else {})})
             round_full=cfg['maxRounds'] is not None and counts['rounds']+1>=cfg['maxRounds']
             trial_full=cfg['maxTrials'] is not None and counts['trials']+planned>=cfg['maxTrials']
             if round_full or trial_full:
                 c.update(explorationClosed=True,stopReason='round_limit' if round_full else 'trial_limit')
                 self._save(db,'campaigns',c)
-            self._event(db,campaign,'batch_accepted',batchId=batch['id'],round=batch['round'],plannedTrials=planned)
-            return self._remember(db,campaign,'batch',key,payload,batch)
+            self._event(db,campaign,'reference_batch_accepted' if reference is not None else 'batch_accepted',batchId=batch['id'],round=batch['round'],plannedTrials=planned)
+            return self._remember(db,campaign,kind,key,payload,batch)
     def claim(self,campaign):
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign);counts=self._counts(db,campaign);now=self.clock()
@@ -409,7 +425,7 @@ class Store:
             parallelism=min(cfg['concurrency'],plan['parallelism']) if planning.enabled(cfg) and plan else cfg['concurrency']
             if planning.enabled(cfg) and not plan:return None
             if c['state']!='running' or counts['activeTrials']>=parallelism:return None
-            pending=[t for t in self._list(db,'trials',campaign) if t['state']=='reserved']
+            pending=[t for t in self._runs(db,campaign) if t['state']=='reserved']
             if not pending:return None
             u=self.usage(campaign,db)
             reason='closeout_time' if now>=c['deadline']-planning.reserves(c)[0] else None
@@ -433,7 +449,7 @@ class Store:
                     if available<=closeout or (available<seconds and not settings['allowShortened']):
                         if not item.get('conditionsRequired'):
                             item['conditionsRequired']={'requestedSeconds':seconds,'availableSeconds':available,'minimumTrialTimeSeconds':closeout+1}
-                            self._save(db,'trials',item);self._event(db,campaign,'trial_conditions_required',trialId=item['id'],**item['conditionsRequired'])
+                            self._save_run(db,item);self._event(db,campaign,'trial_conditions_required',trialId=item['id'],**item['conditionsRequired'])
                         continue
                 t=item;break
             if t is None:return None
@@ -450,21 +466,22 @@ class Store:
                 deadline=min(planning.end_time(c),now+seconds,c['deadline']-cfg['reserveSeconds'])
             t.update(state='launching',startedAt=now,deadline=deadline)
             t['taskTimeLimitSeconds']=seconds
-            t=self._save(db,'trials',t);self._event(db,campaign,'trial_claimed',trialId=t['id'],launchId=t['launchId']);return t
+            t=self._save_run(db,t);self._event(db,campaign,'trial_claimed',trialId=t['id'],launchId=t['launchId']);return t
     def trial_update(self,id,**changes):
         with self.connection(True) as db:
-            t=self._get(db,'trials',id);previous=t['state'];t.update(changes);t=self._save(db,'trials',t)
+            t=self._get(db,self.run_table(id),id);previous=t['state'];t.update(changes);t=self._save_run(db,t)
             if previous not in ['finished','failed','cancelled','unknown'] and t['state'] in ['finished','failed','cancelled','unknown']:
-                self._event(db,t['campaignId'],'trial_finished',trialId=id,batchId=t['batchId'],state=t['state'],failure=t.get('failure'))
+                self._event(db,t['campaignId'],'reference_run_finished' if t.get('reference') else 'trial_finished',trialId=id,batchId=t['batchId'],state=t['state'],failure=t.get('failure'))
             self._finish_batches(db,t['campaignId'])
             return t
     def _finish_batches(self,db,campaign):
-        trials=self._list(db,'trials',campaign)
-        for batch in self._list(db,'batches',campaign):
-            members=[t for t in trials if t['batchId']==batch['id']]
-            if batch['state']!='finished' and members and all(t['state'] in ['finished','failed','cancelled','unknown'] for t in members):
-                batch.update(state='finished',finishedAt=self.clock());self._save(db,'batches',batch)
-                self._event(db,campaign,'batch_finished',batchId=batch['id'])
+        for table,runs in [('batches','trials'),('reference_batches','reference_runs')]:
+            trials=self._list(db,runs,campaign)
+            for batch in self._list(db,table,campaign):
+                members=[t for t in trials if t['batchId']==batch['id']]
+                if batch['state']!='finished' and members and all(t['state'] in ['finished','failed','cancelled','unknown'] for t in members):
+                    batch.update(state='finished',finishedAt=self.clock());self._save(db,table,batch)
+                    self._event(db,campaign,'reference_batch_finished' if table=='reference_batches' else 'batch_finished',batchId=batch['id'])
     def reserve(self,campaign,lease,id,reserved_tokens,purpose):
         with self.connection(True) as db:
             try:
@@ -484,6 +501,9 @@ class Store:
             ceiling=cfg['softTokenLimit']-(0 if closing else cfg['reserveTokens']) if cfg['softTokenLimit'] is not None else None
             if ceiling is not None and sum(u[k] for k in ['confirmedTokens','unknownReservedTokens','inflightReservedTokens'])+reserved_tokens>ceiling:
                 raise Refused('Soft token threshold reached')
+            from .reference.policy import token_admission
+            decision=token_admission(self,db,c,next((l for l in self._list(db,'leases',campaign) if l['id']==lease),{}),reserved_tokens)
+            if decision.get('status') in ('waiting','denied'):raise Refused('Reference token threshold reached')
             row=self._save(db,'usage',{'id':id,'campaignId':campaign,'leaseId':lease,'purpose':'report' if closing else purpose,
                 'status':'inflight','reservedTokens':reserved_tokens,'confirmedTokens':None,'startedAt':self.clock()})
             self._event(db,campaign,'request_reserved',requestId=id,purpose=row['purpose']);return row
@@ -522,6 +542,9 @@ class Store:
                     decision.update(status='waiting',code='budget_inflight_wait',boundary='inflight',retryAfterMs=500)
                 elif cap is not None and purpose=='solver' and planning.enabled(cfg) and committed+usage['inflightReservedTokens']+reserved_tokens>cap-planning.reserves(c)[1]:
                     decision.update(status='waiting',code='budget_plan_wait',boundary='meta_plan',retryAfterMs=500)
+            from .reference.policy import token_admission
+            if decision['status']=='granted':
+                decision.update(token_admission(self,db,c,owner,reserved_tokens))
             if decision['status']=='granted':
                 row=self._save(db,'usage',{'id':id,'campaignId':campaign,'leaseId':lease,'purpose':purpose,
                     'status':'inflight','reservedTokens':reserved_tokens,'confirmedTokens':None,'startedAt':now})
@@ -564,8 +587,8 @@ class Store:
                 c.update(state='paused' if c['state']=='paused' else 'closing',explorationClosed=True,stopReason=c.get('stopReason') or reason);c=self._save(db,'campaigns',c)
                 self._event(db,campaign,'closing',reason=reason)
             if cancel_reserved:
-                for t in self._list(db,'trials',campaign):
-                    if t['state']=='reserved':t.update(state='cancelled',stopReason=reason);self._save(db,'trials',t)
+                for t in self._runs(db,campaign):
+                    if t['state']=='reserved':t.update(state='cancelled',stopReason=reason);self._save_run(db,t)
             self._finish_batches(db,campaign)
             return c
     def finalize(self,campaign,reason=None):

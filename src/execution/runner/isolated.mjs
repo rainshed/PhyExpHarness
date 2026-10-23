@@ -31,7 +31,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 fs.mkdirSync('/tmp/home', { recursive: true });
 fs.mkdirSync('/tmp/work', { recursive: true });
 const plugin = '/opt/phyexp/src/execution/runner/gateway_plugin.mjs';
-const patch = [ { id: 'llm-deepseek', disabled: true }, { insert: [{ id: 'fixed-gateway', name: plugin }] },
+const patch = [ ...(config.standardReference?['llm-pi-ai','llm-deepseek-account'].map(id=>({id,disabled:true})):[]), { id: 'llm-deepseek', disabled: true }, { insert: [{ id: 'fixed-gateway', name: plugin }] },
   // The native compactor defaults to 65536 output tokens independently of the
   // session. Its summaries must obey the same frozen model cap as ordinary calls.
   ...(config.fixedModel?.maxTokens !== undefined ? [{ id:'compaction-basic', config:{maxTokens:config.fixedModel.maxTokens} }] : []),
@@ -47,7 +47,7 @@ const child = spawn(process.execPath, ['/opt/phyexp/src/execution/runner/boot.mj
   cwd: config.nativeMeta?'/work':'/tmp/work', env: { PATH: process.env.PATH, HOME: '/tmp/home', DSH_HOME: config.nativeMeta?'/session':'/tmp/home/dsh', NO_COLOR:'1',
     PHYEXP_MODEL_INFO: JSON.stringify(config.modelInfo), PHYEXP_FIXED_MODEL: JSON.stringify(config.fixedModel), PHYEXP_GATEWAY_URL: `http://127.0.0.1:${server.address().port}`,
     PHYEXP_MCP_CONNECTIONS:'/tmp/mcp-connections.json',PHYEXP_TOOL_RECEIPT:'/tmp/tool-ready.json',...config.environment,
-    PHYEXP_REQUEST_RECOVERY:JSON.stringify(config.requestRecovery??null),PHYEXP_RECOVERY_DEADLINE:String(config.recoveryDeadline??'') }, stdio: ['pipe','pipe','inherit'] });
+    PHYEXP_STANDARD_REFERENCE:config.standardReference?'1':'',PHYEXP_REQUEST_RECOVERY:JSON.stringify(config.requestRecovery??null),PHYEXP_RECOVERY_DEADLINE:String(config.recoveryDeadline??'') }, stdio: ['pipe','pipe','inherit'] });
 const output = readline.createInterface({ input: child.stdout });
 output.on('line', line => { if (Buffer.byteLength(line) < 32*1024*1024) process.stdout.write(line+'\n'); else child.kill('SIGKILL'); });
 const input = readline.createInterface({ input: process.stdin });

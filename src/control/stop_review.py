@@ -49,7 +49,7 @@ def ready(store,db,c):
     usage=store.usage(c['id'],db);cap=c['config']['softTokenLimit']
     if cap is not None and usage['confirmedTokens']+usage['inflightReservedTokens']+usage['unknownReservedTokens']>=cap-c['config']['reserveTokens']:raise Refused('Exploration token threshold reached')
 def no_pending(store,db,c):
-    if any(t['state'] not in TERMINAL for t in store._list(db,'trials',c['id'])) or any(o['state']=='running' for o in store._list(db,'operations',c['id'])):raise Refused('Pending experiments or builds must settle before voluntary stop')
+    if any(t['state'] not in TERMINAL for t in store._runs(db,c['id'])) or any(o['state']=='running' for o in store._list(db,'operations',c['id'])):raise Refused('Pending experiments or builds must settle before voluntary stop')
 
 def owns_review(store,db,session,review):
     """A recovered host can read/use its existing judgment, never obtain a new vote."""
@@ -111,7 +111,8 @@ class StopRuntime:
                     data={**data,'reviewId':pending[0]['id']}
                     if not native and any(t not in READ_OPERATIONS|{'cordis_inspect_list','cordis_inspect_query','structured_output'} for t in data.get('tools',[])):raise Refused('Reviewer acquired unexpected capability')
                 if native and preset!='phyexp-meta':
-                    operations=self.service.meta_api.contract
+                    from .reference.plugins import frozen_contracts
+                    operations={**self.service.meta_api.contract,**frozen_contracts(self.service,campaign)}
                     if any(t in operations and operations[t]['write'] for t in data.get('tools',[])):raise Refused('Child acquired business writes')
                 agents[agent]={**data,'registeredAt':store.clock()};session['agents']=agents;store._save(db,'meta_sessions',session)
                 return {'ok':True}

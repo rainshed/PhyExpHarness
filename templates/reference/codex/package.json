@@ -1,0 +1,8 @@
+{
+  "name": "phyexp-reference-codex",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@openai/codex": "0.155.0"
+  }
+}

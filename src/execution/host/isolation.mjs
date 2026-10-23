@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { DshSession } from '../runner/dsh_session.mjs';
-export function isolatedSession({ executionRoot, logs, config, gateway, handler, mounts = [], image = 'phyexp-runner:0.2.1-rc.2' }) {
+export function isolatedSession({ executionRoot, logs, config, gateway, handler, mounts = [], entry = '/opt/phyexp/src/execution/runner/isolated.mjs', image = 'phyexp-runner:0.2.1-rc.2' }) {
   const id = 'phyexp-runner-' + crypto.randomUUID();
   fs.mkdirSync(logs, { recursive: true });
   const configDir = path.join(logs,'runner-config'); fs.mkdirSync(configDir,{recursive:true});
@@ -16,7 +16,7 @@ export function isolatedSession({ executionRoot, logs, config, gateway, handler,
   for (const key of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy']) args.push('--env',key+'=');
   for (const mount of mounts) args.push('--mount',mount);
   fs.writeFileSync(path.join(logs,'runner-identity.json'),JSON.stringify({container:id,image}));
-  args.push(image,'/opt/phyexp/src/execution/runner/isolated.mjs');
+  args.push(image,entry);
   const session = new DshSession({executable:'docker',args,workspace:logs,home:logs,
     rpcLog:path.join(logs,'rpc.jsonl'),stderrLog:path.join(logs,'stderr.log'),
     async *handleRequest(operation,payload,signal) {

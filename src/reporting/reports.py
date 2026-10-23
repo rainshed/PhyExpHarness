@@ -82,12 +82,14 @@ class Reports:
         by_role={role:{'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in usage if roles.get(r['leaseId'])==role),
             'unknownReservedTokens':sum(r['reservedTokens'] for r in usage if roles.get(r['leaseId'])==role and r['status']=='unknown')}
             for role in ['solver','meta']}
-        return {'stopReviews':self.store.list('stop_reviews',campaign),'metaObservations':self.store.list('meta_observations',campaign),
+        references=trial_diagnostics(self.store.list('reference_runs',campaign),self.root.parent,c['config'])
+        for row in references:row.pop('summary',None)
+        return {'referenceExperiments':{'batches':self.store.list('reference_batches',campaign),'runs':references,'scoreScope':'separate; excluded from primary results','attribution':'joint-reference does not isolate model or harness causality'},'stopReviews':self.store.list('stop_reviews',campaign),'metaObservations':self.store.list('meta_observations',campaign),
             'metaSessions':self.store.list('meta_sessions',campaign),'metaComposition':c['config'].get('metaComposition'),
             'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
             'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
             'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
-            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials)],
+            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials+references)],
             'selectionDecisions':decisions,'researchRecords':research,'researchLinks':self.store.list('research_links',campaign),
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
             'comparisonRule':retention_rule_description(c['config'])}

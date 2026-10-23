@@ -1,7 +1,7 @@
 // Headless deployment of the upstream sdk-minimal entry tree. No CLI/UI profile installation.
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {boot, installFailLoud} from '@deepseek-ai/dsh-app-boot';
+import {boot, installFailLoud, loadOverlayPatches} from '@deepseek-ai/dsh-app-boot';
 import {requestHost} from './gateway_plugin.mjs';
 import {provideCmdline} from '@deepseek-ai/dsh-cmdline';
 let ctx; let closing = false; let ready = false; const listeners=new Set();
@@ -11,8 +11,10 @@ const exit = async code => {
 };
 installFailLoud('phyexp-sdk',process,()=>ctx?.fiber.dispose());
 process.once('SIGTERM',()=>exit(143));process.once('SIGINT',()=>exit(130));
-ctx=await boot('phyexp-sdk',fileURLToPath(new URL('./assets/sdk-minimal.yml',import.meta.url)),
- JSON.parse(fs.readFileSync(process.argv[2])),host=>{
+const standard=process.env.PHYEXP_STANDARD_REFERENCE==='1';
+const layers=standard?['@deepseek-ai/dsh-base/cordis.patch.yml','@deepseek-ai/dsh-sdk-app/cordis.patch.yml'].flatMap(name=>loadOverlayPatches('phyexp-reference',fileURLToPath(import.meta.resolve(name)))):[];
+ctx=await boot('phyexp-sdk',fileURLToPath(new URL(standard?'./assets/empty.yml':'./assets/sdk-minimal.yml',import.meta.url)),
+ [...layers,...JSON.parse(fs.readFileSync(process.argv[2]))],host=>{
   ctx=host;provideCmdline(host,{args:[],exit,ready:{onReady(fn){if(ready)fn();else listeners.add(fn);return()=>listeners.delete(fn);}}});
  },import.meta.url);
 const entries=[...ctx.loader.entries()].map(e=>({id:e.options.id,name:e.options.name,state:e.fiber?.state,disabled:e.options.disabled===true}));

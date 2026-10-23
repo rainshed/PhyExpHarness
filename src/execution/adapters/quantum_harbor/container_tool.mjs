@@ -12,7 +12,7 @@ export async function apply(ctx, _config, transport) {
 
   const limit = Number(process.env.PHYEXP_MAX_OUTPUT_CHARS || 16000);
   ctx.tools.register(defineTool({
-    name: 'bash',
+    name: process.env.PHYEXP_TASK_TOOL_NAME || 'bash',
     description: 'Run a command in the Quantum-Harbor main task container. Each call starts a fresh bash shell in /app: files persist, but cd, variables and functions do not persist between calls. Commands have a 300-second limit. Use scripts to process large data and avoid printing large outputs. The host filesystem and Docker control socket are not available.',
     parameters: { command: { type: 'string', required: true, description: 'Bash command to execute inside the task container.' } },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
