@@ -317,6 +317,15 @@ class ControlService:
     def control(self,campaign,action,key,expected_revision=None,changes=None):
         self.store.writable(campaign)
         c=self.store.get('campaigns',campaign)
+        if action=='start' and c['state']=='draft':
+            # H0 is saved before reference images are built. Do not admit work
+            # (or probe model endpoints) until the whole preparation has ended.
+            preparation=max((o for o in self.store.list('operations',campaign) if o['kind']=='prepare_h0'),
+                            key=lambda o:o.get('startedAt',0),default={})
+            if preparation.get('state')=='running':
+                raise Refused('运行环境仍在准备中，请等待任务环境、H0 基线及参考 Harness 准备完成后再启动。')
+            if preparation.get('state')=='failed':
+                raise Refused('环境准备或 H0 基线检查失败，请查看后台动态中的准备记录。')
         if action in ('start','resume') and c['config'].get('referenceBindings') and not self.launch_trial_override:
             from .reference.runtime import preflight as reference_preflight
             reference_preflight(self,campaign)

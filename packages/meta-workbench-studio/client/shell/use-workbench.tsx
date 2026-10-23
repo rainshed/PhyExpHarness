@@ -113,5 +113,5 @@ export function useWorkbench(){
   limits,setLimits,notice,setNotice,models:data.models,modelCatalogNote:data.note,settingsOpen,setSettingsOpen,refreshModels:data.refreshModels,renaming,setRenaming,
   formError,setFormError,limitsError,setLimitsError,setNavigation,contentRef,formRef,formErrorRef,heroRef,detailTrigger,focus,navigate,refresh:data.refresh,
   deleteOpen,setDeleteOpen,deletion,openDeletion,deleteCampaign,
-  readingTarget,readingPages:readingPages[selected]||{},saveReadingPage,openPlugin,backToComparison,compareVersions,pluginReturn,act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport,h0Ready:c?.candidates.some((x:any)=>!x.plugins.length&&x.check.status==='passed')};
+  readingTarget,readingPages:readingPages[selected]||{},saveReadingPage,openPlugin,backToComparison,compareVersions,pluginReturn,act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport};
 }

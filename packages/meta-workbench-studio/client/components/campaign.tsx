@@ -2,9 +2,11 @@ import React from 'react';
 import {StorageNotice} from './storage';
 import {number,duration,date,reasons,tasks} from './common';
 import {campaignStatus} from './campaign-status.mjs';
-export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command,setLimits,setLimitsError,finalReport,readReport}=w;
+import {campaignPreparation} from './campaign-preparation.mjs';
+export function CampaignActions({w}:any){const {c,busy,connected,command,setLimits,setLimitsError,finalReport,readReport}=w;
+ const preparation=campaignPreparation(c);
  return <div className="mh-actions studio-actions">
-  {c.state==='draft'&&<button className="primary" disabled={!!busy||!connected||!h0Ready} onClick={()=>command('start')}>{h0Ready?'启动进化':c.operations.some((o:any)=>o.kind==='prepare_h0'&&o.state==='failed')?'环境准备或基线检查失败，请查看后台动态':'正在准备环境与基线…'}</button>}
+  {c.state==='draft'&&<button className="primary" disabled={!!busy||!connected||!preparation.ready} onClick={()=>command('start')}>{preparation.label}</button>}
   {['running','closing'].includes(c.state)&&<button disabled={!!busy||!connected} onClick={()=>command('pause')}>{c.state==='closing'?'Ⅱ 暂停收尾':'Ⅱ 暂停新工作'}</button>}
   {c.state==='paused'&&<button className="primary" disabled={!!busy||!connected} onClick={()=>command('resume')}>恢复活动</button>}
   {!['finished','failed'].includes(c.state)&&<button disabled={!!busy||!connected} onClick={()=>{setLimits({...c.config});setLimitsError('')}}>调整上限</button>}

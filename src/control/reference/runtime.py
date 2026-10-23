@@ -127,6 +127,6 @@ def preflight(service,campaign):
     if policy['harnessEnabled']:
         for id in policy['harnessRefs']:
             image=binding['harnesses'][id].get('image')
-            if not image:raise Refused('Reference Harness image preparation incomplete: '+id)
+            if not image:raise Refused('参考 Harness 运行环境尚未准备完成：'+binding['harnesses'][id].get('name',id)+'。请查看后台动态中的准备状态。')
             actual=subprocess.check_output(['docker','image','inspect',image,'--format','{{.Id}}'],text=True).strip()
             if actual!=image:raise Refused('Reference Harness image identity mismatch')

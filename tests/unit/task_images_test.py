@@ -18,6 +18,7 @@ class TaskImageLockTests(unittest.TestCase):
 
 # No daemon or models: emulate Docker identities while exercising real cache/files.
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import patch
 from src.control.task_images import POLICY, prepare_task_images, verify_locks, sources_digest, image_id
@@ -216,6 +217,42 @@ class CampaignPreparationTests(unittest.TestCase):
             network.assert_not_called()
         self.assertEqual(self.service.store.get('campaigns',c)['state'],'draft')
         self.assertEqual(self.service.store.list('trials',c), [])
+
+    def test_start_waits_for_reference_preparation_even_after_h0_is_saved(self):
+        for fail in [False,True]:
+            with self.subTest(fail=fail):
+                c=self.service.store.create(self.config,'reference-'+str(fail),defaults={
+                    'referenceBindings':{'harnesses':{'codex':{'name':'Codex'}}}})['id']
+                prepared=threading.Event();release=threading.Event()
+                def build(campaign,*args):
+                    return self.service.store.candidate(campaign,{'id':'fixture','path':'/fixture','plugins':[]},'H0',check={'status':'passed'})
+                def references(service,campaign,bundle):
+                    prepared.set()
+                    if not release.wait(5):raise TimeoutError('Test did not release preparation')
+                    if fail:raise ValueError('Reference image build failed')
+                with patch.object(self.service,'build_candidate',side_effect=build), patch('src.control.service.verify',return_value={}), \
+                     patch('src.control.reference.runtime.prepare_images',side_effect=references), \
+                     patch('src.control.reference.runtime.preflight') as reference_check, patch('src.control.service.network_preflight') as network:
+                    self.service._operation(c,'prepare_h0',{},lambda:self.service._prepare_h0(c))
+                    try:
+                        self.assertTrue(prepared.wait(5))
+                        self.assertEqual(self.service.store.list('candidates',c)[0]['check']['status'],'passed')
+                        before=self.service.store.status(c)
+                        self.assertRaisesRegex(Refused,'仍在准备中',self.service.control,c,'start','start')
+                        self.assertEqual(self.service.store.status(c),before)
+                        self.assertEqual(self.service.store.list('trials',c),[])
+                        reference_check.assert_not_called();network.assert_not_called()
+                    finally:
+                        release.set();self.finish_operations()
+                    if fail:
+                        self.assertRaisesRegex(Refused,'准备.*失败',self.service.control,c,'start','start')
+                        self.assertEqual(self.service.store.list('trials',c),[])
+                        reference_check.assert_not_called();network.assert_not_called()
+                    else:
+                        # Exercise admission only; no subprocess, network or model runs.
+                        with patch.object(self.service,'launch_trial_override',lambda trial:None):
+                            self.assertEqual(self.service.control(c,'start','start')['state'],'running')
+                        self.assertEqual(len(self.service.store.list('trials',c)),len(self.config['tasks']))
 
     def test_legacy_campaign_is_not_migrated_by_preflight(self):
         c = self.service.store.create(self.config,'legacy')
