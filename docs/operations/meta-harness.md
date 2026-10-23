@@ -659,4 +659,26 @@ python3 tests/contracts/harbor-score-pipeline.py \
   --reference --native-meta
 ```
 
-该夹具在新数据目录内运行联合参考、由真实原生 Meta 的脚本策略选择模型参考、读取完整证据、开发/检查/冻结插件并提交后续主线验证。科学产物故意不提交，官方零分用于验证归档、计分隔离及用量；不能据此宣布模型或插件有效。Codex、Claude Code 的真实 CLI/MCP 工具回环分别由专项容器契约覆盖。付费真实 provider、长期研究质量和跨任务统计收益不属于已通过的工程证据。
+该夹具在新数据目录内运行联合参考、由真实原生 Meta 的脚本策略选择模型参考、读取完整证据、开发/检查/冻结插件并提交后续主线验证。科学产物故意不提交，官方零分用于验证归档、计分隔离及用量；不能据此宣布模型或插件有效。Codex、Claude Code 的真实 CLI/MCP 工具回环分别由专项容器契约覆盖。这个夹具本身不产生真实模型调用。
+
+### 受控真实模型验收
+
+`tests/smoke/references/run.py` 是另一个显式付费入口，不包含在 `npm test` 中。每次运行创建新数据目录，复制宿主供应商设置，使用已有 DeepSeek 凭据建立独立的原生 SDK 测试 profile；模型 ID 和有效调用设置由原生 SDK 解析，不修改日常 Models 配置。Codex 使用现有宿主订阅登录，固定 SSE 传输。所有凭据留在权限受限的宿主目录。
+
+```sh
+python3 tests/smoke/references/run.py --execute-real-models \
+  --scenario joint \
+  --provider-data /absolute/host-data \
+  --quantum-harbor ../Quantum-Harbor \
+  --task-image-lock /absolute/hamlearn-image-lock.json \
+  --reference-images /absolute/reference-images.json \
+  --output /absolute/new-real-acceptance
+```
+
+`--scenario model` 只启用模型插件，固定 Flash 基线与原生目录中的 V4 Pro 参考；`harness` 只启用 Harness 插件，用固定 `gpt-6-luna` 运行 Codex；`joint` 启用两者，让真实 Meta 从原生参考模型与 Claude Code／DeepSeek 标准模式中选择并提交两项组合。选择回合结束后通过有记录的暂停/恢复停止额外 Meta 分析，已选参考继续执行；验收脚本核对冻结的可选包、工具调用、官方评分、证据摘要、逐次及总账用量、主线计分隔离。
+
+默认 `--task-mode smoke` 只在新任务副本中改写 `instruction.md`，要求一次命令和一次 qsim 目录调用后结束，不提交科学答案。脚本核验其余源文件不变，沿用原有任务材料、模拟器及官方验证器的固定镜像，单独冻结任务来源；预期官方 `no_submission / 0`。这证明真实模型的工程链路，不代表完成原始科学任务。`--task-mode official` 使用未修改的原始任务，可能先耗尽额度；失败和未评分必须保留，不能与烟测零分混为一谈。
+
+独立场景的共享软阈值为 500,000 tokens，联合场景为 650,000；每次请求仍预留 300,000，允许的已确认用量因此显著低于阈值。参考另有子额度，单次总时限 450 秒（含 330 秒评分/清理保留），不整次重试。软阈值不是硬 token 或金额上限；未知用量继续占用预留。单个失败活动不可通过清空账本续跑，每次追加验证都要连同之前失败一起汇总成本。账本不提供经过核实的美元账单。
+
+真实烟测已覆盖两个独立插件、真实 Meta 组合选择及三个首期 Harness；无类型头的 Codex SSE、外部 CLI 用量汇总和预算拒绝归因均有回归测试。服务可用性、原始科学任务成功率、长期自主分析质量、压缩/委派压力和跨任务统计收益仍不由这些烟测证明。原始轨迹、失败尝试及实际用量只保存在本地验收记录中。

@@ -167,8 +167,8 @@
 | P3 参考模型闭环 | 原生快照、原候选不变、冻结 worker、独立归档与官方评分路径已接通 |
 | P4 三种参考 Harness 与联合参考 | 三个精确版本的容器工具回环通过，联合能力校验和协议拒绝通过 |
 | P5 研究、报告与 Studio | 双开关、多选、限定配对/Meta 自选、草稿恢复、活动内策略修订、历史分组和证据路径实现；实际浏览器验收通过 |
-| P6 集成验证 | 128 项 Node 单元、334 项 Python 单元、69 项容器契约、构建及边界检查通过；Harbor 与原生 Meta 脚本 provider 闭环通过 |
-| 真实模型与收益 | 未运行付费真实模型对照；未声明任务收益、统计稳定性或完整自主研究质量 |
+| P6 集成验证 | 132 项 Node 单元、336 项 Python 单元、69 项容器契约、构建及边界检查通过；Harbor 与原生 Meta 脚本 provider 闭环通过 |
+| 真实模型与收益 | 受控真实模型烟测覆盖两个独立插件、Meta 自主选择、Codex／Claude Code／DeepSeek 标准模式、官方评分及共享账本；未声明原始科学任务收益、统计稳定性或完整自主研究质量 |
 
 ### 6.1 可复现入口
 
@@ -177,6 +177,7 @@
 - `tests/unit/reference-*.test.mjs`：原生 tools 注册、权限、配置桥、原协议消息和签名、辅助模型绑定、用量及 UI 选择状态。
 - `tests/contracts/reference-harnesses.test.mjs`：真实 Codex、Claude Code、完整 DeepSeek SDK 在隔离容器执行任务工具；响应来自脚本服务，真实模型调用数为零。`npm run test:references` 会先准备固定镜像。
 - `tests/contracts/harbor-score-pipeline.py --reference --native-meta`：原生参考模型、联合参考、原生 Meta 读取参考证据并提交后续主线验证，使用真实 Harbor/qsim/官方验证器与脚本模型服务。参数与前提见运行说明。
+- `tests/smoke/references/run.py --execute-real-models`：明确授权后才运行的真实模型入口，覆盖 `model`、`harness`、`joint` 三种独立活动；默认只更改隔离任务副本的工程烟测指令，原始任务须显式选择 `--task-mode official`。暂停额外 Meta 分析、完整保留失败与未知用量；参数、额度与解释边界见[运行说明](../operations/meta-harness.md#受控真实模型验收)。
 
 首期不把每个可见原生模型标记为“真实服务已验证”。不兼容协议直接拒绝，未证明等价的配置保留 `unverified`；继续扩展认证或复杂推理设置时需新增明确契约证据。官方零分证明计分闭环，不证明模型能力。真实 provider 的压缩/委派压力、长轨迹和研究效果仍需后续有额度的实测。
 
