@@ -1,6 +1,6 @@
 # Meta-Harness 实现方案
 
-日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量已实施，参考实验插件增量仅完成设计 · 需求基线：[meta-harness.md v0.14](../requirements/meta-harness.md)
+日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量已实施，参考实验插件增量仅完成设计 · 需求基线：[meta-harness.md v0.15](../requirements/meta-harness.md)
 
 开发执行规则、自动完成条件和人工验收点见面向 Codex / GPT-6 Astra 的 [AI 开发任务书](../plans/meta-harness-development.md)。M0–M5 由 AI 自检后连续推进；人工验收聚焦最小真实闭环的使用体验，以及最终交付是否满足需要，不要求用户逐项验收底层技术。通用已知限制见[运行说明](../operations/meta-harness.md)。具体实施进度与验证证据保存在本机被忽略的 `reports/development/meta-harness/`，不随源码分发；不能仅依据本方案认定完成。新克隆应核对代码和可执行检查，不依赖私人记录才能安装。
 
@@ -10,7 +10,7 @@
 
 ## 1. 核心架构决定
 
-可选参考实验按[两个参考插件设计](meta-reference-experiments.md)及其[开发计划](../plans/meta-reference-experiments.md)扩展：参考模型来自 DeepSeek Harness 原生配置；固定 Solver 的参考 Harness 首期为 Codex 与 DeepSeek 标准模式。两个插件独立装配/移除，共用后台预算、监督和证据；新增参考执行身份，不修改原候选或把参考成绩混入主线。可选包/契约装配和适配器入口是待实现增量，以下既有核心链路不以其存在为前提。
+可选参考实验按[两个参考插件设计](meta-reference-experiments.md)及其[开发计划](../plans/meta-reference-experiments.md)扩展：参考模型来自 DeepSeek Harness 原生配置；参考 Harness 首期为 Codex、Claude Code 与 DeepSeek 标准模式，默认绑定固定 Solver。两个插件分别开放模型和 Harness 选择维度，同时启用时可提交联合参考；UI 独立开关并冻结用户选择集合及自主/指定配对模式。共享后台核验兼容性和两项能力，联合运行只记一次总消耗。两个插件独立装配/移除，共用后台预算、监督和证据；新增参考执行身份，不修改原候选或把参考成绩混入主线。可选包/契约装配和适配器入口是待实现增量，以下既有核心链路不以其存在为前提。
 
 采用 **DeepSeek 通用 Agent + Meta 业务插件 + DeepSeek 工作台 UI 插件 + 独立后台控制服务 + 隔离的执行运行时**。主 Meta 继承原生开发能力，业务插件提供实验、版本、报告及停止审查操作；工作台通过 DeepSeek 原生客户端扩展服务于用户；后台负责固定规则、持久化、调度、预算和交付。模型自主选择研究方法。原生预设与首期停止审查已经接入，职责见[组合设计](meta-harness-composition.md)；通用能力、持久文件和恢复按新专项方案实施。
 

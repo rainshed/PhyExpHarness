@@ -4,7 +4,7 @@
 
 ## 当前状态与限制
 
-2026-10-23 新增的[参考模型与参考 Harness 两插件方案](../design/meta-reference-experiments.md)目前仅有设计和[开发计划](../plans/meta-reference-experiments.md)，尚不可在工作台使用。规划中的参考模型读取 DeepSeek Harness 原生配置，参考 Harness 可选 Codex 和 DeepSeek 标准模式；这不改变当前下文的 Solver/Meta 模型配置入口，也不表示已安装或接通参考执行器。
+2026-10-23 新增的[参考模型与参考 Harness 两插件方案](../design/meta-reference-experiments.md)目前仅有设计和[开发计划](../plans/meta-reference-experiments.md)，尚不可在工作台使用。规划中的参考模型读取 DeepSeek Harness 原生配置，参考 Harness 可选 Codex、Claude Code 和 DeepSeek 标准模式。规划中的 UI 提供两个独立开关、多选允许集合及 Meta 自主选择/指定配对；两插件都开启时，Meta 可在已选且兼容的模型 × Harness 组合中按需取得参考轨迹；这不改变当前下文的 Solver/Meta 模型配置入口，也不表示已安装或接通参考执行器。
 
 平台仍在开发中。完整故障恢复、工作台生命周期覆盖、干净环境安装与实际导出包的真实独立运行验收仍需补齐；不能据此声明稳定性能提升或跨任务泛化。
 
