@@ -23,7 +23,7 @@ def copy_tree(source, destination):
             shutil.copyfile(file, target)
 
 
-def freeze_legacy(source_root, store, recipe, plugins=(), knowledge=None):
+def freeze_legacy(source_root, store, recipe, plugins=(), knowledge=None, *, on_publish=None):
     from src.execution.host.models import provider_route,validate_provider_config,supported_model
     recipe=dict(recipe)
     if 'providerConfig' not in recipe:recipe['providerConfig']=provider_route(recipe)
@@ -37,6 +37,7 @@ def freeze_legacy(source_root, store, recipe, plugins=(), knowledge=None):
     assembled = []
     with tempfile.TemporaryDirectory(prefix='.assembling-', dir=store) as temp:
         staging = Path(temp)
+        if on_publish:on_publish(staging,'object')
         copy_tree(source_root / 'src/execution', staging / 'src/execution')
         copy_tree(source_root / 'templates/standalone', staging)
         # Templates are source-only; dependency installations may not enter a Bundle.
@@ -108,6 +109,7 @@ def freeze_legacy(source_root, store, recipe, plugins=(), knowledge=None):
         identity['id'] = digest(canonical(identity))
         (staging / 'bundle.json').write_bytes(canonical(identity) + b'\n')
         destination = store / identity['id']
+        if on_publish:on_publish(destination,'bundle')
         if destination.exists():
             verify(destination)
         else:
@@ -118,13 +120,17 @@ def freeze_legacy(source_root, store, recipe, plugins=(), knowledge=None):
         return {'id': identity['id'], 'path': str(destination), 'plugins': assembled, 'manifest': identity}
 
 
-def _publish(store, identity, contents):
+def _publish(store, identity, contents, on_publish=None, kind='object'):
     """Publish a complete immutable directory; concurrent identical writes converge."""
     destination = store / identity
     if destination.is_symlink():
         raise ValueError('Content object path escapes store')
+    # Register ownership before writing, including temporary directories that
+    # survive a process crash. The callback has no control-layer dependency.
+    if on_publish:on_publish(destination,kind)
     if not destination.exists():
         with tempfile.TemporaryDirectory(prefix='.publishing-', dir=store) as temp:
+            if on_publish:on_publish(Path(temp),'object')
             stage = Path(temp) / 'object'
             stage.mkdir()
             for name, data in contents.items():
@@ -140,18 +146,18 @@ def _publish(store, identity, contents):
     return destination
 
 
-def _object(store, kind, contents):
+def _object(store, kind, contents, on_publish=None):
     descriptor = {'schemaVersion': 1, 'kind': kind,
                   'files': {name: digest(data) for name, data in contents.items()}}
     identity = digest(canonical(descriptor))
     _publish(store, identity, {'object.json': canonical(descriptor) + b'\n',
-                             **{'assets/' + name: data for name, data in contents.items()}})
+                             **{'assets/' + name: data for name, data in contents.items()}},on_publish)
     return identity, descriptor
 
 
-def freeze(source_root, store, recipe, plugins=(), knowledge=None, *, legacy=False):
+def freeze(source_root, store, recipe, plugins=(), knowledge=None, *, legacy=False, on_publish=None):
     if legacy:
-        return freeze_legacy(source_root, store, recipe, plugins, knowledge)
+        return freeze_legacy(source_root, store, recipe, plugins, knowledge,on_publish=on_publish)
     from src.execution.host.models import provider_route, validate_provider_config, supported_model
     source_root, store = Path(source_root).resolve(), Path(store).resolve()
     recipe = dict(recipe)
@@ -232,12 +238,12 @@ def freeze(source_root, store, recipe, plugins=(), knowledge=None, *, legacy=Fal
         # a consistent snapshot; the next explicit freeze may retry after edits.
         if any(checked_path(directory,name).read_bytes()!=data for name,data in contents.items()):
             raise ValueError('Plugin changed during freeze; retry from a stable workspace')
-        reference, descriptor = _object(store, 'plugin', contents)
+        reference, descriptor = _object(store, 'plugin', contents, on_publish)
         selected.append({'name': name, 'version': manifest['version'], 'object': reference, 'config': configuration})
         effective_plugins.append({'name': name, 'version': manifest['version'],
                                   'digest': digest(canonical(descriptor['files'])), 'config': configuration})
-    adapter, _ = _object(store, 'execution-adapter', adapter_files)
-    dependencies, _ = _object(store, 'dependencies', dependency_files)
+    adapter, _ = _object(store, 'execution-adapter', adapter_files, on_publish)
+    dependencies, _ = _object(store, 'dependencies', dependency_files, on_publish)
     recipe = {k: v for k, v in recipe.items()
               if k not in ('modules', 'id', 'name', 'description', 'notes', 'createdAt', 'updatedAt')}
     recipe['plugins'] = effective_plugins
@@ -259,7 +265,7 @@ def freeze(source_root, store, recipe, plugins=(), knowledge=None, *, legacy=Fal
     identity['id'] = digest(canonical(identity))
     Draft202012Validator(json.loads((source_root / 'schemas/execution/composition.schema.json').read_text())).validate(identity)
     destination = _publish(store, identity['id'], {'bundle.json': canonical(identity) + b'\n',
-                                                  'recipe.json': recipe_bytes})
+                                                  'recipe.json': recipe_bytes},on_publish,'bundle')
     manifest = verify(destination)
     return {'id': identity['id'], 'path': str(destination), 'plugins': manifest['plugins'],
             'manifest': manifest}

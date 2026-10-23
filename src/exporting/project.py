@@ -7,11 +7,13 @@ from pathlib import Path
 from src.execution.bundle.manifest import resolve, verify, digest, canonical
 
 
-def export_project(bundle_root, destination):
+def export_project(bundle_root, destination, export_id=None):
     bundle_root, destination = Path(bundle_root), Path(destination)
     resolved = resolve(bundle_root)
     bundle = resolved.manifest
-    export_id = 'export-' + str(uuid.uuid4())
+    export_id = export_id or 'export-' + str(uuid.uuid4())
+    if not isinstance(export_id,str) or not export_id.startswith('export-') or Path(export_id).name != export_id:
+        raise ValueError('Invalid export identity')
     folder = destination / export_id
     project = folder / 'harness'
     project.mkdir(parents=True)

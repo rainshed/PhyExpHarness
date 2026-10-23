@@ -25,6 +25,7 @@ def atomic_json(file,value):
 class FileViews:
     def __init__(self,service):self.service=service;self.store=service.store;self.root=service.data/'campaigns'
     def directory(self,campaign):
+        self.store.writable(campaign)
         self.store.get('campaigns',campaign)
         directory=self.root/campaign/'meta-files'
         for name in ROOTS:(directory/name).mkdir(parents=True,exist_ok=True)

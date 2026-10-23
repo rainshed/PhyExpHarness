@@ -133,13 +133,20 @@ class Storage:
         self.worker=threading.Thread(target=run,name='phyexp-storage',daemon=True);self.worker.start()
 
     def maintain(self,force=False):
+        from .store import Conflict
+        try:
+            with self.service.access.enter():self._maintain(force)
+        except Conflict:
+            if not self.service.access.cleaning:raise
+
+    def _maintain(self,force=False):
         with self.maintenance_lock:
             now=time.time()
             if not force and now-self.last_maintenance<self.policy['scanSeconds']:return
             self.last_maintenance=now
             try:listing=subprocess.check_output(['ps','-Ao','command='],text=True,timeout=10)
             except (OSError,subprocess.SubprocessError):listing=None
-            campaigns=[c for c in self.store.list('campaigns') if enabled(c['config'])]
+            campaigns=[c for c in self.store.list('campaigns') if enabled(c['config']) and c['state']!='deleting']
             for c in campaigns:
                 cid=c['id']
                 for row in self.store.runs(cid):

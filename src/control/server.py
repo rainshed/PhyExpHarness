@@ -47,7 +47,23 @@ def make_app(service,supervise=True):
         if length>4_000_000:return JSONResponse({'error':'Request too large'},status_code=413)
         try:request.state.identity=service.authenticate(request.headers.get('authorization','').removeprefix('Bearer '))
         except Refused as error:return JSONResponse({'error':str(error),'code':'accounting_lease_expired' if 'expired' in str(error).lower() else 'accounting_auth_failed'},status_code=401)
-        response=await call_next(request);response.headers['Cache-Control']='no-store';return response
+        try:
+            service.deletions.guard_route(request.url.path)
+            response=await call_next(request)
+        except Conflict as error:
+            response=JSONResponse({'error':str(error)},status_code=409)
+        response.headers['Cache-Control']='no-store';return response
+    class ActivityRequests:
+        def __init__(self,app):self.app=app
+        async def __call__(self,scope,receive,send):
+            if scope['type']!='http':return await self.app(scope,receive,send)
+            # ASGI scope includes the entire download body. call_next() alone
+            # returns at headers and would release a file before it is streamed.
+            try:
+                with service.access.enter():await self.app(scope,receive,send)
+            except Conflict as error:
+                await JSONResponse({'error':str(error)},status_code=409,headers={'Cache-Control':'no-store'})(scope,receive,send)
+    app.add_middleware(ActivityRequests)
     def user(request):
         if request.state.identity['role']!='user':raise Refused('User authority required')
     @app.get('/health')
@@ -105,6 +121,12 @@ def make_app(service,supervise=True):
     @app.get('/campaigns/{id}')
     def campaign(id:str,request:Request):
         user(request);return service.status(id)
+    @app.get('/campaigns/{id}/deletion')
+    def deletion(id:str,request:Request):
+        user(request);return service.deletions.preview(id)
+    @app.post('/campaigns/{id}/deletion')
+    def delete_campaign(id:str,request:Request,body:dict):
+        user(request);return service.deletions.request(id,body.get('expectedRevision'),body.get('idempotencyKey'),body.get('retry',False))
     @app.get('/campaigns/{id}/selections/{decision}')
     def selection(id:str,decision:str,request:Request):
         user(request);row=service.store.get('selection_decisions',decision)
@@ -133,7 +155,9 @@ def make_app(service,supervise=True):
         user(request);return service.evidence.excerpt(id,body)
     @app.get('/campaigns/{id}/events')
     def events(id:str,request:Request,after:int=0):
-        user(request);return service.store.events(id,after)
+        user(request)
+        if service.store.deletion(id):return []
+        return service.store.events(id,after)
     @app.post('/campaigns/{id}/control')
     def control(id:str,request:Request,body:dict):
         user(request);return service.control(id,body['action'],body['idempotencyKey'],body.get('expectedRevision'),body.get('changes'))

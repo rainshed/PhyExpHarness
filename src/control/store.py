@@ -15,8 +15,8 @@ from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for
 from . import resource_planning as planning
 from src.execution.host.task_time import benchmark_time
 
-SCHEMA_VERSION = 5
-TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs')
+SCHEMA_VERSION = 6
+TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
 LEGACY_RETENTION_RULE = 'public-development-v1'
@@ -183,6 +183,8 @@ class Store:
                 db.execute(f'CREATE TABLE IF NOT EXISTS {table}(id TEXT PRIMARY KEY,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
+            db.execute('CREATE TABLE IF NOT EXISTS deletions(campaign TEXT PRIMARY KEY,data TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS deleted_create_keys(digest TEXT PRIMARY KEY)')
     @contextlib.contextmanager
     def read_snapshot(self):
         if not hasattr(self, '_read_local'): self._read_local=threading.local()
@@ -223,11 +225,13 @@ class Store:
     def list(self,table,campaign=None):
         with self.connection() as db:return self._list(db,table,campaign)
     def _save(self,db,table,value):
+        self.writable(value.get('campaignId',value['id']),db)
         value={**value,'schemaVersion':1,'revision':value.get('revision',0)+1}
         db.execute(f'INSERT INTO {table} VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
             (value['id'],value.get('campaignId',value['id']),encoded(value)))
         return value
     def _event(self,db,campaign,kind,**data):
+        self.writable(campaign,db)
         event={'type':kind,'time':self.clock(),**data};db.execute('INSERT INTO events(campaign,data) VALUES(?,?)',(campaign,encoded(event)))
     def events(self,campaign,after=0):
         with self.connection() as db:return [{**json.loads(r['data']),'seq':r['seq']} for r in db.execute(
@@ -235,17 +239,20 @@ class Store:
     def last_event(self,campaign):
         with self.connection() as db:return db.execute('SELECT COALESCE(MAX(seq),0) FROM events WHERE campaign=?',(campaign,)).fetchone()[0]
     def _idem(self,db,campaign,kind,key,payload):
+        self.writable(campaign,db)
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
         row=db.execute('SELECT * FROM commands WHERE campaign=? AND kind=? AND key=?',(campaign,kind,key)).fetchone()
         if row:
             if row['payload']!=encoded(payload):raise Conflict('Idempotency key reused with different input')
             return json.loads(row['result'])
     def _remember(self,db,campaign,kind,key,payload,result):
+        self.writable(campaign,db)
         db.execute('INSERT INTO commands VALUES(?,?,?,?,?)',(campaign,kind,key,encoded(payload),encoded(result)))
         return result
     def create(self,config,key,defaults=None):
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
         with self.connection(True) as db:
+            self.check_create_key(key,db)
             saved=db.execute("SELECT payload,result FROM commands WHERE campaign='global' AND kind='create' AND key=?",(key,)).fetchone()
             catalog=campaign_model_config(json.loads(saved['result'])['config']) if saved else self.model_config
             config=validate_config(config,catalog)
@@ -256,6 +263,32 @@ class Store:
                'deadline':None,'stopReason':None,'retainedCandidateId':None,'finalCandidateId':None,'explorationClosed':False}
             c=self._save(db,'campaigns',c);self._event(db,c['id'],'created')
             return self._remember(db,'global','create',key,config,c)
+
+    def deletion(self,campaign,db=None):
+        if db is None:
+            with self.connection() as connection:return self.deletion(campaign,connection)
+        row=db.execute('SELECT data FROM deletions WHERE campaign=?',(campaign,)).fetchone()
+        return json.loads(row['data']) if row else None
+
+    def writable(self,campaign,db=None):
+        if self.deletion(campaign,db):raise Conflict('活动正在删除或已经删除，不能继续写入。')
+
+    def check_create_key(self,key,db=None):
+        if db is None:
+            with self.connection() as connection:return self.check_create_key(key,connection)
+        if isinstance(key,str) and db.execute('SELECT 1 FROM deleted_create_keys WHERE digest=?',(hashlib.sha256(key.encode()).hexdigest(),)).fetchone():
+            raise Conflict('原创建请求对应的活动已删除；如需新活动，请重新创建。')
+
+    def track_artifact(self,campaign,path,kind):
+        # An already admitted build can finish after deletion was requested. Its
+        # files must still enter the inventory before the cleaner acquires exclusivity.
+        with self.connection(True) as db:
+            job=self.deletion(campaign,db)
+            if job and job['phase']!='stopping':raise Conflict('Activity artifact publication is closed')
+            self._get(db,'campaigns',campaign)
+            id=hashlib.sha256((campaign+'\0'+str(path)).encode()).hexdigest()
+            row={'id':id,'campaignId':campaign,'path':str(path),'kind':kind}
+            db.execute('INSERT OR REPLACE INTO owned_artifacts VALUES(?,?,?)',(id,campaign,encoded(row)))
     def usage(self,campaign,db=None):
         rows=self._list(db,'usage',campaign) if db else self.list('usage',campaign)
         return {'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in rows),

@@ -9,6 +9,7 @@ POLICIES={'public-development-v1','public-development-full-v2'}
 class Adoptions:
     def __init__(self,service):self.service=service;self.store=service.store;self.data=service.data
     def _source(self,target,sourceCampaignId,sourceKind,sourceId):
+        self.store.writable(sourceCampaignId);self.store.writable(target)
         if sourceCampaignId==target:raise Refused('Use current Campaign evidence directly')
         source=self.store.get('campaigns',sourceCampaignId);c=self.store.get('campaigns',target)
         if sourceKind not in ['evidence','report']:raise Refused('Only archived evidence or an exact report revision can be adopted')
@@ -43,16 +44,17 @@ class Adoptions:
             prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
             if prior:return prior
         data,origin=self._source(campaign,sourceCampaignId,sourceKind,sourceId)
-        file=self.data/'evidence'/origin['sha256'];file.parent.mkdir(parents=True,exist_ok=True)
-        canonical=Objects(self.data).put(data) if enabled(self.store.get('campaigns',campaign)['config']) else file
-        if not file.exists():
-            if canonical!=file:os.link(canonical,file)
-            else:file.write_bytes(data);file.chmod(0o444)
-        if file.is_symlink() or hashlib.sha256(file.read_bytes()).hexdigest()!=origin['sha256']:raise Refused('Adopted copy integrity mismatch')
         with self.store.connection(True) as db:
             prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
             if prior:return prior
+            self.store.writable(sourceCampaignId,db)
             self.store._get(db,'campaigns',campaign)
+            file=self.data/'evidence'/origin['sha256'];file.parent.mkdir(parents=True,exist_ok=True)
+            canonical=Objects(self.data).put(data) if enabled(self.store.get('campaigns',campaign)['config']) else file
+            if not file.exists():
+                if canonical!=file:os.link(canonical,file)
+                else:file.write_bytes(data);file.chmod(0o444)
+            if file.is_symlink() or hashlib.sha256(file.read_bytes()).hexdigest()!=origin['sha256']:raise Refused('Adopted copy integrity mismatch')
             id=identity('adoption');now=self.store.clock()
             provenance={**origin,'targetCampaignId':campaign,'adoptionId':id,'adoptedAt':now,'access':access,
                 'purpose':'design-inspiration','feedbackExposure':{'tasks':origin['tasks'],'purpose':'development','recordedAt':now,'unseenEvaluation':False}}

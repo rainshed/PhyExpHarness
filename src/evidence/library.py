@@ -27,12 +27,13 @@ class EvidenceLibrary:
     def __init__(self,store,data):self.store=store;self.root=Path(data)/'evidence';self.objects=Objects(data)
     def add(self,campaign,trial,kind,text,source,policy='public-development-v1'):
         data=text.encode() if isinstance(text,str) else text;sha=hashlib.sha256(data).hexdigest();file=self.root/sha
-        if enabled(self.store.get('campaigns',campaign)['config']):
-            file=self.objects.put(data)
-        else:
-            file.parent.mkdir(parents=True,exist_ok=True)
-            if not file.exists():file.write_bytes(data);file.chmod(0o444)
         with self.store.connection(True) as db:
+            self.store.writable(campaign,db)
+            if enabled(self.store._get(db,'campaigns',campaign)['config']):
+                file=self.objects.put(data)
+            else:
+                file.parent.mkdir(parents=True,exist_ok=True)
+                if not file.exists():file.write_bytes(data);file.chmod(0o444)
             existing=[x for x in self.store._list(db,'evidence',campaign) if x['trialId']==trial and x['kind']==kind and x['sha256']==sha]
             if existing:return existing[0]
             row={'id':identity('evidence'),'campaignId':campaign,'trialId':trial,'kind':kind,'sha256':sha,'path':str(file),

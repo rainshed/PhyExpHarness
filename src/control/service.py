@@ -13,7 +13,7 @@ import time
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from .store import Store,Refused,identity,encoded,comparison_issues,retention_rule_description,META_RETENTION_RULE
+from .store import Store,Refused,Conflict,identity,encoded,comparison_issues,retention_rule_description,META_RETENTION_RULE
 from .knowledge import KnowledgePack
 from .image_identity import resolve as resolve_image_identity
 from .operations import workspace_path,read_workspace,write_workspace,execute_workspace
@@ -48,6 +48,8 @@ class ControlService:
         self.source=Path(source).resolve();self.data=Path(data).resolve();self.data.mkdir(parents=True,exist_ok=True);self.data.chmod(0o700)
         self.quantum=Path(quantum_harbor).resolve();self.base_url=base_url
         self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
+        from .deletion import ActivityAccess,Deletions
+        self.access=ActivityAccess();self.deletions=Deletions(self)
         self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
         from .research import Research
         self.research=Research(self.store,self.data)
@@ -59,7 +61,7 @@ class ControlService:
         self.pool=ThreadPoolExecutor(max_workers=2,thread_name_prefix='phyexp-build');self.operations={};self.children={}
         self.operation_lock=threading.Lock()
         for row in self.store.list('operations'):
-            if row['state']=='running':
+            if row['state']=='running' and not self.store.deletion(row['campaignId']):
                 row.update(state='failed',error='Control process restarted during build; no experiment was launched by this operation',finishedAt=time.time());self.store.put('operations',row)
                 with self.store.connection(True) as db:self.store._event(db,row['campaignId'],'operation_finished',operationId=row['id'],state='failed')
         self.launch_trial_override=launch_trial;self.tick_lock=threading.Lock();self.meta_driver=None
@@ -86,6 +88,7 @@ class ControlService:
             'deadline':deadline,'tokenHash':hashlib.sha256(token.encode()).hexdigest(),'revoked':False})
         return row,token
     def workspace(self,campaign):
+        self.store.writable(campaign)
         self.store.get('campaigns',campaign)
         path=self.data/'campaigns'/campaign/'workspace';path.mkdir(parents=True,exist_ok=True);return path
     def knowledge_for(self,campaign):
@@ -107,15 +110,23 @@ class ControlService:
         if hasattr(self,'storage') and not self.storage.permit(campaign,'build'):raise Refused('存储空间不足，暂不启动构建；释放空间后重试。')
         row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
         def work():
-            try:result=fn();row.update(state='finished',result=result)
-            except Exception as error:
-                row.update(state='failed',error=str(error))
-                if getattr(error,'check_files',None):row['files']=error.check_files
-            row['finishedAt']=time.time();self.store.put('operations',row)
-            with self.store.connection(True) as db:self.store._event(db,campaign,'operation_finished',operationId=row['id'],state=row['state'])
+            with self.access.enter():
+                if self.store.deletion(campaign):return
+                try:result=fn();row.update(state='finished',result=result)
+                except Exception as error:
+                    row.update(state='failed',error=str(error))
+                    if getattr(error,'check_files',None):row['files']=error.check_files
+                if self.store.deletion(campaign):return
+                row['finishedAt']=time.time()
+                try:
+                    self.store.put('operations',row)
+                    with self.store.connection(True) as db:self.store._event(db,campaign,'operation_finished',operationId=row['id'],state=row['state'])
+                except Conflict:
+                    if not self.store.deletion(campaign):raise
         self.operations[row['id']]=self.pool.submit(work)
         return {'operationId':row['id'],'state':'running'}
     def create(self,config,key,model_revision=None,source='operator'):
+        self.store.check_create_key(key)
         from src.execution.host.container_runtime import preflight
         preflight(config.get('tasks', []))
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
@@ -206,10 +217,15 @@ class ControlService:
             try:verify_locks(self.quantum,config['tasks'],config.get('taskImageLocks',{}))
             except ValueError as error:raise Refused(str(error)) from error
     def list_status(self):
-        return [{**self.store.status(c['id']), 'metaStatus':meta_status(self.store.list('meta_sessions',c['id']))}
+        return [{**self.store.status(c['id']), 'metaStatus':meta_status(self.store.list('meta_sessions',c['id'])),
+                 **({'deletion':self.deletions.public(self.store.deletion(c['id']))} if c['state']=='deleting' else {})}
                 for c in self.store.list('campaigns')]
     def status(self,campaign):
         value=self.store.status(campaign)
+        if value['state']=='deleting':
+            return {**value,'deletion':self.deletions.public(self.store.deletion(campaign)),
+                    **{k:[] for k in ['candidates','batches','trials','reports','exports','evidence','operations','metaSessions']},
+                    'tables':{'versions':[],'plugins':[],'trials':[]}}
         value.update(candidates=self.store.list('candidates',campaign),batches=self.store.list('batches',campaign),
             trials=trial_diagnostics(self.store.list('trials',campaign),self.data,value['config']),operations=self.store.list('operations',campaign),
             reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.list('reports',campaign)],
@@ -239,6 +255,7 @@ class ControlService:
             result.update(version='benchmark-stream-v1',requestTimeoutMs=None,streamIdleTimeoutMs=None)
         return result
     def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False,research_refs=None):
+        self.store.writable(campaign)
         c=self.store.get('campaigns',campaign)
         recipe=json.loads((self.source/'recipes/h0-sol.json').read_text())
         recipe.update(c['config']['solver']);recipe['modules']=[]
@@ -264,7 +281,8 @@ class ControlService:
         existing=self.store.list('candidates',campaign)
         base=verify(existing[0]['bundlePath']) if existing else None
         bundle=freeze(self.source,self.data/'objects/sha256',recipe,chosen,self.knowledge_for(campaign).manifest,
-                      legacy=bool(base and base.get('schemaVersion',1)==1))
+                      legacy=bool(base and base.get('schemaVersion',1)==1),
+                      on_publish=lambda path,kind:self.store.track_artifact(campaign,path,kind))
         if existing:
             if infrastructure_identity(base)!=infrastructure_identity(bundle['manifest']):
                 raise Refused('Fixed infrastructure changed; start a new Campaign for a comparable baseline')
@@ -296,6 +314,7 @@ class ControlService:
             row['displayName']=display_name.strip()[:80];row=self.store.put('candidates',row)
         return row
     def control(self,campaign,action,key,expected_revision=None,changes=None):
+        self.store.writable(campaign)
         c=self.store.get('campaigns',campaign)
         if action in ('start','resume') and c['config'].get('referenceBindings') and not self.launch_trial_override:
             from .reference.runtime import preflight as reference_preflight
@@ -488,6 +507,12 @@ class ControlService:
         self.evidence.add(trial['campaignId'],trial['id'],'lifecycle',json.dumps({'trialId':trial['id'],**changes},ensure_ascii=False),{'authority':'controller','officialScore':None})
         return self.store.trial_update(trial['id'],**changes)
     def tick(self):
+        self.deletions.tick()
+        try:
+            with self.access.enter():self._tick()
+        except Conflict:
+            if not self.access.cleaning:raise
+    def _tick(self):
         if not self.tick_lock.acquire(blocking=False):return
         try:
             # Finished Campaigns can still own supervisors that exited after collection.
@@ -496,7 +521,7 @@ class ControlService:
             self.storage.schedule()
             for campaign in self.store.list('campaigns'):
                 id=campaign['id']
-                if campaign['state'] in ['draft','finished','failed']:continue
+                if campaign['state'] in ['draft','finished','failed','deleting']:continue
                 for trial in self.store.runs(id):
                     if trial['state'] in ['launching','running']:
                         if trial.get('referenceStopPending'):self.stop_trial(trial,'reference_plugin_disabled')
@@ -537,15 +562,18 @@ class ControlService:
                     self.store.finalize(id);self.reports.status_summary(id,'达到活动上限；Meta 分析尚未完成。')
         finally:self.tick_lock.release()
     def export(self,campaign,candidate):
+        self.store.writable(campaign)
         c=self.store.get('candidates',candidate)
         if c['campaignId']!=campaign:raise Refused('Candidate unavailable')
         prior=next((x for x in self.store.list('exports',campaign) if x['candidateId']==candidate),None)
         if prior:return prior
-        result=export_project(c['bundlePath'],self.data/'exports');result.update(campaignId=campaign,candidateId=candidate)
+        export_id=identity('export');self.store.track_artifact(campaign,self.data/'exports'/export_id,'export')
+        result=export_project(c['bundlePath'],self.data/'exports',export_id=export_id);result.update(campaignId=campaign,candidateId=candidate)
         return self.store.put('exports',result)
     def validate_export(self,id):
         with self.operation_lock:
             row=self.store.get('exports',id)
+            self.store.writable(row['campaignId'])
             if row.get('relocationValidation')=='passed' and row.get('validationEvidence'):
                 proof=json.loads(Path(row['validationEvidence']).read_text())
                 if proof['archiveSha256']==hashlib.sha256(Path(row['archive']).read_bytes()).hexdigest() and proof['bundleId']==row['bundleId']:
@@ -553,8 +581,10 @@ class ControlService:
             active=next((o for o in self.store.list('operations',row['campaignId']) if o['kind']=='export_relocation' and o['state']=='running' and o['payload']['exportId']==id),None)
             if active:return {'operationId':active['id'],'state':'running'}
             def work():
+                destination=self.data/'export-checks'/identity('relocated export')
+                self.store.track_artifact(row['campaignId'],destination,'export_check')
                 try:
-                    proof=relocate(row,self.data/'export-checks'/identity('relocated export'))
+                    proof=relocate(row,destination)
                     row.update(relocationValidation='passed',validationEvidence=proof['evidence'])
                 except Exception:
                     row['relocationValidation']='failed';self.store.put('exports',row);raise

@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from src.control.storage import Storage,GiB
+from src.control.deletion import ActivityAccess
 from src.control.store import Store
 from src.evidence.objects import POLICY
 
@@ -17,7 +18,7 @@ class StorageCapacityTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
         self.store=Store(self.root/'control.sqlite');self.store.put('campaigns',{'id':'c','config':{'storagePolicy':POLICY},'state':'running'})
-        self.service=SimpleNamespace(data=self.root,store=self.store,_process_alive=lambda *a:False)
+        self.service=SimpleNamespace(data=self.root,store=self.store,access=ActivityAccess(),_process_alive=lambda *a:False)
         self.storage=Storage(self.service)
         self.disk=patch('src.control.storage.shutil.disk_usage',return_value=Usage(100*GiB,10*GiB,90*GiB));self.fake_disk=self.disk.start();self.addCleanup(self.disk.stop)
     def test_admission_reserves_inflight_closeout_and_recovers_with_hysteresis(self):

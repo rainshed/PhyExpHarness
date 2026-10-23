@@ -129,9 +129,11 @@ class Reports:
                         'decision':'保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
             'tables':self.tables(campaign,context=facts['campaign'])})
     def _persist(self,record,expected_revision=None):
+        self.store.track_artifact(record['campaignId'],self.root/record['id'],'report')
         record['reading']=project(record,self.root.parent)
         record['presentationVersion']=PRESENTATION_VERSION
         with self.store.connection(True) as db:
+            self.store.writable(record['campaignId'],db)
             if record.get('metaRequest'):
                 request=record['metaRequest']
                 previous=next((r for r in self.store._list(db,'reports',record['campaignId']) if r.get('metaRequest',{}).get('requestId')==request['requestId']),None)

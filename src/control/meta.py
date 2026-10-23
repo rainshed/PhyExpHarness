@@ -29,6 +29,7 @@ class MetaDriver:
     def reap_children(self):
         reap_children(self.children,self.store,'meta_sessions',{'completed','failed','interrupted','recovering','needs_attention'})
     def start(self,campaign):
+        self.store.writable(campaign)
         if hasattr(self.service,'storage') and not self.service.storage.permit(campaign,'meta'):return
         # The persisted row and process launch are one host-owned admission window.
         self.store.get('campaigns',campaign)
