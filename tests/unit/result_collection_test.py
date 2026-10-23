@@ -97,6 +97,20 @@ class ResultCollectionTests(unittest.TestCase):
         self.assertEqual(self.store.get('trials',trial['id'])['score'],0)
         self.assertEqual(json.loads((self.output/'summary.json').read_text()),self.original)
 
+    def test_external_reference_score_and_usage_use_host_receipts(self):
+        from src.execution.adapters.quantum_harbor.results import collect
+        runtime=json.loads((self.base/'phyexp/runtime-summary.json').read_text())
+        runtime.pop('recipe');runtime['reference']={'harnessRef':'codex'}
+        self.write('harbor/trial/phyexp/runtime-summary.json',runtime)
+        self.write('harbor/trial/phyexp/events.json',[{'type':'turn.completed','usage':{'input_tokens':30,'output_tokens':3}}])
+        (self.base/'phyexp/gateway-audit.jsonl').write_text(json.dumps({'type':'settled','usage':{'inputTokens':10,'cacheReadTokens':20,'outputTokens':3,'totalTokens':33}})+'\n')
+        result=collect(self.output)
+        self.assertEqual(result['officialReward'],0)
+        self.assertEqual(result['usage']['totalTokens'],33)
+        self.assertEqual(result['usage']['cacheReadTokens'],20)
+        (self.base/'phyexp/gateway-audit.jsonl').unlink()
+        with self.assertRaisesRegex(FileNotFoundError,'accounting evidence'):collect(self.output)
+
     def test_recovered_official_one_remains_one(self):
         (self.base/'verifier/reward.txt').write_text('1\n')
         self.write('harbor/trial/result.json',{'task_name':TASK,'trial_name':'trial',

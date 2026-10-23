@@ -2,6 +2,8 @@ import {DEFAULT_STREAM_POLICY} from '../host/stream_guard.mjs';
 // Protocol-preserving host gateway. No credentials or upstream addresses enter a Runner.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import {ADMISSION_CODES} from '../host/budget.mjs';
+import {classifyModelFailure} from '../host/model_failures.mjs';
 export function wireBinding(runtime,harness){
  const profile=runtime.wireProfile,model=runtime.model;
  const doc=JSON.parse(fs.readFileSync(runtime.credentials.credentialFile));
@@ -56,6 +58,7 @@ export function fixedRequest(binding,payload){
 export class WireGateway{
  constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl});this.active=new Set();this.stopped=false;}
  record(row){fs.appendFileSync(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
+ fail(code,id,stage,observed={}){const failure={schemaVersion:1,code,requestId:id,stage,source:'reference-model-gateway',detectedAt:new Date().toISOString(),observed};this.failure??=failure;this.record({type:'failure',...failure});}
  abort(){this.stopped=true;for(const ctl of this.active)ctl.abort();}
  async *stream(payload,signal){
   if(this.stopped||Date.now()>=this.deadline)throw new Error('Reference deadline reached');
@@ -95,14 +98,20 @@ export class WireGateway{
    }
    const tail=decoder.decode();buffer+=tail;observeLine(buffer);
    if(!sse){try{const data=JSON.parse(jsonBody+tail);observe(data);finished=response.ok&&!data.error;}catch{}}
-   if(route.endsWith('/count_tokens')&&response.ok){usage={total_tokens:0};finished=true;}
-   if(!response.ok)finished=false;
+   if(route.endsWith('/count_tokens')&&response.ok){usage={total_tokens:0,input_tokens:0,output_tokens:0};finished=true;}
+   if(!response.ok){finished=false;this.fail(classifyModelFailure({status:response.status}).code,id,'model',{httpStatus:response.status});}
+   else if(!finished)this.fail('model_stream_incomplete',id,'model');
+  }catch(error){
+   const code=error.admissionFailure?.code||error.code;
+   this.fail(ADMISSION_CODES.has(code)?code:Date.now()>=this.deadline?'trial_deadline':bound.aborted?'request_cancelled':classifyModelFailure(error).code,id,reserved?'model':'admission',error.admissionFailure||{});
+   throw error;
   }finally{
    clearTimeout(idle);this.active.delete(ctl);
    if(reserved){
     const input=usage.input_tokens,output=usage.output_tokens;
     const total=usage.total_tokens??(Number.isFinite(input)&&Number.isFinite(output)?input+output+(usage.cache_read_input_tokens||0)+(usage.cache_creation_input_tokens||0):null);
-    const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:input,outputTokens:output,cacheReadTokens:usage.cache_read_input_tokens??usage.input_tokens_details?.cached_tokens??0,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
+    const cacheRead=usage.cache_read_input_tokens??usage.input_tokens_details?.cached_tokens??0;
+    const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:this.binding.protocol==='responses'&&Number.isFinite(input)?input-cacheRead:input,outputTokens:output,cacheReadTokens:cacheRead,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
     this.record({type:'settled',id,...result});await this.budget.settle(id,result);
    }
   }

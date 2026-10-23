@@ -83,3 +83,12 @@ test('wire accounting accepts SSE with a nonstandard content type and an untermi
   assert.equal(identity.actual,'pinned-version');assert.equal(identity.requested,'pinned');
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+test('external CLI budget refusal retains the admission cause without an upstream request',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-wire-denied-'));let requests=0,settles=0;
+ try{
+  const gateway=new WireGateway({binding:{protocol:'responses',model:{model:'pinned'}},deadline:Date.now()+5000,audit:path.join(dir,'audit.jsonl'),
+   budget:{reserve:async()=>{throw Object.assign(new Error('denied'),{admissionFailure:{code:'budget_admission_denied',boundary:'reference_harness'}})},settle:async()=>{settles++}},fetchImpl:async()=>{requests++}});
+  await assert.rejects(async()=>{for await(const _ of gateway.stream({method:'POST',path:'/responses',body:'{"model":"pinned"}'})){}},/denied/);
+  assert.equal(requests,0);assert.equal(settles,0);assert.equal(gateway.failure.code,'budget_admission_denied');assert.equal(gateway.failure.stage,'admission');assert.equal(gateway.failure.observed.boundary,'reference_harness');
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});

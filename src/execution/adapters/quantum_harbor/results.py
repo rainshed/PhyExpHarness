@@ -81,7 +81,7 @@ def collect(run_dir):
                         else 'passed' if reward else 'failed_science'),
         'task': trial['task_name'], 'trial': trial['trial_name'],
         # Recipe labels are optional in v2; the frozen bundle owns execution identity.
-        'recipeId': runtime['recipe'].get('id'), 'bundleId': runtime.get('bundleId'),
+        'recipeId': runtime.get('recipe',{}).get('id'), 'bundleId': runtime.get('bundleId'),
         'model': runtime['model'], 'provider': runtime['provider'],
         'scoringStatus': 'completed',
         'officialReward': reward, 'sciencePassed': reward == 1,
@@ -100,11 +100,15 @@ def collect(run_dir):
         result['evidence']['submission'] = rel(answer)
     # Recalculate presentation metrics from the immutable trajectory; never rewrite raw runtime/Harbor results.
     module = Path(__file__).resolve().parents[2] / 'host/usage.mjs'
-    script = "import fs from 'node:fs'; const {summarizeUsage}=await import(process.argv[1]); console.log(JSON.stringify(summarizeUsage(JSON.parse(fs.readFileSync(process.argv[2])))));"
+    external=(runtime.get('reference') or {}).get('harnessRef') in ('codex','claude-code')
+    script = ("import fs from 'node:fs'; const {summarizeWireUsage}=await import(process.argv[1]); console.log(JSON.stringify(summarizeWireUsage(fs.readFileSync(process.argv[2],'utf8').split('\\n').filter(Boolean).map(JSON.parse))));" if external else
+        "import fs from 'node:fs'; const {summarizeUsage}=await import(process.argv[1]); console.log(JSON.stringify(summarizeUsage(JSON.parse(fs.readFileSync(process.argv[2])))));")
     events = base / 'phyexp/events.json'
+    if external and not events.with_name('gateway-audit.jsonl').is_file():
+        raise FileNotFoundError('Missing external reference gateway accounting evidence')
     if events.is_file():
         result['usage'] = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', script,
-            module.as_uri(), str(events)], text=True))
+            module.as_uri(), str(events.with_name('gateway-audit.jsonl') if external else events)], text=True))
     else:
         raise ValueError('Missing durable Solver trajectory')
     return result
