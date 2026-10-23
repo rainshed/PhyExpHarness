@@ -129,7 +129,7 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(self.ref.compatibility(c,None,'claude-code')['state'],'unsupported')
     def test_native_codex_host_handle_compatibility_and_private_credential_boundary(self):
         frozen={'adapter':'pi-ai','pluginVersion':'0.2.1-rc.2','nativeAuth':'codex-host','credentialRef':None,
-                'config':{'providers':{'openai-codex':{'models':[{'id':'gpt-6-sol'}],'reasoning':'medium'}}},
+                'config':{'providers':{'openai-codex':{'models':[{'id':'gpt-6-sol'}],'reasoning':'medium','headers':{}}}},
                 'call':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},'info':{}}
         row={'id':'native-'+'b'*64,'provider':'openai-codex','model':'gpt-6-sol','label':'GPT','frozen':frozen}
         document={'version':'native-reference-catalog-v1','bindings':[row]}
@@ -148,7 +148,7 @@ class ReferencesTest(unittest.TestCase):
         frozen['config']['providers']['openai-codex']['cacheRetention']='long'
         self.ref.catalog.sync(document);model=self.ref.catalog.read()['models'][0]['id']
         self.assertEqual(self.ref.compatibility({'config':{}},model,'codex')['state'],'unverified')
-        for key,value in [('baseURL','https://other.test'),('api','openai-responses'),('headers',{}),('apiKeyEnv','OTHER')]:
+        for key,value in [('baseURL','https://other.test'),('api','openai-responses'),('headers',{'Authorization':'other'}),('apiKeyEnv','OTHER')]:
             frozen['config']['providers']['openai-codex'][key]=value
             with self.assertRaisesRegex(Refused,'Invalid'):self.ref.catalog.sync(document)
             del frozen['config']['providers']['openai-codex'][key]
