@@ -1,0 +1,26 @@
+{
+  "name": "@phyexp/meta-model-reference",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./contracts": "./contracts.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "ajv": "8.20.0"
+  },
+  "phyexpMeta": {
+    "id": "meta-model-reference",
+    "kind": "optional-reference",
+    "module": "index.mjs",
+    "contract": "contracts.json",
+    "roles": [
+      "meta"
+    ],
+    "requires": [
+      "metaControl",
+      "tools"
+    ]
+  }
+}

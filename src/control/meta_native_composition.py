@@ -13,10 +13,21 @@ from pathlib import Path
 from .store import Refused,encoded
 from src.execution.bundle.manifest import safe_relative
 from src.execution.host.container_runtime import policy, verify_image
+from .reference.plugins import entry_path, configure as configure_optional, contracts as optional_contracts
 
 VERSION='meta-composition-v2'
 def digest(value):return hashlib.sha256(encoded(value).encode()).hexdigest()
 def file_hash(file):return hashlib.sha256(file.read_bytes()).hexdigest()
+def compatible_dependency_lock(data,source,expected):
+    """Adding/removing optional workspace links does not change sealed runtime dependencies."""
+    current=source/'package-lock.json'
+    if file_hash(current)==expected:return True
+    blob=data/'meta-objects/sha256'/expected
+    if blob.is_symlink() or not blob.is_file() or file_hash(blob)!=expected:return False
+    old=json.loads(blob.read_text()).get('packages',{})
+    new=json.loads(current.read_text()).get('packages',{})
+    required={k:v for k,v in old.items() if k.startswith('node_modules/') and not v.get('link')}
+    return bool(required) and all(new.get(k)==v for k,v in required.items())
 def source_group(source,roots):
     files={};pending=list(roots)
     while pending:
@@ -37,7 +48,10 @@ def validate(manifest,source):
     for p in manifest['plugins']:
         if p.get('id') in ids or not isinstance(p.get('id'),str):raise Refused('Duplicate/invalid Meta plugin')
         ids.add(p['id']);module=p.get('module','');roles=p.get('roles')
-        if not re.fullmatch(r'[-\w]+\.mjs',module) or not (source/'packages/meta-harness'/module).is_file():raise Refused('Invalid Meta module')
+        if not re.fullmatch(r'[-\w]+\.mjs',module):raise Refused('Invalid Meta module')
+        entry=source/entry_path(p)
+        if (p.get('enabled') or not p.get('package')) and (entry.is_symlink() or not entry.is_file()):raise Refused('Invalid Meta module')
+        if p.get('package') and p.get('roles')!=['meta']:raise Refused('Optional reference plugins are main Meta only')
         if not isinstance(roles,list) or not roles or set(roles)-{'meta','research','reviewer'}:raise Refused('Invalid Meta roles')
         if type(p.get('enabled')) is not bool or not isinstance(p.get('config'),dict):raise Refused('Meta enabled/config required')
         if p['enabled']:enabled.append(p)
@@ -115,8 +129,8 @@ def prepare_image(source,data):
 def freeze(source,data,config):
     from .meta_context import system_prompt
     source=Path(source).resolve();data=Path(data);plugin=source/'packages/meta-harness'
-    composition=validate(config.get('metaCompositionConfig') or json.loads((plugin/'composition-native.json').read_text()),source)
-    groups={p['id']:source_group(source,['packages/meta-harness/'+p['module']]) for p in composition['plugins']}
+    composition=validate(configure_optional(source,config.get('metaCompositionConfig') or json.loads((plugin/'composition-native.json').read_text()),config.get('referencePolicy')),source)
+    groups={p['id']:source_group(source,[entry_path(p),*([f"packages/{p['package']}/package.json",f"packages/{p['package']}/README.md"] if p.get('package') else [])]) for p in composition['plugins'] if p['enabled'] or not p.get('package')}
     support=['src/control/meta_worker_native.mjs','src/control/meta_gateway.mjs','src/control/meta_host.mjs','src/control/meta_outputs.mjs',
         'src/execution/runner/isolated.mjs','src/execution/runner/boot.mjs','src/execution/runner/gateway_plugin.mjs','src/execution/runner/assets/sdk-minimal.yml',
         'packages/meta-harness/composition-native.mjs','packages/meta-harness/isolated-subagent.mjs','packages/meta-harness/child-output.mjs',
@@ -129,11 +143,14 @@ def freeze(source,data,config):
     system['text']+='\n\n原生工作环境（meta-runtime-v2）：\n使用原生文件、搜索、编辑、终端、任务、技能与会话工具开展研究。插件目录位于 /work/plugins，分析笔记位于 /work/analysis；候选工具接受插件目录相对路径。完整材料索引为 /evidence/index.json，终端完整输出索引为 /outputs/index.json。返回预览不等于文件全文，按路径自行检索。普通研究子代理使用原生 spawn，与主 Meta 共享授权文件和持久会话存储；cwd 遵循原生指定/继承规则。使用 send_message 追问或续接，interrupt_agent 中断当前工作；恢复后先用 list_agents 和会话查询核对原子任务，再决定继续，不盲目重做未知副作用。研究子代理无额外五分钟总时限，仍受原活动截止和预算限制。停止审查者独立隔离。业务工具直接传对象参数，写操作带稳定的 idempotencyKey；请求结果未知时先核对后台记录，不重复创建。candidate_retain 的预期选择修订来自 campaign_status.selectionRevision。report_get_facts 取得不可变事实快照后，report_save 提交 analysis 或带摘要的 analysisFile、factsId 与 expectedReportRevision（首次为 0）；每个报告修订永久保留。\n'
     system.update(version='meta-system-v8',sha256=hashlib.sha256(system['text'].encode()).hexdigest())
     from .meta_contracts import binding
+    from .meta_contracts import CONTRACTS
+    extra_contracts=optional_contracts(source,composition,CONTRACTS['meta-tools-v4'])
     document={'toolContract':binding(),'version':VERSION,'composition':composition,'files':files,'groups':{k:{'id':digest(v),'files':v} for k,v in groups.items()},
         'framework':{'package':package,**{k:framework[k] for k in ['version','resolved','integrity']}},
         'systemPrompt':system,'reviewerPrompt':(plugin/'reviewer.md').read_text(),
         'runnerImage':prepare_image(source,data),'stopPolicy':'stop-review-v1','lockSha256':files['package-lock.json'],
         'capabilities':json.loads((plugin/'capabilities.json').read_text()),'runtimeVersion':'meta-runtime-v2','recovery':{'additionalAttempts':2,'delaysSeconds':[2,10]},'delegationVersion':'native-research-v1','hostBoundary':'shared activity research Runner; independently isolated stop review; host-bound channels'}
+    if extra_contracts:document['optionalToolContracts']=extra_contracts
     id=digest(document);root=data/'meta-compositions'/id;root.mkdir(parents=True,exist_ok=True)
     objects=data/'meta-objects/sha256';objects.mkdir(parents=True,exist_ok=True)
     for rel,sha in files.items():
@@ -153,7 +170,8 @@ def freeze(source,data,config):
     atomic_json(root/'manifest.json',{**document,'id':id})
     verify(data,{'id':id},source)
     return {'id':id,'version':VERSION,'plugins':composition['plugins'],'preset':composition['id'],'runnerImage':document['runnerImage'],
-        'toolContract':document['toolContract'],'lockSha256':document['lockSha256'],'stopPolicy':document['stopPolicy'],'framework':document['framework']}
+        'toolContract':document['toolContract'],'lockSha256':document['lockSha256'],'stopPolicy':document['stopPolicy'],'framework':document['framework'],
+        **({'optionalToolContracts':extra_contracts} if extra_contracts else {})}
 
 def verify(data,reference,source):
     id=reference['id']
@@ -161,7 +179,7 @@ def verify(data,reference,source):
     data=Path(data);source=Path(source);file=data/'meta-compositions'/id/'manifest.json'
     document=json.loads(file.read_text())
     if document.get('version')!=VERSION or document.get('id')!=id or digest({k:v for k,v in document.items() if k!='id'})!=id:raise Refused('Meta manifest integrity mismatch')
-    if file_hash(source/'package-lock.json')!=document['lockSha256']:raise Refused('Restore matching Meta dependency lock first')
+    if not compatible_dependency_lock(data,source,document['lockSha256']):raise Refused('Restore matching Meta dependency lock first')
     root=data/'cache/meta-runtimes'/id;root.mkdir(parents=True,exist_ok=True)
     # Materialize only verified blobs. Cache loss never loses a saved composition.
     for rel,sha in document['files'].items():

@@ -5,6 +5,8 @@ export function validateNativeComposition(manifest){
  const ids=new Set();const native=['tools','systemPrompt','subagents'];
  for(const p of manifest.plugins){
   if(!p.id||ids.has(p.id)||!/^[-\w]+\.mjs$/.test(p.module)||!Array.isArray(p.roles)||p.roles.some(r=>!presets[r])||typeof p.enabled!=='boolean')throw new Error('Invalid/duplicate Meta plugin');
+  if(p.package&&(!['meta-model-reference','meta-harness-reference'].includes(p.package)||p.id!==p.package||p.module!=='index.mjs'||JSON.stringify(p.roles)!=='["meta"]'))throw new Error('Invalid optional Meta package');
+  if(['meta-model-reference','meta-harness-reference'].includes(p.id)&&!p.package)throw new Error('Optional plugin requires its own package');
   ids.add(p.id);
  }
  const enabled=manifest.plugins.filter(p=>p.enabled);
@@ -20,10 +22,11 @@ export function nativeEntries(manifest,{root='/opt/phyexp/meta-plugin',role='met
  const entry=(id,name,config)=>({id,name,config});
  const native=(id,config)=>entry('native-'+id,'@deepseek-ai/dsh-'+id,config);
  const local=(id,module,config)=>entry(id,path.posix.join(root,module),config);
+ const domainEntry=(p,config)=>p.package?entry(p.id,`/opt/phyexp/optional-plugins/${p.package}/${p.module}`,config):local(p.id,p.module,config);
  const domain=manifest.plugins.filter(p=>p.enabled&&p.roles.includes(role));
  const rolePlugins=scopedRole=>{
   const text=scopedRole==='meta'?systemPrompt:scopedRole==='reviewer'?reviewerPrompt:'You are an independent research assistant in the activity research environment. Follow the delegated task and inspect the shared authorized files. Your native working directory is effective; use a separate directory or copy when concurrent edits require it. Send concise findings and file paths to your parent with send_message. Only the main Meta submits business changes. Research has no separate five-minute lifetime; the activity deadline and budget still apply.';
-  const plugins=manifest.plugins.filter(p=>p.enabled&&p.roles.includes(scopedRole)&&!p.provides?.includes('metaControl')).map(p=>local(p.id,p.module,{...p.config,pluginId:p.id,compositionId,observeOnly:scopedRole!=='meta',text}));
+  const plugins=manifest.plugins.filter(p=>p.enabled&&p.roles.includes(scopedRole)&&!p.provides?.includes('metaControl')).map(p=>domainEntry(p,{...p.config,pluginId:p.id,compositionId,observeOnly:scopedRole!=='meta',text}));
   plugins.unshift(native('persona',{prefix:'You are a helpful research and software engineering assistant.',complete:false,includeRuntimeContext:true}));
   if(scopedRole==='meta')plugins.push(native('tool-subagent',{provider:'spawn',agentPreset:presets.research,modelSelectionSettings:false,maxDepth:1}),native('tool-ask-user',{}));
   if(scopedRole!=='reviewer')plugins.push(native('tool-subagent-control',{}));

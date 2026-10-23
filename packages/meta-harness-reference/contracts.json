@@ -1,0 +1,154 @@
+{
+  "version": "meta-reference-tools-v1",
+  "operations": {
+    "reference_harness_list": {
+      "plugin": "meta-harness-reference",
+      "write": false,
+      "description": "List only user-approved reference choices, compatibility, selection policy and capability revision. No model call is made.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": []
+      }
+    },
+    "reference_harness_submit": {
+      "plugin": "meta-harness-reference",
+      "write": true,
+      "description": "Run one approved reference Harness. Omit modelRef for the fixed Solver; an explicit approved modelRef requires BOTH reference plugins. Select a useful pair within the user policy; never sweep all pairs by default. Explain the research question. Runs use fresh task contexts and the shared activity budget, and do not count as candidate scores.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true
+          },
+          "repeats": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "researchQuestion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expectedPolicyRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "execution": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "trialTimeSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "allowShortened": {
+                "type": "boolean"
+              }
+            }
+          },
+          "harnessRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "modelRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "tasks",
+          "repeats",
+          "researchQuestion",
+          "idempotencyKey",
+          "expectedPolicyRevision",
+          "harnessRef"
+        ]
+      }
+    },
+    "reference_harness_status": {
+      "plugin": "meta-harness-reference",
+      "write": false,
+      "description": "Read reference batches, run states, exact pair identities and full evidence paths. Reference observations inspire hypotheses; validate improvements with the fixed Solver.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "batchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": []
+      }
+    },
+    "reference_harness_cancel": {
+      "plugin": "meta-harness-reference",
+      "write": true,
+      "description": "Cancel an owned reference batch, including queued runs and running work. Reuse the same idempotency key after an uncertain response.",
+      "input": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expectedPolicyRevision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "batchId",
+          "idempotencyKey",
+          "expectedPolicyRevision"
+        ]
+      }
+    }
+  }
+}

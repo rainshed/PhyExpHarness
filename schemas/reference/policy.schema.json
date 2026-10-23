@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "meta-reference-policy-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "meta-reference-v1"
+    },
+    "modelEnabled": {
+      "type": "boolean"
+    },
+    "harnessEnabled": {
+      "type": "boolean"
+    },
+    "modelRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "harnessRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "maxItems": 32,
+      "uniqueItems": true
+    },
+    "selectionMode": {
+      "enum": [
+        "meta-select",
+        "pinned-pairs"
+      ]
+    },
+    "pairs": {
+      "type": "array",
+      "maxItems": 2048,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "modelRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "harnessRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "modelRef",
+          "harnessRef"
+        ]
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxTrials": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "softTokenLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          "required": []
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxTrials": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "softTokenLimit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "catalogRevision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "version",
+    "modelEnabled",
+    "harnessEnabled",
+    "modelRefs",
+    "harnessRefs",
+    "selectionMode",
+    "pairs",
+    "limits",
+    "catalogRevision"
+  ]
+}

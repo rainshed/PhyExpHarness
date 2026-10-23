@@ -25,7 +25,8 @@ export class MetaHost{
    `type=bind,source=${work},target=/work`,`type=bind,source=${sessionRoot},target=/session`,
    ...['evidence','materials','sdk','versions'].map(name=>`type=bind,source=${path.join(config.filesRoot,name)},target=/${name},readonly`),
    `type=bind,source=${outputRoot},target=/outputs,readonly`,
-   ...(role==='meta'?[`type=bind,source=${config.pluginWorkspace},target=/work/plugins`]:[])];
+   ...(role==='meta'?[`type=bind,source=${config.pluginWorkspace},target=/work/plugins`]:[]),
+   ...this.frozen.composition.plugins.filter(p=>p.enabled&&p.package&&p.roles.includes(role)).map(p=>`type=bind,source=${path.join(this.root,'packages',p.package)},target=/opt/phyexp/optional-plugins/${p.package},readonly`)];
   const session=this.sessionFactory({executionRoot:path.join(this.root,'src/execution'),logs,image:this.image,
    gateway:{stream:(request,signal)=>{
     if(!binding.agents.has(request.sessionId))throw new Error('Model channel identity mismatch');return this.gateway.stream(request,signal);
