@@ -108,6 +108,8 @@ class ControlService:
         self.operations[row['id']]=self.pool.submit(work)
         return {'operationId':row['id'],'state':'running'}
     def create(self,config,key,model_revision=None,source='operator'):
+        from src.execution.host.container_runtime import preflight
+        preflight(config.get('tasks', []))
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
         # Server-owned defaults are outside the idempotency request. Cache changes
         # and create replays must never replace an existing Campaign's snapshot.

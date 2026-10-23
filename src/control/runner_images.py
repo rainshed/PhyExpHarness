@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from src.execution.host.single_run import write_json
+from src.execution.host.container_runtime import policy, verify_image
 
 INPUTS = ('package.json', 'package-lock.json', 'src/execution/runner/Dockerfile',
           'install-runner.mjs')
@@ -25,6 +26,7 @@ def _image_id(reference):
     image = result.stdout.strip()
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
         raise ValueError('Invalid Runner image identity: '+reference)
+    verify_image(image)
     return image
 
 
@@ -39,6 +41,7 @@ def prepare_runner_image(bundle_path, cache, log):
     if not re.fullmatch(r'phyexp-runner:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}', tag):
         raise ValueError('Invalid Runner image tag')
     inputs = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in INPUTS}
+    if policy() != 'docker': inputs['containerRuntime'] = policy()
     key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
     cache.mkdir(parents=True, exist_ok=True)
     # Different plugin Bundles share a tag; locking by Bundle ID is insufficient.

@@ -18,6 +18,8 @@
 
 需要 Node.js 24.13+、Python 3.13、Docker、Harbor 0.18.0，以及显式指定的 Quantum-Harbor checkout。平台使用锁定的 DeepSeek Harness 0.2.1-rc.2。
 
+没有 sudo 的 Linux 节点可使用下方的[单 UID Podman 试运行](#单-uid-podman-试运行)。它是显式选择的有限兼容策略，不代表所有任务已支持 Podman。
+
 ```sh
 npm ci
 python3 -m venv .venv
@@ -94,6 +96,42 @@ tailscale serve --bg --https=18443 http://127.0.0.1:18401
 使用 Serve 的私有网络模式，不启用 Funnel。电脑需保持联网、唤醒且 UI 与后台进程运行；本配置不负责开机自启。关闭此入口用 `tailscale serve --https=18443 off`，不使用会清除其他转发的 `reset`。远程入口撤销后可删除配置文件中的 `publicUrl` 并重启 UI。
 
 若 HTTPS 直连成功而浏览器显示连接被关闭，检查系统或浏览器代理是否接管了 Tailscale 域名。将工作台的准确域名加入代理绕过列表并保留原有条目，让该地址走 Tailscale；不要关闭浏览器认证或证书校验。手机也需保持 Tailscale 已连接。
+
+## 单 UID Podman 试运行
+
+`PHYEXP_CONTAINER_RUNTIME=podman-single-uid-v1` 仅允许 `time_budgeted_hamlearn_10q`。创建活动和独立执行入口都会拒绝其他任务；依赖 UID/GID 65534 控制器沙箱的任务不能通过关闭沙箱来兼容。默认未设置时仍使用原 Docker 路径，已有活动不会自动迁移。
+
+运行条件为 Linux 普通账户可创建 user namespace、cgroup v2 已委派 CPU/内存/进程数控制、本地可写镜像存储，以及部署到用户目录的 Podman、crun、conmon、网络辅助程序、catatonit 和依赖库。镜像存储不能放在 NFS。此策略不需要创建 subordinate UID/GID，也不安装系统服务或修改系统权限。
+
+### 部署边界
+
+- Podman API 仅通过当前用户可访问的 Unix socket 提供 Docker 兼容接口，不监听 TCP，不挂载进实验容器。工作台与控制后台仍绑定回环地址；本机浏览器通过 SSH 端口转发访问工作台。
+- 使用专用 PATH 中的 `docker` 入口调用 [podman-single-uid.py](../../scripts/podman-single-uid.py)，不替换系统 Docker。运行命令使用 Podman 原生接口，以显式指定用户目录下的 init；Compose 等操作使用 Docker 客户端连接 Podman socket。
+- `PHYEXP_PODMAN_CONFIG` 指向仓库外配置，字段包括 `policy`、`podman`、`dockerClient`、`dockerConfig`、`socket`、`signaturePolicy`、`work`、`init` 和 `fakeroot`。所有路径使用部署机器上的绝对路径；`fakeroot` 映射 Debian 的 `fakeroot-sysv`、`faked-sysv`、`libfakeroot-sysv.so` 三个文件。入口应自行设置配置路径，因为隔离 Runner 的宿主进程只继承白名单环境变量。
+- Podman 的 `conmon_env_vars` 必须包含这些用户目录二进制需要的 PATH、动态库路径、容器配置路径及运行目录。缺失时清理子进程可能无法加载库，造成约 20 秒的退出等待；不能靠延长实验时限掩盖这个问题。
+- Podman 4 的 systemd 健康检查只继承 PATH。用户目录安装需让其定时任务调用同一 Podman 启动入口，带回依赖库和存储配置；只对本部署的 `healthcheck run` 转换命令，保留原健康检查内容及间隔，并验证定时重复执行。
+- Compose 启动等待由适配器读取真实运行状态：未定义健康检查的服务必须处于运行中，定义了健康检查的服务必须为 healthy；unhealthy、提前退出或等待超时均失败。此处理兼容 Podman 4 对 `HEALTHCHECK NONE` 返回空 Health 状态的差异。
+- 控制后台选择此策略时，会验证原生 Podman 的 rootless 状态，并核对 Docker 兼容客户端与它使用同一个存储目录。服务和临时目录要保持当前用户独占；共享 home 上的用户服务应限制启动主机。
+
+### 镜像与隔离
+
+构建适配器从官方 Dockerfile 生成临时构建文件，保留任务源码、依赖声明、评分程序、文件模式和入口。文件属主以及镜像 USER 统一为容器 UID/GID 0，映射到普通宿主账户。Debian fakeroot 只用于构建时的文件属主操作，apt 在构建容器中使用单一身份；最终镜像恢复普通 shell 并移除构建辅助文件。它不赋予宿主 root，也不作为运行时沙箱。
+
+Podman 4 不支持 Dockerfile 的逐条 `RUN --network=none`。对所有 RUN 都声明离线的构建，适配器改为整个构建使用 `--network=none`；混合策略会拒绝，不默默放开网络。镜像附带运行策略及原 Dockerfile 摘要标签，构建回执保存转换后的摘要、辅助文件摘要和结果镜像 ID。没有适配标签的镜像不能用于此策略。
+
+任务镜像锁保存 `containerRuntime` 和实际不可变镜像 ID，Runner/Meta 缓存也按运行策略区分。Docker 与单 UID Podman 的镜像不是同一个执行环境，不直接混合比较结果。实验期间依然禁止重建或拉取冻结镜像。
+
+Runner 保留无网络、只读根文件系统、精确挂载、清空 capabilities、禁止提权、系统调用过滤及 CPU/内存/进程数限制。main、qsim、独立 verifier 也清空 capabilities 并禁止提权；main/verifier 限制为 2 CPU、4 GiB，qsim 为 4 CPU、8 GiB，均最多 256 个进程。评分私有文件只进入 verifier，模型凭据仍由宿主网关持有。
+
+Podman 4 的内部网络仍可能转发外部 DNS。此策略显式关闭该网络的 DNS，仅在 main 的 hosts 文件中固定本次 qsim 地址；移除 main 的其他网络后才提供任务工具。需要实测内部服务可达、外网 IP/宿主服务/外部 DNS 均不可达，不能只检查网络名称或配置标志。
+
+单 UID 模式不能保持同一容器内多个 Unix 用户之间的文件权限隔离；这里依靠独立容器、挂载边界与权限限制保护已支持任务。尚未验证的任务、多节点调度、长期存储保留和高并发性能不属于本策略的完成承诺。用户目录中的容器运行时也需要定期维护升级。
+
+### 验证与恢复
+
+先构建并检查镜像，再运行 `tests/contracts/isolation.test.mjs` 以及官方任务的无模型执行/评分检查，通过后才启动有明确轮次、次数、时间和用量限制的真实活动。保留失败记录、构建回执、隔离探针、镜像身份、实际用量及浏览器结果；基础容器启动不代表实验闭环通过。
+
+服务可使用 systemd 用户服务持久运行，工作台关闭不应终止实验。SSH 转发应只绑定本机回环地址。数据和镜像位于临时磁盘时必须另做受保护备份；自动清理策略、重启恢复与持久磁盘位置需按具体节点确认。
 
 ## 检查与实验入口
 

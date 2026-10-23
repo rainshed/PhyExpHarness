@@ -30,7 +30,7 @@ test('native dsh runs a tool loop inside credential-free network-none runner', {
   plugins:[{id:'probe',name:'/opt/phyexp/plugins/probe.mjs'}]},mounts:[`type=bind,source=${plugins},target=/opt/phyexp/plugins,readonly`]});
  try{await session.request('initialize',{...model,cwd:'/tmp/work'});const events=await session.prompt('fixture','Run the available probe and report its result.',30000);
   assert.equal(requests,2);assert.ok(events.some(e=>e.type==='tool/result'));assert.deepEqual(await session.shutdown(),{code:0,signal:null});
- }catch(error){throw new Error(error.stack+'\n'+fs.readFileSync(path.join(dir,'stderr.log'),'utf8'));}
+ }catch(error){const stderr=path.join(dir,'stderr.log');throw new Error(error.stack+'\n'+(fs.existsSync(stderr)?fs.readFileSync(stderr,'utf8'):''));}
  finally{await session.dispose();console.log('Isolation evidence: '+dir);}
 });
 

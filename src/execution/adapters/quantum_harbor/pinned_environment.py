@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from harbor.environments.docker.docker import DockerEnvironment
+from src.execution.host.container_runtime import compose_security, verify_image
 
 
 class PinnedDockerEnvironment(DockerEnvironment):
@@ -23,7 +24,7 @@ class PinnedDockerEnvironment(DockerEnvironment):
         # prevents fallback execution. Apply the overlay to separate verifiers too.
         overlay = Path(self._pin_dir.name) / 'images.json'
         overlay.write_text(json.dumps({'services': {
-            role: {'image': expected, 'pull_policy': 'never'} for role, expected in self._expected_images.items()
+            role: {'image': expected, 'pull_policy': 'never', **compose_security(role)} for role, expected in self._expected_images.items()
         }}))
         self.extra_docker_compose_paths.append(overlay)
 
@@ -44,6 +45,7 @@ class PinnedDockerEnvironment(DockerEnvironment):
         for role, expected in self._expected_images.items():
             actual = subprocess.check_output(['docker', 'image', 'inspect', expected, '--format', '{{.Id}}'], text=True).strip()
             if actual != expected: raise ValueError('Frozen task image is unavailable: '+role)
+            verify_image(expected)
         await super().start(force_build=False)
         project = self.session_id.lower()
         if not re.match(r'^[a-z0-9]', project): project = '0'+project
