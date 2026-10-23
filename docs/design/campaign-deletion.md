@@ -1,6 +1,6 @@
 # 单次进化活动永久删除
 
-日期：2026-10-23 · 状态：实施基线。实际可用范围和验证见运行说明。
+日期：2026-10-23 · 状态：已实现，合成数据与无模型容器验收通过。使用方法见[运行说明](../operations/meta-harness.md#单次活动永久删除)。
 
 ## 1. 产品行为与授权
 
@@ -32,7 +32,9 @@
 
 `src/control/` 持有删除协调器、持久任务、运行停止及存储清理；Store 提供事务屏障与防重。执行侧保持独立，不反向依赖控制服务。公共工作台客户端提供预检查、提交、进度与重试，Studio 实现确认对话框及状态提示，桥接沿用现有用户身份与 POST 命令。
 
-拟采用 `GET /campaigns/{id}/deletion`、`POST /campaigns/{id}/deletion`，提交携带 `expectedRevision` 和 `idempotencyKey`。未受理时 GET 返回预检查，受理后返回持久任务状态；重复请求返回同一任务。删除后任务入口仍可查询最小完成状态，普通活动及其对象接口不可继续读取历史。
+采用 `GET /campaigns/{id}/deletion`、`POST /campaigns/{id}/deletion`，首次提交携带 `expectedRevision` 和 `idempotencyKey`。未受理时 GET 返回预检查，受理后返回持久任务状态；重复请求返回同一任务。失败重试携带 `retry: true` 和新的 `idempotencyKey`。删除后任务入口仍可查询最小完成状态，普通活动及其对象接口不可继续读取历史。
+
+数据库版本 6 新增 `owned_artifacts`、`deletions` 和 `deleted_create_keys`。构建发布、报告及导出在写入正文前登记所属路径，构建暂存目录同样登记，以覆盖进程突然退出。清理等待完整 HTTP 响应（包括导出下载）及已准入的后台操作退出；删除受理与调度共用互斥锁，清理与历史整理、正文对象回收共用已有存储锁。`artifacts/sha256/` 正文按活动目录与 Trial 归档的硬链接引用核对，无法解释的剩余硬链接会阻止清理完成。
 
 ## 5. 验收
 
