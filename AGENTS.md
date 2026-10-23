@@ -27,6 +27,7 @@
 | 项目目标与产品要求 | [README](README.md)、[需求文档](docs/requirements/meta-harness.md) |
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
 | 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
+| 单次活动永久删除、停止与共享数据清理 | [删除设计](docs/design/campaign-deletion.md) |
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
 | 可独立移除的参考模型与参考 Harness 插件 | [完整设计](docs/design/meta-reference-experiments.md)、[开发计划](docs/plans/meta-reference-experiments.md) |
 | Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
