@@ -63,13 +63,14 @@ export class WireGateway{
   const ctl=new AbortController();this.active.add(ctl);
   const bound=AbortSignal.any([ctl.signal,signal||new AbortController().signal,AbortSignal.timeout(Math.max(1,Math.min(DEFAULT_STREAM_POLICY.requestTimeoutMs,this.deadline-Date.now())))]);
   let idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
-  let reserved=false,usage={},finished=false,buffer='',jsonBody='',sse=false;
+  let reserved=false,usage={},finished=false,buffer='',jsonBody='',sse=false;const identities=new Set();
   const observe=row=>{
    const u=row.response?.usage||row.message?.usage||row.usage;
    if(u)usage={...usage,...u};
    if(row.type==='response.completed'||row.type==='response.done')finished=row.response?.status!=='incomplete'&&!row.response?.error;
    if(row.type==='message_stop')finished=true;
-   if(row.model&&row.model!==this.binding.model.model)this.record({type:'server_model_identity',id,requested:this.binding.model.model,actual:row.model});
+   const actual=row.response?.model||row.message?.model||row.model;
+   if(actual&&!identities.has(actual)){identities.add(actual);this.record({type:'server_model_identity',id,requested:this.binding.model.model,actual});}
   };
   const observeLine=line=>{
    line=line.trim();
@@ -101,7 +102,7 @@ export class WireGateway{
    if(reserved){
     const input=usage.input_tokens,output=usage.output_tokens;
     const total=usage.total_tokens??(Number.isFinite(input)&&Number.isFinite(output)?input+output+(usage.cache_read_input_tokens||0)+(usage.cache_creation_input_tokens||0):null);
-    const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:input,outputTokens:output,cacheReadTokens:usage.cache_read_input_tokens||0,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
+    const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:input,outputTokens:output,cacheReadTokens:usage.cache_read_input_tokens??usage.input_tokens_details?.cached_tokens??0,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
     this.record({type:'settled',id,...result});await this.budget.settle(id,result);
    }
   }

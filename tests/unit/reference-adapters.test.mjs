@@ -76,8 +76,10 @@ test('wire accounting accepts SSE with a nonstandard content type and an untermi
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-wire-sse-'));const settled=[];
  try{
   const gateway=new WireGateway({binding:{protocol:'responses',model:{model:'pinned'},baseURL:'https://gateway.test'},deadline:Date.now()+5000,audit:path.join(dir,'audit.jsonl'),budget:{reserve:async()=>{},settle:async(id,result)=>settled.push(result)},
-   fetchImpl:async()=>new Response('event: response.done\r\ndata: '+JSON.stringify({type:'response.done',response:{status:'completed',usage:{input_tokens:10,output_tokens:3,total_tokens:13}}}),{headers:{'content-type':'application/octet-stream'}})});
+   fetchImpl:async()=>new Response('event: response.done\r\ndata: '+JSON.stringify({type:'response.done',response:{model:'pinned-version',status:'completed',usage:{input_tokens:10,input_tokens_details:{cached_tokens:4},output_tokens:3,total_tokens:13}}}),{headers:{'content-type':'application/octet-stream'}})});
   for await(const _ of gateway.stream({method:'POST',path:'/responses',body:'{"model":"pinned"}'})){}
-  assert.equal(settled[0].finish.kind,'completed');assert.equal(settled[0].usage.totalTokens,13);
+  assert.equal(settled[0].finish.kind,'completed');assert.equal(settled[0].usage.totalTokens,13);assert.equal(settled[0].usage.cacheReadTokens,4);
+  const identity=fs.readFileSync(path.join(dir,'audit.jsonl'),'utf8').split('\n').filter(Boolean).map(JSON.parse).find(r=>r.type==='server_model_identity');
+  assert.equal(identity.actual,'pinned-version');assert.equal(identity.requested,'pinned');
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
