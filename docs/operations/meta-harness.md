@@ -4,6 +4,8 @@
 
 ## 当前状态与限制
 
+2026-10-23 新增的[参考模型与参考 Harness 两插件方案](../design/meta-reference-experiments.md)目前仅有设计和[开发计划](../plans/meta-reference-experiments.md)，尚不可在工作台使用。规划中的参考模型读取 DeepSeek Harness 原生配置，参考 Harness 可选 Codex 和 DeepSeek 标准模式；这不改变当前下文的 Solver/Meta 模型配置入口，也不表示已安装或接通参考执行器。
+
 平台仍在开发中。完整故障恢复、工作台生命周期覆盖、干净环境安装与实际导出包的真实独立运行验收仍需补齐；不能据此声明稳定性能提升或跨任务泛化。
 
 平台运行、模型生成插件和导出包真实独立验收分别记录在本地。安装源码不包含历史活动和验收结果，具体活动证据不能由源码版本或离线检查替代。认证续期和用量软阈值的限制见下文。
@@ -18,7 +20,7 @@
 
 需要 Node.js 24.13+、Python 3.13、Docker、Harbor 0.18.0，以及显式指定的 Quantum-Harbor checkout。平台使用锁定的 DeepSeek Harness 0.2.1-rc.2。
 
-没有 sudo 的 Linux 节点可使用下方的[单 UID Podman 试运行](#单-uid-podman-试运行)。它是显式选择的有限兼容策略，不代表所有任务已支持 Podman。
+没有 sudo 的 Linux 节点可使用下方的[单 UID Podman 运行](#单-uid-podman-运行)。它是显式选择的有限兼容策略，不代表所有任务已支持 Podman。
 
 ```sh
 npm ci

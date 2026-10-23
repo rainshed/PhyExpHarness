@@ -28,6 +28,7 @@
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
 | 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
+| 可独立移除的参考模型与参考 Harness 插件 | [完整设计](docs/design/meta-reference-experiments.md)、[开发计划](docs/plans/meta-reference-experiments.md) |
 | Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
 | 进化方向可读性、开发动机、选择解释与证据来源 | [进化可读性设计](docs/design/evolution-readability.md) |
 | Studio 页面与阅读体验 | [新工作台设计](docs/design/meta-workbench-studio.md) |
