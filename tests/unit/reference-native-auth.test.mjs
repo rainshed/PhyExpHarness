@@ -9,7 +9,7 @@ import {usesCodexHost} from '../../src/execution/reference/native_auth.mjs';
 import {wireBinding} from '../../src/execution/reference/wire.mjs';
 
 // Settings materializes the optional headers dict as {}, even when the profile omitted it.
-const profile={headers:{},models:[{id:'gpt-6-sol',reasoningEfforts:{medium:'medium'}}],reasoning:'medium',transport:'sse',retryPolicy:{mode:'normal',maxRetries:0}};
+const profile={headers:{},thinkingBudgets:{},models:[{id:'gpt-6-sol',reasoningEfforts:{medium:'medium'}}],reasoning:'medium',transport:'sse',retryPolicy:{mode:'normal',maxRetries:0}};
 function nativeContext(raw=profile){
  const llm={listProviders:()=>[{id:'openai-codex'}],listConfigurableProviders:()=>[{provider:'openai-codex',settingsNs:'llm-pi-ai',settingsPath:['providers','openai-codex']}],
   listModels:async()=>[{id:'gpt-6-sol'}],resolveCallConfig:async call=>({...call,reasoningEffort:'medium'}),resolveModelInfo:async()=>({id:'gpt-6-sol'})};

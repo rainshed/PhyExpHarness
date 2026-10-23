@@ -7,7 +7,10 @@ def external_settings_issue(snapshot,solver,route):
         if route.get('adapter')=='deepseek':return None
         call=solver;profile=route
     for field in ('thinkingBudgets','cacheRetention'):
-        if profile.get(field) is not None:return '原生 '+field+' 设置尚未验证外部 Harness 等价映射；可使用 DeepSeek 标准模式'
+        value=profile.get(field)
+        # Native Settings materializes optional object schemas as empty dictionaries.
+        # No token budgets have been configured until that dictionary has an entry.
+        if value is not None and not (field=='thinkingBudgets' and value=={}):return '原生 '+field+' 设置尚未验证外部 Harness 等价映射；可使用 DeepSeek 标准模式'
     if profile.get('transport') not in (None,'auto','sse'):return '外部 Harness 暂未验证此原生传输设置'
     effort=call.get('reasoningEffort',profile.get('reasoning'))
     if profile.get('api')=='anthropic-messages' and effort not in (None,'off'):
