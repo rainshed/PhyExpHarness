@@ -28,6 +28,7 @@ from src.execution.host.models import campaign_route
 from src.execution.host.failure import public_failure
 from .meta_status import meta_status
 from src.evidence.library import EvidenceLibrary
+from src.evidence.objects import POLICY as STORAGE_POLICY
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, DEFAULT_RULE
 from src.evidence.materials import Materials,snapshot_tasks
@@ -144,7 +145,7 @@ class ControlService:
                     raise Refused('开发资料包尚未准备好；请完成资料构建后重试。此次未创建活动。详情：'+str(error)) from error
             reference_defaults=self.references.freeze(config) if not replay else {}
             composition=freeze_meta(self.source,self.data,config) if not replay else None
-            campaign=self.store.create(config,key,defaults={**reference_defaults,'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
+            campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **({'executionTimePolicy':planning.execution_time_policy()} if planning.enabled(config) else {}),
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})

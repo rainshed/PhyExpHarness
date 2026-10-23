@@ -8,6 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from src.control.store import Refused,encoded
+from .objects import Objects, enabled
 
 VERSION='meta-files-v2'
 ROOTS=('evidence','materials','sdk','versions','outputs')
@@ -44,7 +45,11 @@ class FileViews:
                     pending.unlink()
                     try:os.link(original,pending)
                     except OSError:shutil.copyfile(original,pending)
-                else:pending.write_bytes(data)
+                else:
+                    if enabled(self.store.get('campaigns',campaign)['config']):
+                        original=Objects(self.service.data).put(data)
+                        pending.unlink();os.link(original,pending)
+                    else:pending.write_bytes(data)
                 pending.chmod(0o444)
                 try:os.link(pending,target)
                 except FileExistsError:pass

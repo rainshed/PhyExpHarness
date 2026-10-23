@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 from src.control.store import identity,Refused
+from .objects import Objects, enabled
 
 HAMLEARN_METRICS = {'linf','relative_l2','relative_l2_within_threshold','level','scored_vector_kind',
     'support_detected_true','support_false_positives','uncertainty_covered','uncertainty_total','uncertainty_median_1sigma',
@@ -22,11 +23,14 @@ def feedback(task,score):
     return result
 
 class EvidenceLibrary:
-    def __init__(self,store,data):self.store=store;self.root=Path(data)/'evidence'
+    def __init__(self,store,data):self.store=store;self.root=Path(data)/'evidence';self.objects=Objects(data)
     def add(self,campaign,trial,kind,text,source,policy='public-development-v1'):
         data=text.encode() if isinstance(text,str) else text;sha=hashlib.sha256(data).hexdigest();file=self.root/sha
-        file.parent.mkdir(parents=True,exist_ok=True)
-        if not file.exists():file.write_bytes(data);file.chmod(0o444)
+        if enabled(self.store.get('campaigns',campaign)['config']):
+            file=self.objects.put(data)
+        else:
+            file.parent.mkdir(parents=True,exist_ok=True)
+            if not file.exists():file.write_bytes(data);file.chmod(0o444)
         with self.store.connection(True) as db:
             existing=[x for x in self.store._list(db,'evidence',campaign) if x['trialId']==trial and x['kind']==kind and x['sha256']==sha]
             if existing:return existing[0]
