@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v5",
+  "version": "meta-tools-v6",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -23,9 +23,6 @@
               "parallelism": {
                 "type": "integer"
               },
-              "defaultTrialTimeSeconds": {
-                "type": "integer"
-              },
               "closeoutReserveSeconds": {
                 "type": "integer"
               },
@@ -35,7 +32,6 @@
             },
             "required": [
               "parallelism",
-              "defaultTrialTimeSeconds",
               "closeoutReserveSeconds",
               "closeoutReserveTokens"
             ],
@@ -60,7 +56,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "Update your resource plan within configured ceilings. "
+      "description": "Update parallelism and activity closeout reserves. Benchmark task time is fixed and cannot be changed."
     },
     "campaign_finish": {
       "plugin": "campaign",
@@ -299,19 +295,6 @@
           "repeats": {
             "type": "integer"
           },
-          "execution": {
-            "type": "object",
-            "properties": {
-              "trialTimeSeconds": {
-                "type": "integer"
-              },
-              "allowShortened": {
-                "type": "boolean"
-              }
-            },
-            "required": [],
-            "additionalProperties": false
-          },
           "idempotencyKey": {
             "type": "string"
           }
@@ -349,35 +332,6 @@
       },
       "write": false,
       "description": "Read batch status and paginated Trials, including official result and evidence references."
-    },
-    "trial_conditions_accept": {
-      "plugin": "experiments",
-      "input": {
-        "type": "object",
-        "properties": {
-          "trialId": {
-            "type": "string"
-          },
-          "trialTimeSeconds": {
-            "type": "integer"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "idempotencyKey": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "trialId",
-          "trialTimeSeconds",
-          "reason",
-          "idempotencyKey"
-        ],
-        "additionalProperties": false
-      },
-      "write": true,
-      "description": "Accept shortened conditions for a reserved Trial flagged conditionsRequired. "
     },
     "results_compare": {
       "plugin": "experiments",

@@ -1,13 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
-import {JsonPrefix,StreamGuard} from '../../src/execution/host/stream_guard.mjs';
+import {JsonPrefix,StreamGuard,BENCHMARK_STREAM_POLICY} from '../../src/execution/host/stream_guard.mjs';
 import {ModelGateway} from '../../src/execution/host/model_gateway.mjs';
 const delta=s=>({type:'tool-call-delta',index:0,argumentsDelta:s});
 const model={provider:'fixture',model:'fixture'};
 function gateway(adapter,policy={}){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'stream-test-'));const settled=[];
  return {dir,settled,g:new ModelGateway({model,adapter,policy:{...policy,cleanupGraceMs:20},deadline:Date.now()+10000,audit:path.join(dir,'audit.jsonl'),settle:async(id,x)=>settled.push(x)})};}
 async function run(g){for await(const _ of g.stream(model)){} }
+test('benchmark model requests survive the old ten-minute and idle cutoffs',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:1000000});
+ let release,entered,signal;const ready=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ const x=gateway({async *stream(request){signal=request.signal;entered();await wait;yield {type:'usage',usage:{totalTokens:7}};yield {type:'finish',reason:{kind:'stop'}};}},BENCHMARK_STREAM_POLICY);
+ x.g.deadline=Date.now()+1800000;
+ try{
+  const work=run(x.g);await ready;t.mock.timers.tick(700000);
+  assert.equal(signal.aborted,false);release();await work;
+  assert.equal(x.g.firstFailure,null);assert.equal(x.settled[0].usage.totalTokens,7);
+ }finally{fs.rmSync(x.dir,{recursive:true,force:true});}
+});
+test('benchmark model requests still stop at the shared solver deadline',async()=>{
+ const x=gateway({async *stream(){await new Promise(()=>{});}},BENCHMARK_STREAM_POLICY);
+ x.g.deadline=Date.now()+20;
+ try{await assert.rejects(run(x.g),/cancel/);assert.equal(x.g.firstFailure.code,'trial_deadline');}
+ finally{fs.rmSync(x.dir,{recursive:true,force:true});}
+});
 test('valid JSON prefixes, escaped strings, nesting, literals and split unicode are accepted',()=>{
  const values=[{}, {command:'a\n"\\\u0001'}, {a:[1,-1.2e3,true,false,null,{},[]]}, {long:'x'.repeat(80000)}];
  for(const value of values){const text=JSON.stringify(value),p=new JsonPrefix();for(const c of text)p.push(c);assert.ok(p.complete());}

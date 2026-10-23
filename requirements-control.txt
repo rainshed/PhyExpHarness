@@ -2,3 +2,4 @@
 fastapi==0.136.3
 uvicorn==0.42.0
 jsonschema==4.26.0
+harbor==0.18.0

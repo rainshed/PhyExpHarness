@@ -2,6 +2,7 @@
 import asyncio
 import json
 import shlex
+import time
 
 
 class InvalidCommand(ValueError):
@@ -9,10 +10,12 @@ class InvalidCommand(ValueError):
 
 
 class ContainerBridge:
-    def __init__(self, environment, audit_path, timeout_sec=300):
+    def __init__(self, environment, audit_path, timeout_sec=300, *, deadline=None, clock=time.time):
         self.environment = environment
         self.audit_path = audit_path
         self.timeout_sec = timeout_sec
+        self.deadline = deadline
+        self.clock = clock
         self.tasks = set()
         self.errors = []
         self.lock = asyncio.Lock()
@@ -21,8 +24,10 @@ class ContainerBridge:
         if not isinstance(request, dict) or set(request) != {'command'} or not isinstance(request['command'], str) or not request['command'].strip():
             raise InvalidCommand('Only a nonempty command is accepted; service, user, env and host paths are not configurable')
         # Both the process inside the container and the host transport are bounded.
-        command = f'timeout --signal=TERM --kill-after=5 {self.timeout_sec} bash -lc {shlex.quote(request["command"])}'
-        result = await self.environment.exec(command=command, cwd='/app', timeout_sec=self.timeout_sec + 10)
+        seconds = self.timeout_sec if self.deadline is None else self.deadline-self.clock()
+        if seconds <= 0:raise TimeoutError('Benchmark agent deadline reached')
+        command = f'timeout --signal=TERM --kill-after=5 {seconds} bash -lc {shlex.quote(request["command"])}'
+        result = await self.environment.exec(command=command, cwd='/app', timeout_sec=seconds + 10)
         return {'stdout': result.stdout or '', 'stderr': result.stderr or '', 'returnCode': result.return_code}
 
     async def handle(self, reader, writer):

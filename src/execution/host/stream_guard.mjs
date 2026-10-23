@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 export const DEFAULT_STREAM_POLICY=Object.freeze(JSON.parse(fs.readFileSync(new URL('./stream-policy.json',import.meta.url),'utf8')));
+export const BENCHMARK_STREAM_POLICY=Object.freeze({...DEFAULT_STREAM_POLICY,version:'benchmark-stream-v1',requestTimeoutMs:null,streamIdleTimeoutMs:null});
 
 // Incremental JSON grammar: incomplete prefixes are allowed, impossible prefixes are not.
 // No eval, no repeated reparsing of growing strings, and no retention of argument contents.

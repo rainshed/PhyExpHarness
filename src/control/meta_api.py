@@ -29,11 +29,11 @@ class MetaAPI:
         self.service=service;self.store=service.store;self.files=FileViews(service)
         self.contract=CONTRACTS['meta-tools-v2'];self.lock=threading.RLock();self.receipts=Receipts(self)
     def call(self,campaign,operation,args):
-        if version(self.service,campaign)!='meta-tools-v5':return self._dispatch(campaign,operation,args)
+        if version(self.service,campaign) not in ('meta-tools-v5','meta-tools-v6'):return self._dispatch(campaign,operation,args)
         from .meta_tool_boundary import ToolBoundary
         from .meta_receipts import receipt
         boundary=ToolBoundary(self)
-        write=CONTRACTS['meta-tools-v5'].get(operation,{}).get('write',operation.endswith(('_submit','_cancel')))
+        write=CONTRACTS[version(self.service,campaign)].get(operation,{}).get('write',operation.endswith(('_submit','_cancel')))
         try:
             try:result=self._dispatch(campaign,operation,args)
             except Exception as error:return boundary.error(campaign,operation,error,write=write)
@@ -52,7 +52,7 @@ class MetaAPI:
             validate(args,spec['input'])
             from .meta_receipts import public
             return public(self.service.references.call(campaign,operation,args))
-        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5')
+        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6')
         spec=CONTRACTS[protocol].get(operation)
         if not spec:raise Refused('Unknown Meta v2 operation')
         # The review grant is attached by the outside host, never part of the model schema.

@@ -2,7 +2,7 @@ export interface ModelSelection {provider:string;model:string;reasoningEffort?:s
 export interface CampaignConfig {
  referencePolicy?:ReferencePolicy;name:string;objective:string;solver:ModelSelection;meta:ModelSelection;tasks:string[];
  concurrency:number;wallTimeSeconds:number;maxRounds:number|null;maxTrials:number|null;
- trialTimeSeconds:number|null;softTokenLimit:number|null;reserveSeconds:number|null;reserveTokens:number|null;
+ trialTimeSeconds?:number|null;softTokenLimit:number|null;reserveSeconds:number|null;reserveTokens:number|null;
  stopMode:'strict'|'drain';drainGraceSeconds:number;resourcePolicy?:string;retries:number;
 }
 export interface CreateAttempt {signature:string;key:string}

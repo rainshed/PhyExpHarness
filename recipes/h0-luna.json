@@ -6,8 +6,6 @@
   "model": "gpt-6-luna",
   "reasoningEffort": "medium",
   "maxTokens": 8192,
-  "agentTimeoutSec": 3600,
-  "commandTimeoutSec": 300,
   "maxOutputChars": 16000,
   "shell": "harbor-main-fresh-bash",
   "modules": [],
@@ -21,5 +19,6 @@
       30,
       60
     ]
-  }
+  },
+  "timePolicy": "benchmark-time-v1"
 }

@@ -1,0 +1,1307 @@
+{
+  "version": "meta-tools-v5",
+  "operations": {
+    "campaign_status": {
+      "plugin": "campaign",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read current objective, fixed models, budgets and state.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "campaign_plan_update": {
+      "plugin": "campaign",
+      "input": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "object",
+            "properties": {
+              "parallelism": {
+                "type": "integer"
+              },
+              "defaultTrialTimeSeconds": {
+                "type": "integer"
+              },
+              "closeoutReserveSeconds": {
+                "type": "integer"
+              },
+              "closeoutReserveTokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "parallelism",
+              "defaultTrialTimeSeconds",
+              "closeoutReserveSeconds",
+              "closeoutReserveTokens"
+            ],
+            "additionalProperties": false
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expectedPlanRevision": {
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changes",
+          "reason",
+          "expectedPlanRevision",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Update your resource plan within configured ceilings. "
+    },
+    "campaign_finish": {
+      "plugin": "campaign",
+      "input": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": "string",
+            "enum": [
+              "stable",
+              "exhausted"
+            ]
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "direction": {
+                  "type": "string"
+                },
+                "finding": {
+                  "type": "string"
+                },
+                "evidenceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "direction",
+                "finding",
+                "evidenceRefs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "remainingDirections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "condition",
+          "candidateId",
+          "reason",
+          "evidenceRefs",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "End exploration and request closeout. "
+    },
+    "candidate_check": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "path",
+                "config"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugins",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Check plugin assembly in an isolated Solver environment; does not create a candidate or Trial."
+    },
+    "candidate_freeze": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "path",
+                "config"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "parent": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "researchRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "recordId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "recordId",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "plugins",
+          "description",
+          "idempotencyKey",
+          "researchRefs"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Check and freeze an execution plugin combination. "
+    },
+    "candidate_list": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "List frozen candidates.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "candidate_diff": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "left": {
+            "type": "string"
+          },
+          "right": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Compare two frozen plugin combinations in this Campaign."
+    },
+    "batch_submit": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "repeats": {
+            "type": "integer"
+          },
+          "execution": {
+            "type": "object",
+            "properties": {
+              "trialTimeSeconds": {
+                "type": "integer"
+              },
+              "allowShortened": {
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidateId",
+          "tasks",
+          "repeats",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Submit one candidate, task list and repeat count. "
+    },
+    "batch_status": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batchId"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read batch status and paginated Trials, including official result and evidence references."
+    },
+    "trial_conditions_accept": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "trialId": {
+            "type": "string"
+          },
+          "trialTimeSeconds": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trialId",
+          "trialTimeSeconds",
+          "reason",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Accept shortened conditions for a reserved Trial flagged conditionsRequired. "
+    },
+    "results_compare": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "candidateIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "batchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read unified backend evaluation of all attempts in the selected scope, including limitations. Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "candidate_retain": {
+      "plugin": "experiments",
+      "input": {
+        "type": "object",
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tradeoffs": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reconsiderWhen": {
+            "type": "string"
+          },
+          "expectedSelectionRevision": {
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "candidateId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "evidenceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "candidateId",
+                "reason",
+                "evidenceRefs"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "researchRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "recordId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "recordId",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "candidateId",
+          "reason",
+          "evidenceRefs",
+          "tradeoffs",
+          "limitations",
+          "reconsiderWhen",
+          "expectedSelectionRevision",
+          "idempotencyKey",
+          "summary",
+          "alternatives",
+          "researchRefs"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Select, reaffirm or roll back to a checked frozen candidate.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "materials_list": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "List allowed materials in this Campaign. "
+    },
+    "materials_search": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Search allowed material text, including trajectories and past analyses. "
+    },
+    "materials_read": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read a preview with character offsets; returned file descriptor points to complete original content. Binary data is accessible by path."
+    },
+    "evidence_list": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "trialId": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "List allowed evidence and official results.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "evidence_read": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read an allowed evidence item. "
+    },
+    "sdk_search": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Search version-matched execution plugin documentation. "
+    },
+    "sdk_read": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read an indexed SDK document.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+    },
+    "sdk_inspect": {
+      "plugin": "evidence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Inspect a public execution API declaration. "
+    },
+    "report_get_facts": {
+      "plugin": "reporting",
+      "input": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Freeze a content-addressed report fact snapshot. Return its ID and readable path."
+    },
+    "report_save": {
+      "plugin": "reporting",
+      "input": {
+        "type": "object",
+        "properties": {
+          "factsId": {
+            "type": "string"
+          },
+          "analysis": {
+            "$ref": "meta-report-analysis-v1"
+          },
+          "analysisFile": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "additionalProperties": false
+          },
+          "expectedReportRevision": {
+            "type": "integer"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "factsId",
+          "expectedReportRevision",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "analysis"
+            ],
+            "not": {
+              "required": [
+                "analysisFile"
+              ]
+            }
+          },
+          {
+            "required": [
+              "analysisFile"
+            ],
+            "not": {
+              "required": [
+                "analysis"
+              ]
+            }
+          }
+        ]
+      },
+      "write": true,
+      "description": "Append an analysis revision against exactly the supplied facts snapshot. Supply either analysis or analysisFile, never both. Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents. Supply exactly one of analysis or analysisFile. Prefer /work/analysis/file.json with SHA-256. Read schema/template paths from report_get_facts. All six analysis fields are required; problems is an array of {status: resolved|unresolved, description, evidenceRefs?}. Corrections require a new idempotencyKey."
+    },
+    "report_get": {
+      "plugin": "reporting",
+      "input": {
+        "type": "object",
+        "properties": {
+          "reportId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reportId"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read an immutable report revision and its fact/analysis paths."
+    },
+    "export_create": {
+      "plugin": "reporting",
+      "input": {
+        "type": "object",
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidateId",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      },
+      "write": true,
+      "description": "Export an existing frozen candidate. "
+    },
+    "export_status": {
+      "plugin": "reporting",
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "write": false,
+      "description": "Read an export operation and validation status; never resubmit on a lost response."
+    },
+    "research_save": {
+      "plugin": "reporting",
+      "write": true,
+      "description": "Save a human-readable research attempt, observation, turning point or sourced historical annotation. Independent summary first; unknown is not no. Immutable revisions; create expectedRevision=0. No candidate required.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "record": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "motivation",
+                  "observation",
+                  "turning_point",
+                  "annotation"
+                ],
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "proposed",
+                  "testing",
+                  "supported",
+                  "inconclusive",
+                  "failed",
+                  "abandoned"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 600
+              },
+              "problem": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "hypothesis": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "change": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "validation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "observations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": {
+                      "type": "object",
+                      "properties": {
+                        "candidateId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pluginKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      },
+                      "required": [
+                        "candidateId",
+                        "pluginKey"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "trialId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "loaded": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "applicable": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "triggered": {
+                      "enum": [
+                        "yes",
+                        "no",
+                        "unknown"
+                      ],
+                      "type": "string"
+                    },
+                    "behavior": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16000
+                    },
+                    "benefit": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16000
+                    },
+                    "anchors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "evidenceId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "start": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "end": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "unit": {
+                            "const": "characters",
+                            "type": "string"
+                          },
+                          "supports": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1200
+                          }
+                        },
+                        "required": [
+                          "evidenceId",
+                          "sha256",
+                          "start",
+                          "end",
+                          "unit",
+                          "supports"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    }
+                  },
+                  "required": [
+                    "plugin",
+                    "trialId",
+                    "loaded",
+                    "applicable",
+                    "triggered",
+                    "behavior",
+                    "benefit",
+                    "anchors"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                },
+                "maxItems": 100
+              },
+              "nextStep": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "anchors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "evidenceId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "start": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "end": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "unit": {
+                      "const": "characters",
+                      "type": "string"
+                    },
+                    "supports": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1200
+                    }
+                  },
+                  "required": [
+                    "evidenceId",
+                    "sha256",
+                    "start",
+                    "end",
+                    "unit",
+                    "supports"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "candidateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "batchIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "trialIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "reportIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "decisionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "maxItems": 100
+              },
+              "relatedRecords": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "recordId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "recordId",
+                    "revision"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "plugins": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "candidateId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "pluginKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "candidateId",
+                    "pluginKey"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "factAt": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "kind",
+              "state",
+              "summary",
+              "problem",
+              "hypothesis",
+              "change",
+              "validation",
+              "limitations",
+              "nextStep",
+              "factAt"
+            ],
+            "additionalProperties": false,
+            "$id": "evolution-research-v1",
+            "description": "Authored explanation, not official scores. Character offsets count Unicode characters; references bind exact immutable revisions."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "record",
+          "idempotencyKey"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "research_list": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read scoped research summaries with exact revision references; details via research_read.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    "research_read": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read one immutable research revision and checked evidence excerpts.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "recordId",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence_excerpt": {
+      "plugin": "evidence",
+      "write": false,
+      "description": "Read a checked character range supporting a claim; full original remains available.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit": {
+            "const": "characters",
+            "type": "string"
+          },
+          "supports": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        },
+        "required": [
+          "evidenceId",
+          "sha256",
+          "start",
+          "end",
+          "unit",
+          "supports"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "receiptVersion": "meta-tool-receipt-v1"
+}

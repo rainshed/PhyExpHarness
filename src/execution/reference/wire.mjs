@@ -56,7 +56,7 @@ export function fixedRequest(binding,payload){
  return {route,body};
 }
 export class WireGateway{
- constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl});this.active=new Set();this.stopped=false;}
+ constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch,policy=DEFAULT_STREAM_POLICY}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl,policy});this.active=new Set();this.stopped=false;}
  record(row){fs.appendFileSync(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
  fail(code,id,stage,observed={}){const failure={schemaVersion:1,code,requestId:id,stage,source:'reference-model-gateway',detectedAt:new Date().toISOString(),observed};this.failure??=failure;this.record({type:'failure',...failure});}
  abort(){this.stopped=true;for(const ctl of this.active)ctl.abort();}
@@ -64,8 +64,8 @@ export class WireGateway{
   if(this.stopped||Date.now()>=this.deadline)throw new Error('Reference deadline reached');
   const {route,body}=fixedRequest(this.binding,payload),id='reference-request-'+crypto.randomUUID();
   const ctl=new AbortController();this.active.add(ctl);
-  const bound=AbortSignal.any([ctl.signal,signal||new AbortController().signal,AbortSignal.timeout(Math.max(1,Math.min(DEFAULT_STREAM_POLICY.requestTimeoutMs,this.deadline-Date.now())))]);
-  let idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
+  const bound=AbortSignal.any([ctl.signal,signal||new AbortController().signal,AbortSignal.timeout(Math.max(1,Math.min(this.policy.requestTimeoutMs??Infinity,this.deadline-Date.now())))]);
+  let idle;const resetIdle=()=>{clearTimeout(idle);if(this.policy.streamIdleTimeoutMs!=null)idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),this.policy.streamIdleTimeoutMs);};resetIdle();
   let reserved=false,usage={},finished=false,buffer='',jsonBody='',sse=false;const identities=new Set();
   const observe=row=>{
    const u=row.response?.usage||row.message?.usage||row.usage;
@@ -89,7 +89,7 @@ export class WireGateway{
    yield {status:response.status,headers:{'content-type':type}};
    const decoder=new TextDecoder();let size=0;
    for await(const bytes of response.body){
-    clearTimeout(idle);idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
+    resetIdle();
     size+=bytes.length;if(size>32*1024*1024)throw new Error('Oversized reference response');
     const text=decoder.decode(bytes,{stream:true});buffer+=text;
     if(!type.includes('event-stream')&&!sse)jsonBody+=text;

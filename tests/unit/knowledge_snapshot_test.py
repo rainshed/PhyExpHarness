@@ -21,6 +21,9 @@ class KnowledgeSnapshotTests(unittest.TestCase):
         shutil.copytree(ROOT/'knowledge/plugin-sdk/reference',self.reference)
         self.service=ControlService(ROOT,self.root/'data',self.root/'quantum','http://127.0.0.1:1')
         self.service.source=self.root/'source'
+        task=self.root/'quantum/harbor_tasks/time_budgeted_hamlearn_10q'
+        task.mkdir(parents=True)
+        (task/'task.toml').write_text('[agent]\ntimeout_sec = 3600\n')
         self.old_id=self.service.knowledge.manifest['id']
         self.config={'name':'Snapshot regression','solver':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},
                      'meta':{'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'},

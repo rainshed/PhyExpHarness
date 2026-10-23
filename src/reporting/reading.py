@@ -123,20 +123,26 @@ def render_reading(report):
     limit=lambda x:'不限制' if x is None else str(x)
     planned=cfg.get('resourcePolicy')=='meta-resource-planning-v1'
     trial_label=str(cfg['trialTimeSeconds'])+' 秒' if cfg['trialTimeSeconds'] else '由 Meta 按批次分配' if planned else '自动（至多 1 小时，并受剩余时间约束）'
+    benchmark=cfg.get('executionTimePolicy',{}).get('version')=='benchmark-time-v1'
+    if benchmark:trial_label='遵循各题 benchmark'
     lines+=['',f"总时限 {cfg['wallTimeSeconds']/3600:g} 小时；轮次 {limit(cfg['maxRounds'])}；实验次数 {limit(cfg['maxTrials'])}；最高并发 {cfg['concurrency']}。",
         f"总用量软阈值：{limit(cfg['softTokenLimit'])}；单次上限：{trial_label}；配置的收尾最低预留 {cfg['reserveSeconds']/60:g} 分钟 / {cfg['reserveTokens']:,} token，包含在总额度内。"]
     if planned:
         plan=c.get('resourcePlan') or {}
+        plan_time='遵循 benchmark' if benchmark else str(plan.get('defaultTrialTimeSeconds','待定'))+' 秒'
         lines+=['', '## 资源计划与有效条件', '',
                 f"计划版本 {plan.get('revision',0)}；来源 {plan.get('source','尚未制定')}；理由：{plan.get('reason','等待初始计划')}。",
-                f"计划并发 {plan.get('parallelism','待定')}；后续单次 {plan.get('defaultTrialTimeSeconds','待定')} 秒；计划收尾 {plan.get('closeoutReserveSeconds',0)} 秒 / {plan.get('closeoutReserveTokens',0)} token。"]
-        if cfg.get('executionTimePolicy'):
+                f"计划并发 {plan.get('parallelism','待定')}；后续单次 {plan_time}；计划收尾 {plan.get('closeoutReserveSeconds',0)} 秒 / {plan.get('closeoutReserveTokens',0)} token。"]
+        if benchmark:
+            lines.append('求解与评分时限遵循各题 benchmark 原始配置；环境准备和评分不占用求解时间。')
+        elif cfg.get('executionTimePolicy'):
             lines.append(f"单次时长包含启动、Solver、评分和清理；固定评分与清理预留 {cfg['executionTimePolicy']['trialCloseoutReserveSeconds']} 秒，启动还会消耗时间。")
         for key,value in cfg.get('configurationSources',{}).items():
             lines.append(f"- {key}：{limit(cfg.get(key))}；来源 {value.get('source','未核实')}。")
         for t in f['trials']:
             conditions=t.get('effectiveConditions')
-            if conditions:lines.append(f"- {t['task']}：批次申请 {conditions['trialTimeSeconds']} 秒；启动时实际获配 {conditions['actualTimeSeconds']:g} 秒；计划版本 {conditions['resourcePlanRevision']}。")
+            if conditions and benchmark:lines.append(f"- {t['task']}：benchmark 求解上限 {conditions['solverTimeSeconds']:g} 秒；计划版本 {conditions['resourcePlanRevision']}。")
+            elif conditions:lines.append(f"- {t['task']}：批次申请 {conditions['trialTimeSeconds']} 秒；启动时实际获配 {conditions['actualTimeSeconds']:g} 秒；计划版本 {conditions['resourcePlanRevision']}。")
     from datetime import datetime
     for key,label in [('deadline','配置截止时间'),('finishedAt','实际结束时间')]:
         if c.get(key):lines.append(label+'：'+datetime.fromtimestamp(c[key]).astimezone().isoformat(timespec='seconds')+'。')

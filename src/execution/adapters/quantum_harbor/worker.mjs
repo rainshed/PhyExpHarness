@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {BENCHMARK_STREAM_POLICY} from '../../host/stream_guard.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {createProviderCredentials} from '../../host/provider_auth.mjs';
@@ -13,7 +14,8 @@ import {resolveBundle,pluginMounts} from '../../bundle/manifest.mjs';
 const [logs,bundleRoot,socketPath,deadlineString]=process.argv.slice(2);
 const resolved=resolveBundle(bundleRoot),bundle=resolved.manifest;
 const recipe=JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json')));
-const started=Date.now();const deadline=Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
+const benchmark=recipe.timePolicy==='benchmark-time-v1';
+const started=Date.now();const deadline=benchmark?Number(deadlineString):Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
 if(!Number.isFinite(deadline))throw new Error('Explicit finite deadline required');
 const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));
 const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,usage:{},toolCalls:0};
@@ -34,17 +36,17 @@ async function stop(){if(terminating)return;terminating=true;summary.status='can
 try{
  credentials=createProviderCredentials(recipe,{minimumValidityMs:Math.max(120000,deadline-Date.now()+120000)});
  provider=await providerRuntime({model:recipe,credentialFile:credentials.credentialFile});
- gateway=new ModelGateway({model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
+ gateway=new ModelGateway({...(benchmark?{policy:BENCHMARK_STREAM_POLICY}:{}),model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
  const plugins=bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}));
  session=isolatedSession({executionRoot:resolved.executionRoot,logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
   config:{disableLocalTools:true,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),modelInfo:provider.info,mcpConnections:connections,
    requestRecovery:recipe.requestRecovery,recoveryDeadline:deadline,
-   environment:{PHYEXP_MAX_OUTPUT_CHARS:String(recipe.maxOutputChars)},
+   environment:{PHYEXP_BENCHMARK_TIME:benchmark?'1':'0',PHYEXP_MAX_OUTPUT_CHARS:String(recipe.maxOutputChars)},
    plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},...plugins]},
   mounts:pluginMounts(resolved),
   async *handler(op,payload,signal){
    if(op==='mcp')yield* forwardMcp(connections,payload,signal);
-   else if(op==='tool')yield await callContainer(socketPath,payload.command,signal);
+   else if(op==='tool')yield await callContainer(socketPath,payload.command,signal,benchmark?deadline:null);
    else if(op==='receipt'){fs.writeFileSync(path.join(logs,payload.kind==='bootstrap'?'bootstrap-receipt.json':'tool-ready.json'),JSON.stringify(payload));yield {ok:true};}
    else throw new Error('Capability denied');
   }});
@@ -56,7 +58,8 @@ try{
  const requiredTools=[...new Set([...toolReceipt.tools,...additionalTools])];
  const instruction=fs.readFileSync(path.join(logs,'instruction.md'),'utf8');
  const environment=JSON.parse(fs.readFileSync(path.join(logs,'environment.json')));
- const prompt=instruction+'\n\nExecution environment (adapter metadata):\n'
+ const timingNote=environment.timing?'\nBenchmark solver time limit: '+environment.timing.solverTimeSeconds+' seconds. Solver deadline (UTC): '+new Date(environment.timing.solverDeadline*1000).toISOString()+'.\n':'';
+ const prompt=instruction+timingNote+'\n\nExecution environment (adapter metadata):\n'
   +'The bash tool runs inside the task container, starting in /app on each call. Files persist between calls; shell state does not.\n'
   +'Configured MCP endpoints (reachable from Python client scripts inside the container):\n'+JSON.stringify(environment.mcpServers)+'\n';
  fs.writeFileSync(path.join(logs,'prompt.txt'),prompt);

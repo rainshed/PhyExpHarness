@@ -6,16 +6,11 @@
       "type": "object",
       "required": [
         "parallelism",
-        "defaultTrialTimeSeconds",
         "closeoutReserveSeconds",
         "closeoutReserveTokens"
       ],
       "properties": {
         "parallelism": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "defaultTrialTimeSeconds": {
           "type": "integer",
           "minimum": 1
         },

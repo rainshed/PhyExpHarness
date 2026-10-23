@@ -16,14 +16,15 @@ export async function* forwardMcp(connections, payload, signal) {
   if (response.body) for await (const chunk of response.body) yield {bytes: Buffer.from(chunk).toString('base64')};
 }
 
-export function callContainer(socketPath, command, signal) {
+export function callContainer(socketPath, command, signal, deadline=null) {
   if (typeof command !== 'string' || Buffer.byteLength(command) > 1024 * 1024) throw new Error('Invalid command');
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath); let data = '';
     const abort = () => socket.destroy(new Error('Container command aborted'));
     const cleanup = () => signal?.removeEventListener('abort', abort);
     signal?.addEventListener('abort', abort, {once:true}); if (signal?.aborted) abort();
-    socket.setTimeout(320000, () => socket.destroy(new Error('Container bridge timed out')));
+    const timer=setTimeout(()=>socket.destroy(new Error(deadline==null?'Container bridge timed out':'Benchmark agent deadline reached')),deadline==null?320000:Math.max(1,deadline-Date.now()));
+    socket.once('close',()=>clearTimeout(timer));
     socket.on('connect', () => socket.write(JSON.stringify({command}) + '\n'));
     socket.on('data', chunk => { data += chunk; if (data.length > 32 * 1024 * 1024) socket.destroy(new Error('Container result too large')); });
     socket.on('error', error => {cleanup(); reject(error);});

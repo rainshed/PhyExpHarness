@@ -15,6 +15,7 @@ from .bridge import ContainerBridge
 from .mcp_tunnel import McpTunnel
 
 from ...host.task_network import restrict_main, release
+from ...host.task_time import start_solver_clock
 
 
 class DeepSeekHarborAgent(BaseAgent):
@@ -25,12 +26,14 @@ class DeepSeekHarborAgent(BaseAgent):
     def version(self):
         return '0.2.0'
 
-    def __init__(self, *args, recipe_path=None, bundle_root=None, deadline=None, **kwargs):
+    def __init__(self, *args, recipe_path=None, bundle_root=None, deadline=None, benchmark_time=None, **kwargs):
         super().__init__(*args, **kwargs)
         if not bundle_root or not deadline:
             raise ValueError('Frozen bundle root and absolute deadline are required')
         self.bundle_root = Path(bundle_root).resolve()
         self.deadline = float(deadline)
+        self.activity_deadline = self.deadline
+        self.benchmark_time = benchmark_time
         self.recipe_path = self.bundle_root / 'recipe.json'
         self.recipe = json.loads(self.recipe_path.read_text())
         selected=self.recipe
@@ -122,15 +125,26 @@ asyncio.run(main())
             tunnels.append(tunnel)
             connections.append({**endpoint, 'url': await tunnel.start(),
                 'toolNames': [tool['name'] for tool in discovered['tools']],
-                'toolCallTimeoutMs': self.recipe['commandTimeoutSec'] * 1000})
+                'toolCallTimeoutMs': max(1, int((self.deadline-time.time())*1000)) if self.benchmark_time else self.recipe['commandTimeoutSec'] * 1000})
         (self.host_logs / 'mcp-discovery.json').write_text(json.dumps(discovery, indent=2))
         (self.host_logs / 'mcp-connections.json').write_text(json.dumps(connections, indent=2))
 
     async def run(self, instruction, environment, context):
+        # Harbor's asyncio.wait_for begins immediately before calling run().
+        # Mirror that phase for gateway/tool cancellation; Harbor remains the
+        # authority and will also cancel this coroutine at its native deadline.
+        if self.benchmark_time:
+            timing=start_solver_clock(self.benchmark_time,self.activity_deadline,time.time())
+            started=timing['solverStartedAt'];self.deadline=timing['solverDeadline']
+            timing_path=self.host_logs/'timing.json'
+            timing_path.with_suffix('.tmp').write_text(json.dumps(timing,indent=2))
+            timing_path.with_suffix('.tmp').replace(timing_path)
         endpoints = [{'name': server.name, 'transport': server.transport, 'url': server.url} for server in self.mcp_servers]
         (self.host_logs / 'instruction.md').write_text(instruction)
-        (self.host_logs / 'environment.json').write_text(json.dumps({'cwd': '/app', 'mcpServers': endpoints}, indent=2))
-        bridge = ContainerBridge(environment, self.host_logs / 'container-exec.jsonl', self.recipe['commandTimeoutSec'])
+        (self.host_logs / 'environment.json').write_text(json.dumps({'cwd': '/app', 'mcpServers': endpoints,
+            **({'timing':timing} if self.benchmark_time else {})}, indent=2))
+        bridge = ContainerBridge(environment, self.host_logs / 'container-exec.jsonl',
+                                 self.recipe.get('commandTimeoutSec',300),deadline=self.deadline if self.benchmark_time else None)
         proc = None
         tunnels = []
         with tempfile.TemporaryDirectory(prefix='phyexp-bridge-', dir='/tmp') as temp:
@@ -146,6 +160,9 @@ asyncio.run(main())
                         stdout=log, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
                     code = await proc.wait()
                 if code != 0:
+                    if self.benchmark_time and time.time() >= self.deadline:
+                        from harbor.trial.errors import AgentTimeoutError
+                        raise AgentTimeoutError('Benchmark agent deadline reached')
                     raise RuntimeError(f'DeepSeek worker exited {code}; see phyexp/runtime-summary.json')
                 if bridge.errors:
                     raise RuntimeError('Container transport failed: ' + '; '.join(bridge.errors))

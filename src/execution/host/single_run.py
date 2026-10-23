@@ -14,6 +14,7 @@ from pathlib import Path
 from ..bundle.manifest import verify
 from .network import provider_environment
 from ..adapters.quantum_harbor.results import collect, archive_manifest, verify_manifest
+from .task_time import POLICY as BENCHMARK_TIME, read_task_time
 
 TRIAL_CLOSEOUT_RESERVE_SECONDS = 330
 
@@ -94,6 +95,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     bundle_root, quantum_harbor, output = map(lambda p: Path(p).resolve(), [bundle_root, quantum_harbor, output])
     bundle = verify(bundle_root)
     recipe = json.loads((bundle_root / 'recipe.json').read_text())
+    benchmark = recipe.get('timePolicy') == BENCHMARK_TIME
+    timing = read_task_time(quantum_harbor, task_name) if benchmark else None
     task = quantum_harbor / 'harbor_tasks' / task_name
     if '/' in task_name or not (task / 'task.toml').is_file():
         raise ValueError('Task unavailable')
@@ -106,7 +109,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     previous = signal.signal(signal.SIGTERM, stop)
     provenance = {'schemaVersion':1, 'startedAt':now(), 'bundleId':bundle['id'], 'bundleRoot':str(bundle_root),
         'recipe':recipe, 'deadline':deadline, 'task':task_name, 'softTokenLimit':soft_token_limit,
-        'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS,
+        **({'benchmarkTime':timing} if benchmark else {'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS}),
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
     if os.environ.get('PHYEXP_REFERENCE_SPEC'):
         ref=json.loads(Path(os.environ['PHYEXP_REFERENCE_SPEC']).read_text())
@@ -115,21 +118,24 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     write_json(output / 'supervisor.json', {'pid':os.getpid(), 'startedAt':now(), 'deadline':deadline, 'state':'starting'})
     try:
         remaining = deadline - time.time()
-        if remaining <= TRIAL_CLOSEOUT_RESERVE_SECONDS:
+        if benchmark and (timing['requiredTimeSeconds'] is None or remaining < timing['solverTimeSeconds'] + timing['verifierTimeSeconds'] + timing['verifierEnvironmentTimeSeconds']):
+            raise TimeoutError('Activity cannot fit the full benchmark; task time cannot be shortened')
+        if not benchmark and remaining <= TRIAL_CLOSEOUT_RESERVE_SECONDS:
             raise TimeoutError('Insufficient time for startup and official verification')
         # No generated plugin is loaded during this host preflight.
         auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync(process.argv[2])),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
         if not os.environ.get('PHYEXP_REFERENCE_SPEC'):subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
         image = subprocess.run(['docker', 'image', 'inspect', os.environ.get('PHYEXP_REFERENCE_IMAGE') or bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
         provenance['runnerImageId'] = image
-        solver_deadline = min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
-        provenance['solverDeadline']=solver_deadline
+        solver_deadline = None if benchmark else min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
+        if not benchmark:provenance['solverDeadline']=solver_deadline
         selected=(ref.get('native') or {}).get('call') or ref['fixedSolver'] if os.environ.get('PHYEXP_REFERENCE_SPEC') else recipe
         config = {'job_name':'harbor', 'jobs_dir':str(output), 'n_attempts':1, 'n_concurrent_trials':1,
             'retry':{'max_retries':0}, 'environment':{'type':'docker','delete':True,'force_build':False},
             'agents':[{'import_path':bundle['agentEntry'], 'model_name':f'{selected["provider"]}/{selected["model"]}',
-                'override_timeout_sec':max(1,solver_deadline-time.time()),
-                'kwargs':{'bundle_root':str(bundle_root),'deadline':solver_deadline}}],
+                **({} if benchmark else {'override_timeout_sec':max(1,solver_deadline-time.time())}),
+                'kwargs':{'bundle_root':str(bundle_root),'deadline':deadline if benchmark else solver_deadline,
+                          **({'benchmark_time':timing} if benchmark else {})}}],
             'tasks':[{'path':str(task)}], 'verifier':{'disable':False}}
         if task_image_lock:
             lock = json.loads(Path(task_image_lock).read_text())
@@ -172,6 +178,10 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         if process and process.poll() is None:
             os.killpg(process.pid,signal.SIGKILL);process.wait()
         actions = cleanup(output)
+        if benchmark:
+            for file in output.glob('harbor/*/phyexp/timing.json'):
+                phase=json.loads(file.read_text())
+                provenance.update({k:phase[k] for k in ('solverStartedAt','solverDeadline')})
         provenance.update(finishedAt=now(), wallTimeSeconds=time.time()-started)
         write_json(output/'provenance.json', provenance)
     result.update(runId=output.name,runDir=str(output),bundleId=bundle['id'],wallTimeSeconds=time.time()-started,cleanup=actions)
@@ -187,7 +197,7 @@ def main(bundle_root=None, argv=None):
     parser.add_argument('--quantum-harbor',type=Path)
     parser.add_argument('--task')
     parser.add_argument('--output',type=Path)
-    parser.add_argument('--timeout',type=float,default=3600)
+    parser.add_argument('--timeout',type=float)
     parser.add_argument('--deadline',type=float)
     parser.add_argument('--soft-token-limit',type=lambda x:None if x=='none' else int(x),default=3_000_000,help='Positive soft threshold, or none for no token cap')
     parser.add_argument('--task-image-lock',type=Path,help='Operator-prepared immutable task image identities')
@@ -199,9 +209,17 @@ def main(bundle_root=None, argv=None):
         print(json.dumps({'bundleId':verify(bundle_root)['id'],'status':'verified'}));return 0
     if args.collect:
         verify_manifest(args.collect);print(json.dumps(collect(args.collect)));return 0
-    if not all([args.quantum_harbor,args.task,args.output]) or args.timeout<=0 or (args.soft_token_limit is not None and args.soft_token_limit<=0):
+    if not all([args.quantum_harbor,args.task,args.output]) or (args.timeout is not None and args.timeout<=0) or (args.soft_token_limit is not None and args.soft_token_limit<=0):
         parser.error('Explicit task, environment and output; positive time/token limits are required')
-    deadline = min(args.deadline or float('inf'),time.time()+args.timeout)
+    if args.deadline is not None:
+        deadline=args.deadline if args.timeout is None else min(args.deadline,time.time()+args.timeout)
+    else:
+        recipe=json.loads((Path(bundle_root)/'recipe.json').read_text())
+        duration=args.timeout
+        if duration is None:
+            duration=read_task_time(args.quantum_harbor,args.task)['requiredTimeSeconds'] if recipe.get('timePolicy')==BENCHMARK_TIME else 3600
+        if duration is None:parser.error('Unbounded benchmark requires an explicit activity deadline')
+        deadline=time.time()+duration
     result = run(bundle_root,args.quantum_harbor,args.task,args.output,deadline,args.soft_token_limit,args.task_image_lock)
     print(json.dumps({k:result.get(k) for k in ['runId','status','officialReward','stopReason']},ensure_ascii=False))
     return 0 if result['status']=='completed' else 1

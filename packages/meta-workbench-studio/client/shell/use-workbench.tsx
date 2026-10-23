@@ -6,7 +6,7 @@ import {useCampaignData,useResource} from '@phyexp/meta-workbench-client/react';
 export function useWorkbench(){
  const [session]=useState(()=>{try{return {store:createDraftStore(localStorage,'studio',defaults,{legacy:true}),error:''}}catch(e:any){return {store:null,error:'无法读取或保存活动草稿：'+e.message}}});
  const [selected,setSelected]=useState(()=>session.store?.read().selected||'');
- const [config,setConfig]=useState<any>(()=>session.store?.read().config||defaults);
+ const [config,setConfig]=useState<any>(()=>({...(session.store?.read().config||defaults),trialTimeSeconds:null}));
  const data=useCampaignData(selected),c=data.campaign;
  const [readingTarget,setReadingTarget]=useState('');
  const [readingPages,setReadingPages]=useState<any>({}),[pluginReturn,setPluginReturn]=useState(false);
