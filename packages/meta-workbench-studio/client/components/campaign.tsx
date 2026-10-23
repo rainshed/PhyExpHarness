@@ -10,6 +10,7 @@ export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command
   {!['finished','failed'].includes(c.state)&&<button disabled={!!busy||!connected} onClick={()=>{setLimits({...c.config});setLimitsError('')}}>调整上限</button>}
   {['running','paused','closing'].includes(c.state)&&<button className="studio-danger" disabled={!!busy||!connected} onClick={()=>command('stop')}>停止并收尾</button>}
   {finalReport&&<button onClick={()=>readReport(finalReport.id)}>{finalReport.kind==='status_summary'?'阅读阶段摘要 ↗':'阅读总报告 ↗'}</button>}
+  <details><summary>更多操作</summary><button className="studio-danger" disabled={!!busy||!connected} onClick={w.openDeletion}>删除活动…</button></details>
  </div>;
 }
 

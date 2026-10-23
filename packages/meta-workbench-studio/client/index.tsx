@@ -5,6 +5,7 @@ import {css as componentStyles} from './components/styles';
 import {ProviderSettings,providerStyles} from './components/providers';
 import {WorkbenchDialogs} from './components/dialogs';
 import {CampaignActions,CampaignNotices} from './components/campaign';
+import {DeletionDialog,DeletionProgress} from './components/campaign-deletion';
 import {EvidenceContext} from './components/evidence';
 import {CreateCampaign} from './features/create';
 import {features,FeaturePage} from './shell/features';
@@ -25,12 +26,12 @@ export function Studio(){const w=useWorkbench();const [menu,setMenu]=useState(fa
  <div className="studio-workspace"><header className="studio-topbar"><span>研究空间 <span className="studio-slash">/</span> {settingsOpen?'供应商与模型':creating?'新建活动':navigation.find(x=>x[0]===view)?.[1]}</span><span className="mh-muted">{c?.config.fixture?'检查夹具 · 非科学实验':'STUDIO · 阅读版'}</span></header><div className="studio-content">
  {w.error&&<div role="alert" className="mh-alert">{w.error}<button onClick={()=>w.setError('')} aria-label="关闭错误提示">×</button>{!w.connected&&<p>状态可能陈旧；后台按原时限独立运行。重连不会重新启动实验。</p>}</div>}{w.notice&&<p role="status" className="mh-notice">{w.notice}</p>}
  <div hidden={!settingsOpen}>{settingsOpen&&<ProviderSettings api={api} onCatalogChanged={w.refreshModels} onClose={()=>w.setSettingsOpen(false)}/>}</div>
- <div hidden={settingsOpen}>{creating?<CreateCampaign w={w}/>:!c?<section className="mh-empty"><h1>{w.selected?'正在读取活动…':'从一个研究目标开始'}</h1><p>选择已有活动，或创建一个有明确额度的实验。</p></section>:<>
+ <div hidden={settingsOpen}>{creating?<CreateCampaign w={w}/>:!c?<section className="mh-empty"><h1>{w.selected?'正在读取活动…':'从一个研究目标开始'}</h1><p>选择已有活动，或创建一个有明确额度的实验。</p></section>:c.deletion?<DeletionProgress w={w}/>:<>
  <header className="studio-campaign" ref={w.heroRef} tabIndex={-1}><div><div className="mh-eyebrow">RESEARCH WORKSPACE</div><h2>{c.config.name||'进化活动'}</h2><div className="studio-model-line"><span className={'mh-badge'+(status.attention?' studio-status-attention':'')}>运行：{status.label}</span><span className="mh-badge">分析：{w.finalReport?.kind==='status_summary'?'未完成':w.finalReport?'已提交':'待提交'}</span><details className="studio-models"><summary>执行配置与版本</summary><span>Solver <b>{c.config.solver.model}</b> · {c.config.solver.reasoningEffort??'无需推理设置'}</span><span>Meta <b>{c.config.meta.model}</b> · {c.config.meta.reasoningEffort??'无需推理设置'}</span><p className="studio-version-line">当前保留：{c.tables.versions.find((v:any)=>v.id===c.retainedCandidateId)?.label||'尚未选择'} · 最新候选：{c.tables.versions.at(-1)?.label||'暂无'} · 最终冻结：{c.tables.versions.find((v:any)=>v.id===c.finalCandidateId)?.label||'尚未冻结'}</p></details></div></div><CampaignActions w={w}/></header>
  <CampaignNotices c={c} onDetails={()=>w.navigate('meta','meta-status')} onResume={()=>w.command('resume')} busy={w.busy} connected={w.connected}/>
  <section ref={w.contentRef} tabIndex={-1} className="studio-page" aria-label="活动内容区">
  <FeaturePage key={c.id+':'+view} id={view} w={w} c={c} tablesProps={tablesProps} readEvidence={readEvidence} open={open}/>
- </section></>}</div><footer className="studio-footer">PHYEXP / RESEARCH WORKBENCH <span>关闭页面或卸载 UI 不会停止后台</span></footer></div></div><WorkbenchDialogs w={w} evidenceIntro={c&&w.evidence?<EvidenceContext c={evidenceCampaign||c} evidence={w.evidence}/>:null} allowEvidenceDownload/></main>;
+ </section></>}</div><footer className="studio-footer">PHYEXP / RESEARCH WORKBENCH <span>关闭页面或卸载 UI 不会停止后台</span></footer></div></div><WorkbenchDialogs w={w} evidenceIntro={c&&w.evidence?<EvidenceContext c={evidenceCampaign||c} evidence={w.evidence}/>:null} allowEvidenceDownload/><DeletionDialog w={w}/></main>;
 }
 
 export function apply(ctx:any){

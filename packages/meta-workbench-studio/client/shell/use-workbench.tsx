@@ -17,6 +17,7 @@ export function useWorkbench(){
  const [limits,setLimits]=useState<any>(null),[renaming,setRenaming]=useState<any>(null);
  const [formError,setFormError]=useState(''),[limitsError,setLimitsError]=useState(''),[navigation,setNavigation]=useState(0);
  const report=useResource(selected),detail=useResource(selected);
+ const deletion=useResource(selected),[deleteOpen,setDeleteOpen]=useState(false);
  const contentRef=useRef<HTMLElement>(null),formRef=useRef<HTMLElement>(null),formErrorRef=useRef<HTMLDivElement>(null),heroRef=useRef<HTMLElement>(null),detailTrigger=useRef<HTMLElement|null>(null);
  const mounted=useRef(true),actionLock=useRef(false);
  const commands=createCommands({store:session.store});
@@ -35,9 +36,14 @@ export function useWorkbench(){
  };
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[]);
  useEffect(()=>{if(data.error)setError(data.error)},[data.error]);
- useEffect(()=>{if(data.selectionMissing)setSelected('')},[data.selectionMissing]);
+ useEffect(()=>{if(data.selectionMissing){
+  setReadingPages((old:any)=>{const next={...old};delete next[selected];return next});
+  report.clear();detail.clear();deletion.clear();setDeleteOpen(false);setSelected('');setView('overview');
+  setError('');setNotice('活动已移除，已返回活动列表。');
+ }},[data.selectionMissing]);
  useEffect(()=>{try{session.store?.update({config,selected})}catch(e:any){setError('无法保存活动草稿：'+e.message)}},[config,selected]);
- useEffect(()=>{setLimits(null);setRenaming(null);setPluginReturn(false);returnLocation.current=null},[selected]);
+ useEffect(()=>{setLimits(null);setRenaming(null);setPluginReturn(false);setDeleteOpen(false);returnLocation.current=null},[selected]);
+ useEffect(()=>{if(c?.deletion){report.clear();detail.clear();setLimits(null);setRenaming(null);setDeleteOpen(false)}},[c?.deletion?.state]);
  useEffect(()=>{if(navigation)focus(creating?formRef.current:(readingTarget?contentRef.current?.querySelector<HTMLElement>('[data-reading-anchor="'+readingTarget+'"]'):null)||contentRef.current)},[navigation,creating]);
  useEffect(()=>{
   if(view!=='compare'||!restoreComparison.current)return;
@@ -58,6 +64,11 @@ export function useWorkbench(){
  const command=(action:string,changes?:any)=>act(action,async()=>{
   await commands.control(c,action,changes);
   if(mounted.current)setNotice('操作已受理，以下状态来自后台。');
+ });
+ const openDeletion=()=>{setDeleteOpen(true);setError('');deletion.load(signal=>commands.deletion(selected,signal))};
+ const deleteCampaign=(retry=false)=>act(retry?'retry-delete':'delete',async()=>{
+  await commands.deleteCampaign(selected,deletion.value,{retry});
+  if(mounted.current){setDeleteOpen(false);report.clear();detail.clear();setNotice('删除已受理，后台会先停止所属工作，再清理全部历史。')}
  });
  async function readReport(id:string){
   setCreating(false);navigate('reports');await report.load((signal)=>api('/reports/'+id,undefined,signal));
@@ -101,5 +112,6 @@ export function useWorkbench(){
   evidence,setEvidence:(value:any)=>detail.setValue(value?{kind:'evidence',data:value}:null),source,setSource:(value:any)=>detail.setValue(value?{kind:'source',data:value}:null),
   limits,setLimits,notice,setNotice,models:data.models,modelCatalogNote:data.note,settingsOpen,setSettingsOpen,refreshModels:data.refreshModels,renaming,setRenaming,
   formError,setFormError,limitsError,setLimitsError,setNavigation,contentRef,formRef,formErrorRef,heroRef,detailTrigger,focus,navigate,refresh:data.refresh,
+  deleteOpen,setDeleteOpen,deletion,openDeletion,deleteCampaign,
   readingTarget,readingPages:readingPages[selected]||{},saveReadingPage,openPlugin,backToComparison,compareVersions,pluginReturn,act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport,h0Ready:c?.candidates.some((x:any)=>!x.plugins.length&&x.check.status==='passed')};
 }

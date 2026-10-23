@@ -13,6 +13,9 @@ export function createCommands({store,request=api,makeKey=key}){
   },
   control(campaign,action,changes){return request('/campaigns/'+campaign.id+'/control',{
    action,changes,expectedRevision:campaign.revision,idempotencyKey:makeKey()});},
+  deletion(campaign,signal){return request('/campaigns/'+encodeURIComponent(campaign)+'/deletion',undefined,signal);},
+  deleteCampaign(campaign,preview,{retry=false}={}){return request('/campaigns/'+encodeURIComponent(campaign)+'/deletion',{
+   expectedRevision:preview?.expectedRevision,idempotencyKey:makeKey(),retry});},
   async limits(campaign,config){
    const problem=configError(config);if(problem)throw Error(problem);
    const values=numericConfig(config),changes={};

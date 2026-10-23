@@ -12,8 +12,11 @@ export function watchCampaign({id='',request=api,onData,onError,interval=2000}){
     if(!live)return;
     const selectionMissing=!!id&&!list.some(item=>item.id===id);
     let campaign=null,newEvents=[];
-    if(id&&!selectionMissing)[campaign,newEvents]=await Promise.all([
-     request('/campaigns/'+id,undefined,controller.signal),request('/campaigns/'+id+'/events?after='+cursor,undefined,controller.signal)]);
+    if(id&&!selectionMissing){
+     campaign=await request('/campaigns/'+id,undefined,controller.signal);
+     if(campaign.deletion){events=[];cursor=0;}
+     else newEvents=await request('/campaigns/'+id+'/events?after='+cursor,undefined,controller.signal);
+    }
     if(!live)return;
     if(newEvents.length){cursor=newEvents.at(-1).seq;events=[...events,...newEvents].slice(-100);}
     const update={list,campaign,events,selectionMissing};

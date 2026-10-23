@@ -78,3 +78,32 @@ test('transport forwards abort and preserves backend errors without retrying',as
  const request=createRequest({fetch:async(url,options)=>{calls++;assert.equal(url,'/phyexp/api/campaigns');assert.equal(options.signal,signal);assert.equal(options.method,'POST');return {ok:false,json:async()=>({error:'revision conflict'})}}});
  await assert.rejects(request('/campaigns',{},signal),/revision conflict/);assert.equal(calls,1);
 });
+
+test('deletion commands preview without a mutation and submit revision or explicit retry',async()=>{
+ const calls=[],signal=new AbortController().signal;
+ const commands=createCommands({store:null,makeKey:()=> 'deletion-intent',request:async(...args)=>{calls.push(args);return {state:'running'}}});
+ await commands.deletion('campaign-1',signal);
+ assert.deepEqual(calls[0],['/campaigns/campaign-1/deletion',undefined,signal]);
+ await commands.deleteCampaign('campaign-1',{expectedRevision:9});
+ assert.deepEqual(calls[1],['/campaigns/campaign-1/deletion',{expectedRevision:9,idempotencyKey:'deletion-intent',retry:false}]);
+ await commands.deleteCampaign('campaign-1',null,{retry:true});
+ assert.equal(calls[2][1].retry,true);
+});
+
+test('deleting subscriptions drop historical events and clear a removed selection',async()=>{
+ const updates=[],calls=[];let state='running';
+ const sub=watchCampaign({id:'c',interval:999999,onError:e=>{throw e},onData:v=>updates.push(v),request:async route=>{
+  calls.push(route);
+  if(route==='/models')return {schemaVersion:2,models:[]};
+  if(route==='/campaigns')return state==='deleted'?[]:[{id:'c'}];
+  if(route==='/campaigns/c')return {id:'c',...(state==='deleting'?{deletion:{state:'running',phase:'stopping'}}:{})};
+  if(route.includes('/events'))return [{seq:1,type:'history'}];
+  throw Error(route);
+ }});
+ try{
+  await sub.refresh();assert.equal(updates.at(-1).events.length,1);
+  state='deleting';calls.length=0;await sub.refresh();assert.deepEqual(updates.at(-1).events,[]);
+  assert.ok(!calls.some(p=>p.includes('/events')));
+  state='deleted';await sub.refresh();assert.equal(updates.at(-1).selectionMissing,true);assert.equal(updates.at(-1).campaign,null);
+ }finally{sub.dispose()}
+});

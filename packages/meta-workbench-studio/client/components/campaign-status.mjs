@@ -28,6 +28,7 @@ export function metaFailureReason(meta) {
  return 'Meta 会话未能完成，具体原因尚未确认';
 }
 export function campaignStatus(c={}) {
+ if(c.deletion||c.state==='deleting')return {label:c.deletion?.state==='failed'?'删除失败，待重试':'正在删除',attention:false,recovering:false};
  const meta=currentMeta(c),live=['running','closing'].includes(c.state);
  const attention=live&&['needs_attention','failed'].includes(meta?.state);
  const recovering=live&&meta?.state==='recovering';

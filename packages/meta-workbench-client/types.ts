@@ -6,6 +6,11 @@ export interface CampaignConfig {
  stopMode:'strict'|'drain';drainGraceSeconds:number;resourcePolicy?:string;retries:number;
 }
 export interface CreateAttempt {signature:string;key:string}
+export interface CampaignDeletion {
+ campaignId:string;state:'preview'|'running'|'failed'|'deleted';phase?:'stopping'|'cleaning'|'done';
+ expectedRevision?:number;name?:string;requiresStop?:boolean;counts?:Record<string,number>;sharedRetained?:number;
+ blockers?:Array<{kind:string;message:string;campaignId?:string;sourceId?:string;path?:string}>;error?:string;
+}
 export interface DraftState {version:1;config:CampaignConfig;selected:string;attempt:CreateAttempt|null}
 export type Request=<T=unknown>(route:string,body?:unknown,signal?:AbortSignal)=>Promise<T>;
 export type PluginCategory='prompt-context'|'tools'|'tool-results'|'execution-control'|'other';
