@@ -1,3 +1,4 @@
+import {appendLog} from './log_store.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -29,7 +30,7 @@ export class ModelGateway {
   this.reserve=reserve;this.settle=settle;this.policy=Object.freeze({...DEFAULT_STREAM_POLICY,...policy});
   this.active=new Map();this.requests=new Map();this.firstFailure=null;this.terminalFailure=null;this.stopped=false;this.redact=redact;
  }
- record(event){fs.appendFileSync(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...event}))+'\n');}
+ record(event){appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...event}))+'\n');}
  fail(failure){
   this.record({type:'failure',...failure});
   this.firstFailure??=failure;

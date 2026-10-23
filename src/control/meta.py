@@ -1,3 +1,4 @@
+from src.execution.host.log_store import read_log
 """Persisted Meta sessions and event delivery. No scientific improvement procedure is prescribed."""
 import json
 import os
@@ -152,7 +153,7 @@ class MetaDriver:
             # Host audit settles calls that could not reach the ledger during a control restart.
             audits=[Path(row['output'])/'gateway-audit.jsonl',*Path(row['output']).glob('review-sessions/*/gateway-audit.jsonl')]
             for audit in [a for a in audits if a.exists()]:
-                for line in audit.read_text().splitlines():
+                for line in read_log(audit).decode('utf-8').splitlines():
                     try:item=json.loads(line)
                     except json.JSONDecodeError:continue
                     if item.get('type')=='settled':

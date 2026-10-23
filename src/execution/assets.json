@@ -64,7 +64,9 @@
           "src/execution/host/single_run.py",
           "src/execution/host/providers.mjs",
           "src/execution/host/models.py",
-          "src/execution/host/usage.mjs"
+          "src/execution/host/usage.mjs",
+          "src/execution/host/log_store.mjs",
+          "src/execution/host/log_store.py"
         ]
       },
       {

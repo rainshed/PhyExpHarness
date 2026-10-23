@@ -1,3 +1,4 @@
+from src.execution.host.log_store import read_log
 """Independent control service: owns scheduling, recovery and admission; never executes generated code."""
 import hashlib
 import fcntl
@@ -342,7 +343,7 @@ class ControlService:
     def _reconcile_usage(self,trial):
         if not trial.get('leaseId'):return
         for file in Path(trial['output']).glob('harbor/*/phyexp/gateway-audit.jsonl'):
-            for line in file.read_text().splitlines():
+            for line in read_log(file).decode('utf-8').splitlines():
                 try:row=json.loads(line)
                 except json.JSONDecodeError:continue
                 if row.get('type')!='settled':continue

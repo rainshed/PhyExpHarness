@@ -1,3 +1,4 @@
+import {appendLog} from '../host/log_store.mjs';
 import {DEFAULT_STREAM_POLICY} from '../host/stream_guard.mjs';
 // Protocol-preserving host gateway. No credentials or upstream addresses enter a Runner.
 import fs from 'node:fs';
@@ -57,7 +58,7 @@ export function fixedRequest(binding,payload){
 }
 export class WireGateway{
  constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl});this.active=new Set();this.stopped=false;}
- record(row){fs.appendFileSync(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
+ record(row){appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
  fail(code,id,stage,observed={}){const failure={schemaVersion:1,code,requestId:id,stage,source:'reference-model-gateway',detectedAt:new Date().toISOString(),observed};this.failure??=failure;this.record({type:'failure',...failure});}
  abort(){this.stopped=true;for(const ctl of this.active)ctl.abort();}
  async *stream(payload,signal){

@@ -1,3 +1,5 @@
+import {readLogSync} from '../execution/host/log_store.mjs';
+import {gunzipSync} from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -11,7 +13,16 @@ export async function readToolFile(filesRoot,outputRoot,{path:location,offset=0,
  const root=fs.realpathSync(match[1]==='outputs'?outputRoot:path.join(filesRoot,match[1]));
  const target=fs.realpathSync(path.join(root,match[2]));
  if(!target.startsWith(root+path.sep))throw new Error('File outside authorized mount');
+ if(fs.existsSync(target+'.segments/index.json')||target.endsWith('.gz')){
+  const bytes=fs.existsSync(target+'.segments/index.json')?readLogSync(target):fs.readFileSync(target);
+  const actual=createHash('sha256').update(bytes).digest('hex');
+  if(sha256!==undefined&&sha256!==actual)throw new Error('File changed; restart paging with the current SHA-256');
+  const decoded=target.endsWith('.gz')?gunzipSync(bytes,{maxOutputLength:256*1024*1024}):bytes;
+  let total=0,text='';for(const char of new TextDecoder('utf-8',{fatal:true}).decode(decoded)){if(total>=offset&&total<offset+limit)text+=char;total++;}
+  return {path:location,sha256:actual,offset,offsetUnit:'characters',text,total,nextOffset:offset+limit<total?offset+limit:null,storageEncoding:target.endsWith('.gz')?'gzip':'segmented-log-v1'};
+ }
  const handle=await fs.promises.open(target,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+
  let total=0,text='';const digest=createHash('sha256'),decoder=new TextDecoder('utf-8',{fatal:true});
  try{
   if(!(await handle.stat()).isFile())throw new Error('Read a regular file');

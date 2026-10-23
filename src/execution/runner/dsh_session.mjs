@@ -1,3 +1,4 @@
+import {appendLog} from '../host/log_store.mjs';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
@@ -29,10 +30,10 @@ export class DshSession {
     });
     this.exited.catch(() => {});
     this.proc.stdin.on('error', error => this.rejectPending(error));
-    this.proc.stderr.on('data', chunk => fs.appendFileSync(stderrLog, redact(chunk)));
+    this.proc.stderr.on('data', chunk => {try{appendLog(stderrLog, redact(chunk));}catch(error){this.rejectPending(error);this.proc.kill('SIGTERM');}});
     this.lines = readline.createInterface({ input: this.proc.stdout });
     this.lines.on('line', line => {
-      fs.appendFileSync(rpcLog, redact(line) + '\n');
+      try{appendLog(rpcLog, redact(line) + '\n');}catch(error){this.rejectPending(error);this.proc.kill('SIGTERM');return;}
       let message;
       try { message = JSON.parse(line); } catch { return; }
       if (message.method === 'phyexp/request') {

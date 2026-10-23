@@ -1,3 +1,5 @@
+import {Readable} from 'node:stream';
+import {readLogSync} from '../src/execution/host/log_store.mjs';
 // Offline only: replay recorded timestamps/chunks; no provider, credentials or containers.
 import fs from 'node:fs';import crypto from 'node:crypto';import path from 'node:path';import readline from 'node:readline';
 import {StreamGuard,DEFAULT_STREAM_POLICY} from '../src/execution/host/stream_guard.mjs';
@@ -17,7 +19,7 @@ function timeFault(v,now){
  const at=Math.min(idleAt,requestAt);return now>=at?v.guard.fault(idleAt<requestAt?'stream_idle_timeout':'request_timeout',at):null;
 }
 for(const file of files){
- const active=new Map(),hash=crypto.createHash('sha256'),input=fs.createReadStream(file);input.on('data',chunk=>hash.update(chunk));
+ const active=new Map(),hash=crypto.createHash('sha256'),input=Readable.from([readLogSync(file)]);input.on('data',chunk=>hash.update(chunk));
  for await(const line of readline.createInterface({input,crlfDelay:Infinity})){
   let r;try{r=JSON.parse(line);}catch{continue;}const now=Date.parse(r.time);
   if(r.type==='request'){active.set(r.id,{id:r.id,file:path.relative(data,file),start:now,last:null,guard:new StreamGuard(DEFAULT_STREAM_POLICY,now),chunks:0});continue;}

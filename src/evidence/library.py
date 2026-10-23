@@ -1,5 +1,6 @@
 """Allowlisted derived feedback. Raw official archives remain unchanged and separately verifiable."""
 import hashlib
+import gzip
 import json
 from pathlib import Path
 from src.control.store import identity,Refused
@@ -71,7 +72,7 @@ class EvidenceLibrary:
         """
         root=Path(trial['output']).resolve();files={}
         for pattern in ['summary.json','*.log','failure*.json','harbor/*/phyexp/*.json',
-                        'harbor/*/phyexp/*.jsonl','harbor/*/phyexp/*.log',
+                        'harbor/*/phyexp/*.jsonl','harbor/*/phyexp/*.log','harbor/*/phyexp/*.segments/**/*',
                         'harbor/*/verifier/*.txt','harbor/*/verifier/*.log',
                         'harbor/*/verifier/artifacts/**/*','harbor/*/agent/*.txt','harbor/*/result.json']:
             for file in root.glob(pattern):
@@ -85,7 +86,7 @@ class EvidenceLibrary:
         for rel,file in sorted(files.items()):
             kind='official-result' if rel=='summary.json' else 'trajectory-original' if file.name=='events.json' else 'raw-artifact'
             items.append(self.add(trial['campaignId'],trial['id'],kind,file.read_bytes(),
-                {'archive':rel,'format':'original-bytes','collection':summary.get('resultCollection')},policy='public-development-full-v2'))
+                {'archive':rel,'format':'segmented-log-tail' if Path(str(file)+'.segments/index.json').exists() else 'original-bytes','collection':summary.get('resultCollection'),**({'segments':rel+'.segments/index.json'} if Path(str(file)+'.segments/index.json').exists() else {}),**({'storageEncoding':'gzip'} if file.suffix=='.gz' else {})},policy='public-development-full-v2'))
         return items
     def read(self,campaign,id,offset=0,limit=16000):
         row=self.store.get('evidence',id)
@@ -93,7 +94,7 @@ class EvidenceLibrary:
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=32000:raise Refused('Invalid evidence range')
         data=Path(row['path']).read_bytes()
         if hashlib.sha256(data).hexdigest()!=row['sha256']:raise Refused('Evidence integrity mismatch')
-        try:text=data.decode('utf-8')
+        try:text=(gzip.decompress(data) if row.get('source',{}).get('archive','').endswith('.gz') else data).decode('utf-8')
         except UnicodeDecodeError:return {k:v for k,v in row.items() if k!='path'}|{'encoding':'binary','previewAvailable':False}
         return {k:v for k,v in row.items() if k!='path'}|{'offset':offset,'offsetUnit':'characters','total':len(text),'text':text[offset:offset+limit],
             'nextOffset':offset+limit if offset+limit<len(text) else None}
@@ -110,7 +111,7 @@ class EvidenceLibrary:
         except OSError:return {**result,'reason':'原始文件缺失'}
         if hashlib.sha256(data).hexdigest()!=row['sha256'] or anchor.get('sha256')!=row['sha256']:
             return {**result,'availability':'stale','reason':'证据内容摘要不匹配'}
-        try:text=data.decode('utf-8')
+        try:text=(gzip.decompress(data) if row.get('source',{}).get('archive','').endswith('.gz') else data).decode('utf-8')
         except UnicodeDecodeError:return {**result,'availability':'unsupported','reason':'二进制证据无法按字符定位'}
         start,end=anchor.get('start'),anchor.get('end')
         if type(start) is not int or type(end) is not int or not 0<=start<end<=len(text) or end-start>16000:

@@ -1,3 +1,4 @@
+import {readLogSync} from '../host/log_store.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {referenceProvider} from './native.mjs';
@@ -16,7 +17,7 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
   const events=session?.messages.filter(m=>m.method==='reference/event').map(m=>m.params)||[];
   summary.accounting=budget.snapshot();
   const audit=path.join(logs,'gateway-audit.jsonl');
-  const receipts=fs.existsSync(audit)?fs.readFileSync(audit,'utf8').split('\n').filter(Boolean).map(JSON.parse):[];
+  const receipts=fs.existsSync(audit)?readLogSync(audit).toString('utf8').split('\n').filter(Boolean).map(JSON.parse):[];
   summary.usage={...summarizeWireUsage(receipts),totalTokens:summary.accounting.confirmedTokens,accounting:'host gateway confirmed tokens; unknown requests reserved separately'};
   summary.failureContract='request-failure-v2';summary.failure=summary.status==='completed'?null:gateway?.failure||null;
   summary.toolCalls=events.reduce((n,e)=>n+(e.type==='item.completed'&&e.item?.type==='mcp_tool_call'?1:e.type==='assistant'?e.message?.content?.filter(c=>c.type==='tool_use').length||0:0),0);
