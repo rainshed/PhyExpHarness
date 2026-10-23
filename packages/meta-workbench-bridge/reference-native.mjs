@@ -3,6 +3,8 @@ import {launchEnvironmentOf} from '@deepseek-ai/dsh-launch-environment';
 // Trusted host bridge: this document never goes to a browser. Use the native
 // directory/settings/credential services; do not maintain a second model catalog.
 import crypto from 'node:crypto';
+import {createChatGPTCredentials} from '../../src/execution/host/chatgpt_auth.mjs';
+import {codexHostProfile} from '../../src/execution/reference/native_auth.mjs';
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export async function captureNativeModels(ctx){
  const llm=ctx.get('llm'),settings=ctx.get('settings'),credentials=ctx.get('credentials');
@@ -26,16 +28,22 @@ export async function captureNativeModels(ctx){
   if(adapter==='deepseek-api-key')raw.baseURL=resolveAdapterOptions(raw,launchEnvironmentOf(ctx)).baseURL;
   const ref=raw.apiKeyEnv||(adapter==='deepseek-api-key'?'DEEPSEEK_API_KEY':null);
   const credential=ref&&credentials?await credentials.resolve(ref):null;
+  const codexHost=!ref&&codexHostProfile(adapter,provider.id,raw);
+  let unavailable=ref&&!credential?'Native credential is unavailable':!ref?'Native authentication requires a dedicated adapter':null;
+  if(codexHost){
+   try{const auth=createChatGPTCredentials();auth.dispose();unavailable=null;}
+   catch{unavailable='宿主 Codex 登录不可用或即将过期，请更新登录后刷新目录';}
+  }
   const models=await llm.listModels(provider.id);
   for(const model of models){
    const call=await llm.resolveCallConfig({provider:provider.id,model:model.id});
    const info=await llm.resolveModelInfo(provider.id,model.id);
    const config=adapter==='pi-ai'?{providers:{[provider.id]:raw}}:raw;
-   const frozen={adapter,pluginVersion:'0.2.1-rc.2',config,call,info,credentialRef:ref};
+   const frozen={adapter,pluginVersion:'0.2.1-rc.2',config,call,info,credentialRef:ref,...(codexHost?{nativeAuth:'codex-host'}:{})};
    const id='native-'+hash(frozen);
    bindings.push({id,label:model.name||model.id,provider:provider.id,model:model.id,
     frozen,credential:credential?{ref,value:credential.value}:null,
-    unavailable:ref&&!credential?'Native credential is unavailable':!ref?'Native authentication requires a dedicated adapter':null});
+    unavailable});
   }
  }
  return {version:'native-reference-catalog-v1',bindings};

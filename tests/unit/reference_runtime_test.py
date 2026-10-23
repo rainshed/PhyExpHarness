@@ -3,6 +3,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 from src.control.store import Store,Refused,Conflict,PUBLIC_TASKS,encoded
@@ -126,6 +127,33 @@ class ReferencesTest(unittest.TestCase):
         c={'config':{'solver':{'provider':'openai-codex','model':'gpt-6-luna','reasoningEffort':'low'}}}
         self.assertEqual(self.ref.compatibility(c,None,'codex')['state'],'supported')
         self.assertEqual(self.ref.compatibility(c,None,'claude-code')['state'],'unsupported')
+    def test_native_codex_host_handle_compatibility_and_private_credential_boundary(self):
+        frozen={'adapter':'pi-ai','pluginVersion':'0.2.1-rc.2','nativeAuth':'codex-host','credentialRef':None,
+                'config':{'providers':{'openai-codex':{'models':[{'id':'gpt-6-sol'}],'reasoning':'medium'}}},
+                'call':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},'info':{}}
+        row={'id':'native-'+'b'*64,'provider':'openai-codex','model':'gpt-6-sol','label':'GPT','frozen':frozen}
+        document={'version':'native-reference-catalog-v1','bindings':[row]}
+        self.ref.catalog.sync(document);public=self.ref.catalog.read()['models'][0];model=public['id']
+        self.assertFalse((self.ref.catalog.root/'credentials'/(model+'.json')).exists())
+        for harness,state in [('codex','supported'),('dsh-standard','supported'),('claude-code','unsupported')]:
+            self.assertEqual(self.ref.compatibility({'config':{}},model,harness)['state'],state)
+        from src.control.reference.runtime import preflight
+        c=self.store.get('campaigns',self.c);c['config']['referencePolicy'].update(modelRefs=[model],harnessEnabled=False)
+        c['config']['referenceBindings']['models']={model:public};self.store.put('campaigns',c)
+        with patch('src.control.reference.runtime.verify_runtime'),patch('src.control.reference.runtime.subprocess.run') as run:
+            run.return_value.returncode=0;preflight(self.service,self.c)
+            self.assertIn('createChatGPTCredentials',run.call_args.args[0][-1])
+            run.return_value.returncode=1
+            with self.assertRaisesRegex(Refused,'login'):preflight(self.service,self.c)
+        frozen['config']['providers']['openai-codex']['cacheRetention']='long'
+        self.ref.catalog.sync(document);model=self.ref.catalog.read()['models'][0]['id']
+        self.assertEqual(self.ref.compatibility({'config':{}},model,'codex')['state'],'unverified')
+        for key,value in [('baseURL','https://other.test'),('api','openai-responses'),('headers',{}),('apiKeyEnv','OTHER')]:
+            frozen['config']['providers']['openai-codex'][key]=value
+            with self.assertRaisesRegex(Refused,'Invalid'):self.ref.catalog.sync(document)
+            del frozen['config']['providers']['openai-codex'][key]
+        row['credential']={'ref':'OTHER','value':'must-not-store'}
+        with self.assertRaisesRegex(Refused,'copy'):self.ref.catalog.sync(document)
     def test_finalization_and_stop_cover_both_tables(self):
         self.h0();self.submit(repeats=2);self.store.claim(self.c);run=self.store.claim(self.c)
         with self.assertRaises(Refused):self.store.finalize(self.c)

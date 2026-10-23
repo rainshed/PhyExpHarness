@@ -8,7 +8,7 @@ import fcntl
 import sys
 from pathlib import Path
 from ..store import Refused,encoded
-from .catalog import atomic_private,HARNESS
+from .catalog import atomic_private,HARNESS,uses_codex_host
 
 def freeze_runtime(source,data):
     source=Path(source);data=Path(data);files={}
@@ -117,7 +117,13 @@ def preflight(service,campaign):
         for id in policy['modelRefs']:
             value=service.references.catalog.binding(id)
             if hashlib.sha256(encoded(value).encode()).hexdigest()!=binding['models'][id]['digest']:raise Refused('Reference native binding changed')
-            if not (service.references.catalog.root/'credentials'/(id+'.json')).is_file():raise Refused('Reference native credential unavailable')
+            if uses_codex_host(value):
+                # Validate the current host login without copying it into the catalog or calling a model.
+                auth_module=(service.source/'src/execution/host/chatgpt_auth.mjs').as_uri()
+                script='import {createChatGPTCredentials} from '+json.dumps(auth_module)+';try{createChatGPTCredentials().dispose()}catch{process.exitCode=1}'
+                result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,timeout=15)
+                if result.returncode:raise Refused('Reference Codex host login unavailable or expiring; refresh the host login')
+            elif not (service.references.catalog.root/'credentials'/(id+'.json')).is_file():raise Refused('Reference native credential unavailable')
     if policy['harnessEnabled']:
         for id in policy['harnessRefs']:
             image=binding['harnesses'][id].get('image')

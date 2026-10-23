@@ -5,7 +5,7 @@ from pathlib import Path
 from ..store import Refused,Conflict,encoded
 from ..meta_api import page
 from src.execution.host.models import campaign_route
-from .catalog import Catalog,HARNESS
+from .catalog import Catalog,HARNESS,uses_codex_host
 from .policy import DEFAULT,validate,effective,enabled,TERMINAL,release_cancelled_slots
 from src.evidence.outcomes import outcome_summary
 from src.evidence.diagnostics import trial_diagnostics
@@ -35,6 +35,7 @@ class References:
             profile=raw.get('providers',{}).get(call['provider'],raw)
             wire='anthropic' if snapshot['adapter']=='deepseek-api-key' or profile.get('api')=='anthropic-messages' else 'responses' if profile.get('api')=='openai-responses' else 'native'
             auth=snapshot.get('credentialRef') is not None
+            if uses_codex_host(snapshot):wire='responses';auth=True
         else:
             route=campaign_route(c['config'],'solver');wire='anthropic' if route['adapter']=='deepseek' or route.get('api')=='anthropic-messages' else 'responses' if route.get('api')=='openai-responses' else 'native'
             auth=route['auth']['type']=='api-key'
