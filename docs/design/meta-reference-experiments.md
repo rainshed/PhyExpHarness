@@ -311,11 +311,11 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 
 | Harness 引用 | 锁定实现 | 当前可受理通道 |
 |---|---|---|
-| `codex` | `@openai/codex@0.155.0`，`exec --json --ephemeral --ignore-user-config` | 明确 API Key 的原生 Responses 配置，或固定 Solver 的 `openai-codex` 订阅通道；不转换 Chat Completions 协议 |
+| `codex` | `@openai/codex@0.155.0`，`exec --json --ephemeral --ignore-user-config` | 明确 API Key 的原生 Responses 配置，或固定 Solver／原生参考模型的 `openai-codex` 订阅通道；不转换 Chat Completions 协议 |
 | `claude-code` | `@anthropic-ai/claude-code@2.1.280`，非交互 stream-json | 明确 API Key 的原生 Messages 配置，包括 DeepSeek 原生 Messages；不转换 Responses 协议 |
 | `dsh-standard` | `@deepseek-ai/dsh@0.2.1-rc.2`，完整 `dsh-base + dsh-sdk-app` | 冻结的原生 provider；Harness 单独启用时沿用固定 Solver 的宿主认证通道 |
 
-原生发现当前支持 `llm-pi-ai` 和 `llm-deepseek-api-key` 的明确凭据引用。其他原生账户 provider 仍需专用快照/恢复适配，不从项目供应商目录代填。Codex CLI 可保持固定 Solver 的 Codex 订阅 OAuth 通道，凭据只在宿主读取；不将该认证转用于 Claude Code 或任意原生参考模型。订阅接口不支持单次 `max_output_tokens`，按原生协议省略该字段，依靠时限与共享软预算约束；其他配置不兼容时使用明确标记的不可用项。浮动模型别名拒绝进入参考目录。非 DeepSeek 的 Anthropic 推理档位、自定义推理 wire 值、thinkingBudgets、cacheRetention 及非 SSE 传输等尚未验证的等价映射返回 `unverified`，不能提交；这些配置可以由原生 DeepSeek Harness 执行。协议兼容不等于已对用户每个真实服务做在线探测，目录读取不调用模型。
+原生发现当前支持 `llm-pi-ai` 和 `llm-deepseek-api-key` 的明确凭据引用，以及 `llm-pi-ai/openai-codex` 的宿主 Codex 登录句柄。后者只冻结原生模型配置和 `nativeAuth: codex-host`，不冻结令牌或宿主路径；目录检查登录有效性，运行时重新读取当前访问令牌并创建临时凭据，刷新令牌不复制。绑定禁止覆盖 API、端点、认证头和其他 provider；可用于模型参考、Codex 及 DeepSeek 标准模式，不可转用于 Claude Code。其他原生账户 provider 仍需专用快照/恢复适配，不从项目供应商目录代填。订阅接口不支持单次 `max_output_tokens`，按原生协议省略该字段，依靠时限与共享软预算约束；其他配置不兼容时使用明确标记的不可用项。浮动模型别名拒绝进入参考目录。非 DeepSeek 的 Anthropic 推理档位、自定义推理 wire 值、thinkingBudgets、cacheRetention 及非 SSE 传输等尚未验证的等价映射返回 `unverified`，不能提交；这些配置可以由原生 DeepSeek Harness 执行。协议兼容不等于已对用户每个真实服务做在线探测，目录读取不调用模型。
 
 参考模型单独运行复用所选候选的冻结插件与任务工具；模型变化引发的插件运行错误按真实失败留存，不承诺静态核验能证明任意执行插件与任意模型兼容。`requestedDimensions` 保存请求维度，`changedDimensions` 另记实际调用字段差异或待核验，不以模式名证明因果或配置等价。
 

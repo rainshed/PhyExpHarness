@@ -14,6 +14,16 @@ HARNESS={
  'dsh-standard':{'id':'dsh-standard','name':'DeepSeek Harness 标准模式','version':'0.2.1-rc.2','package':'@deepseek-ai/dsh','wire':'native','profile':'dsh-base + dsh-sdk-app'},
 }
 
+def uses_codex_host(snapshot):
+    if 'nativeAuth' not in snapshot:return False
+    profiles=snapshot.get('config',{}).get('providers',{})
+    profile=profiles.get('openai-codex',{})
+    if (snapshot['nativeAuth']!='codex-host' or snapshot.get('credentialRef') is not None or
+        snapshot.get('adapter')!='pi-ai' or snapshot.get('call',{}).get('provider')!='openai-codex' or
+        list(profiles)!=['openai-codex'] or any(profile.get(k) is not None for k in ('apiKeyEnv','api','baseURL','headers'))):
+        raise Refused('Invalid native Codex host authentication binding')
+    return True
+
 def atomic_private(path,value):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     fd,tmp=tempfile.mkstemp(prefix=path.name+'.',dir=path.parent)
@@ -34,6 +44,7 @@ class Catalog:
             frozen=row['frozen'];id=row['id']
             if not isinstance(id,str) or len(id)!=71 or not id.startswith('native-') or any(x not in '0123456789abcdef' for x in id[7:]):raise Refused('Invalid native binding')
             if frozen.get('adapter') not in ('pi-ai','deepseek-api-key') or frozen.get('pluginVersion')!='0.2.1-rc.2':raise Refused('Unsupported native adapter')
+            if uses_codex_host(frozen) and row.get('credential'):raise Refused('Codex host authentication cannot store a native credential copy')
             if frozen['call'].get('provider')!=row['provider'] or frozen['call'].get('model')!=row['model']:raise Refused('Native identity mismatch')
             content=encoded(frozen);digest=hashlib.sha256(content.encode()).hexdigest();id='native-'+digest
             path=self.root/'bindings'/(id+'.json')

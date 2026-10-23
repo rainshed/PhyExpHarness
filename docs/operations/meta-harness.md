@@ -634,7 +634,7 @@ PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1
 
 Claude Code 使用 `dontAsk` 配合显式工具授权：原生终端、文件与研究辅助工具，以及本次冻结的 task/qsim MCP。未授权操作由 CLI 拒绝，不使用 `--dangerously-skip-permissions`。这同时兼容普通 Docker 用户和单 UID Podman 的容器 UID 0；宿主普通用户映射、禁网、只读根文件系统和禁止提权等隔离条件保持不变。此启动策略进入冻结运行时，新活动采用新策略，历史冻结参考运行不热替换。
 
-Codex 外部通道支持明确 API Key 的 Responses 服务，以及固定 Solver 为 `openai-codex` 时的原有 Codex 订阅通道；订阅访问令牌只在宿主读取，不复制刷新令牌、不进入 Runner。该订阅接口不支持 `max_output_tokens`，因此每次输出没有此参数的硬上限，仍受时限和共享软预算约束。Claude Code 要求 Messages 服务，DeepSeek 原生 Messages 可用于 Claude Code。其他原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
+Codex 外部通道支持明确 API Key 的 Responses 服务，以及固定 Solver 或原生参考模型为 `openai-codex` 时的原有 Codex 订阅通道。原生参考模型仍从 Models 配置读取；在 `llm-pi-ai` 配置 `openai-codex` 和准确模型列表，沿用宿主 `~/.codex/auth.json`（或 `PHYEXP_CODEX_AUTH_FILE`），无需再次填写 Key。此绑定禁止覆盖 API、端点和认证头，目录只保存宿主认证句柄；每次运行重新读取有效访问令牌，不复制刷新令牌、不进入 Runner。登录缺失或即将过期时目录显示不可用；刷新宿主登录后重新读取目录。该订阅接口不支持 `max_output_tokens`，因此每次输出没有此参数的硬上限，仍受时限和共享软预算约束。Claude Code 要求 Messages 服务，DeepSeek 原生 Messages 可用于 Claude Code。其他原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
 
 参考运行共享活动的轮次、次数、并发、时限和 token 总账，可附加模型/Harness 子额度；联合运行在总账只计一次，但同时受两项子额度约束。H0 先预留，参考结果独立保存，不能直接抬高主线排名或稳定完成率。运行详情、报告和证据入口按模型参考、Harness 参考、联合参考分组；联合变化不能单独归因。
 
