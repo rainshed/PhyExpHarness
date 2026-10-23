@@ -15,8 +15,11 @@ class ContainerRuntimeTest(unittest.TestCase):
         with patch.dict(os.environ, PHYEXP_CONTAINER_RUNTIME='unknown'):
             with self.assertRaises(ValueError): runtime.policy()
         with patch.dict(os.environ, PHYEXP_CONTAINER_RUNTIME=runtime.PODMAN_SINGLE_UID):
-            runtime.require_tasks(['time_budgeted_hamlearn_10q'])
-            for tasks in [[], ['logical_cnot_decoder_calibration'], ['time_budgeted_hamlearn_10q', 'other']]:
+            from src.control.store import PUBLIC_TASKS
+            runtime.require_tasks(PUBLIC_TASKS)
+            for task in PUBLIC_TASKS:
+                runtime.require_tasks([task])
+            for tasks in [[], ['syndrome_feedback_control'], ['time_budgeted_hamlearn_10q', 'other']]:
                 with self.assertRaises(ValueError): runtime.require_tasks(tasks)
             with self.assertRaises(ValueError): runtime.verify_lock({}, 'time_budgeted_hamlearn_10q')
 
@@ -55,6 +58,15 @@ class ContainerRuntimeTest(unittest.TestCase):
                 self.assertEqual(config['security_opt'], ['no-new-privileges:true'])
                 self.assertNotIn('privileged', config)
                 self.assertNotIn('network_mode', config)
+
+    def test_task_resource_requirements_survive_the_security_overlay(self):
+        with patch.dict(os.environ, PHYEXP_CONTAINER_RUNTIME=runtime.PODMAN_SINGLE_UID):
+            shadow = runtime.compose_security('main', cpus=4, memory_mb=4096)
+            cnot = runtime.compose_security('main', cpus=2, memory_mb=6144)
+            qsim = runtime.compose_security('qsim', cpus=2, memory_mb=4096)
+            self.assertEqual((shadow['cpus'], shadow['mem_limit']), (4, '4096m'))
+            self.assertEqual((cnot['cpus'], cnot['mem_limit']), (2, '6144m'))
+            self.assertEqual((qsim['cpus'], qsim['mem_limit']), (4, '8g'))
 
     def test_offline_build_policy_cannot_silently_gain_network(self):
         source='FROM node\nRUN --network=none npm ci --offline\nRUN --network=none echo done\n'

@@ -24,7 +24,9 @@ class PinnedDockerEnvironment(DockerEnvironment):
         # prevents fallback execution. Apply the overlay to separate verifiers too.
         overlay = Path(self._pin_dir.name) / 'images.json'
         overlay.write_text(json.dumps({'services': {
-            role: {'image': expected, 'pull_policy': 'never', **compose_security(role)} for role, expected in self._expected_images.items()
+            role: {'image': expected, 'pull_policy': 'never', **compose_security(role,
+                cpus=self._effective_cpus, memory_mb=self._effective_memory_mb)}
+            for role, expected in self._expected_images.items()
         }}))
         self.extra_docker_compose_paths.append(overlay)
 

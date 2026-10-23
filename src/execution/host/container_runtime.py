@@ -1,10 +1,14 @@
-"""Explicit execution policy for the limited single-UID Podman pilot."""
+"""Explicit execution policy for the five public single-UID Podman tasks."""
 import json
 import os
 import subprocess
 
 PODMAN_SINGLE_UID = 'podman-single-uid-v1'
-SUPPORTED_TASKS = frozenset({'time_budgeted_hamlearn_10q'})
+# These tasks use data submissions and separate verifier containers. None
+# enables syndrome_feedback_control, whose submitted Python requires UID 65534.
+# Keep an explicit allowlist: new tasks do not inherit this compatibility claim.
+SUPPORTED_TASKS = frozenset({'time_budgeted_hamlearn_10q', 'time_budgeted_shadow_surrogate_60q',
+    'tunable_coupler_cz_netzero', 'logical_cnot_decoder_calibration', 'adaptive_clustered_clbcs_h2o'})
 
 
 def policy():
@@ -16,7 +20,7 @@ def policy():
 
 def require_tasks(tasks):
     if policy() == PODMAN_SINGLE_UID and (not tasks or set(tasks)-SUPPORTED_TASKS):
-        raise ValueError('当前无 sudo Podman 试运行仅支持 time_budgeted_hamlearn_10q；其他任务的多用户沙箱尚未验证，不能启动。')
+        raise ValueError('当前无 sudo Podman 环境支持工作台中的 5 个公开任务；请选择至少一个受支持任务。新增任务需要单独验证容器与隔离兼容性。')
 
 
 def preflight(tasks):
@@ -48,11 +52,11 @@ def verify_lock(lock, task):
         raise ValueError('Container runtime differs from the frozen task environment; create a new Campaign')
 
 
-def compose_security(role):
+def compose_security(role, *, cpus=None, memory_mb=None):
     if policy() != PODMAN_SINGLE_UID:
         return {}
     # UID 0 maps to the ordinary host user. No container receives capabilities,
     # privilege escalation, host networking, or the engine's control socket.
     return {'user': '0:0', 'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
-            'pids_limit': 256, 'cpus': 4 if role == 'qsim' else 2,
-            'mem_limit': '8g' if role == 'qsim' else '4g'}
+            'pids_limit': 256, 'cpus': 4 if role == 'qsim' else (cpus or 2),
+            'mem_limit': '8g' if role == 'qsim' else (str(memory_mb)+'m' if memory_mb else '4g')}

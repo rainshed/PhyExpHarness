@@ -97,9 +97,19 @@ tailscale serve --bg --https=18443 http://127.0.0.1:18401
 
 若 HTTPS 直连成功而浏览器显示连接被关闭，检查系统或浏览器代理是否接管了 Tailscale 域名。将工作台的准确域名加入代理绕过列表并保留原有条目，让该地址走 Tailscale；不要关闭浏览器认证或证书校验。手机也需保持 Tailscale 已连接。
 
-## 单 UID Podman 试运行
+## 单 UID Podman 运行
 
-`PHYEXP_CONTAINER_RUNTIME=podman-single-uid-v1` 仅允许 `time_budgeted_hamlearn_10q`。创建活动和独立执行入口都会拒绝其他任务；依赖 UID/GID 65534 控制器沙箱的任务不能通过关闭沙箱来兼容。默认未设置时仍使用原 Docker 路径，已有活动不会自动迁移。
+`PHYEXP_CONTAINER_RUNTIME=podman-single-uid-v1` 支持工作台中的 5 个公开任务，可单选或组合创建活动：
+
+| 工作台任务 | 任务 ID | 启用的模拟能力 |
+|---|---|---|
+| 10 比特 Hamiltonian 学习 | `time_budgeted_hamlearn_10q` | `hamiltonian_probe` |
+| 60 比特 Shadow Surrogate | `time_budgeted_shadow_surrogate_60q` | `basis_shot_sampling`、`sealed_holdout_reveal` |
+| 可调耦合器 CZ | `tunable_coupler_cz_netzero` | `basic_measurement`、`netzero_flux_control` |
+| 逻辑 CNOT 解码器校准 | `logical_cnot_decoder_calibration` | `lattice_surgery_calibration` |
+| H₂O 自适应测量 | `adaptive_clustered_clbcs_h2o` | `composite_measurement` |
+
+这些任务提交数据，由独立 verifier 评分，均不启用仓库中另一个能力 `syndrome_feedback_control` 的 UID/GID 65534 控制器沙箱。单 UID 支持采用明确任务列表；新增任务或改变能力组合需要重新做兼容验证，不能通过关闭其沙箱来兼容。默认未设置时仍使用原 Docker 路径，已有活动不会自动迁移。
 
 运行条件为 Linux 普通账户可创建 user namespace、cgroup v2 已委派 CPU/内存/进程数控制、本地可写镜像存储，以及部署到用户目录的 Podman、crun、conmon、网络辅助程序、catatonit 和依赖库。镜像存储不能放在 NFS。此策略不需要创建 subordinate UID/GID，也不安装系统服务或修改系统权限。
 
@@ -121,15 +131,26 @@ Podman 4 不支持 Dockerfile 的逐条 `RUN --network=none`。对所有 RUN 都
 
 任务镜像锁保存 `containerRuntime` 和实际不可变镜像 ID，Runner/Meta 缓存也按运行策略区分。Docker 与单 UID Podman 的镜像不是同一个执行环境，不直接混合比较结果。实验期间依然禁止重建或拉取冻结镜像。
 
-Runner 保留无网络、只读根文件系统、精确挂载、清空 capabilities、禁止提权、系统调用过滤及 CPU/内存/进程数限制。main、qsim、独立 verifier 也清空 capabilities 并禁止提权；main/verifier 限制为 2 CPU、4 GiB，qsim 为 4 CPU、8 GiB，均最多 256 个进程。评分私有文件只进入 verifier，模型凭据仍由宿主网关持有。
+Runner 保留无网络、只读根文件系统、精确挂载、清空 capabilities、禁止提权、系统调用过滤及 CPU/内存/进程数限制。main、qsim、独立 verifier 也清空 capabilities 并禁止提权；main/verifier 保留 Harbor 的有效 CPU、内存配置，未设置时限制为 2 CPU、4 GiB，qsim 为 4 CPU、8 GiB，均最多 256 个进程。具体而言，Shadow 的 main 保留 4 CPU，逻辑 CNOT 的 main 保留 6 GiB，不能被统一安全配置覆盖成较低额度。评分私有文件只进入 verifier，模型凭据仍由宿主网关持有。
 
 Podman 4 的内部网络仍可能转发外部 DNS。此策略显式关闭该网络的 DNS，仅在 main 的 hosts 文件中固定本次 qsim 地址；移除 main 的其他网络后才提供任务工具。需要实测内部服务可达、外网 IP/宿主服务/外部 DNS 均不可达，不能只检查网络名称或配置标志。
 
-单 UID 模式不能保持同一容器内多个 Unix 用户之间的文件权限隔离；这里依靠独立容器、挂载边界与权限限制保护已支持任务。尚未验证的任务、多节点调度、长期存储保留和高并发性能不属于本策略的完成承诺。用户目录中的容器运行时也需要定期维护升级。
+单 UID 模式不能保持同一容器内多个 Unix 用户之间的文件权限隔离；这里依靠独立容器、挂载边界与权限限制保护所列 5 个任务。列表之外的任务、多节点调度、长期存储保留和高并发性能不属于本策略的完成承诺。用户目录中的容器运行时也需要定期维护升级。
 
 ### 验证与恢复
 
 先构建并检查镜像，再运行 `tests/contracts/isolation.test.mjs` 以及官方任务的无模型执行/评分检查，通过后才启动有明确轮次、次数、时间和用量限制的真实活动。保留失败记录、构建回执、隔离探针、镜像身份、实际用量及浏览器结果；基础容器启动不代表实验闭环通过。
+
+五任务验收入口为 `tests/smoke/harbor/public_tasks.py`。先用 Quantum-Harbor 自带的 `tools/build_qsim_images.py` 补齐全部 verifier，再在配置好专用容器入口的宿主环境执行：
+
+```bash
+python tests/smoke/harbor/public_tasks.py \
+  --quantum-harbor /absolute/Quantum-Harbor \
+  --cache /absolute/data/task-runtime-locks \
+  --output /absolute/results/public-tasks-check
+```
+
+该检查使用新输出目录，最多并发 2 个任务，不调用模型。它通过正式 MCP 运行探针、提交固定测试答案，核对独立评分、冻结镜像、main 的网络与文件隔离、任务间容器/数据卷分离和清理；Shadow 还经过封存挑战与文件提交，H₂O 经过锁定方案的生产测量。测试答案用于验证链路，得分不代表 Solver 能力，技术验收通过也不要求科学得分为 1。原始失败和后续复查保存在各自输出目录，不能覆盖失败记录。
 
 Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid argument`：宿主文件属主不在容器的单 UID 映射内。Harbor 原有的 tar 流后备上传可完成该操作，无需改写 Harbor；验收要核对后备上传成功、最终 Trial 无异常及独立评分原件，不能只忽略日志中的错误。
 
