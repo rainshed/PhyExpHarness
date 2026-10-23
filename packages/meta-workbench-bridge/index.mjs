@@ -23,7 +23,7 @@ export function apply(ctx){
     const sync=await fetch(base+'/reference-native-sync',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(snapshot),signal:AbortSignal.timeout(20000)});
     if(!sync.ok)throw new Error('Native model snapshot synchronization failed');
    }
-   if(!/^\/(references|health|campaigns|candidates|batches|trials|evidence|reports|exports|models|providers|provider-tests|meta-questions)(\/[-a-zA-Z0-9_]+)*$/.test(route)){
+   if(!/^\/(storage|references|health|campaigns|candidates|batches|trials|evidence|reports|exports|models|providers|provider-tests|meta-questions)(\/[-a-zA-Z0-9_]+)*$/.test(route)){
     res.writeHead(400).end('Invalid route');return;
    }
    let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw new Error('Request too large');}

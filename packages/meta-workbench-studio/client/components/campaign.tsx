@@ -1,4 +1,5 @@
 import React from 'react';
+import {StorageNotice} from './storage';
 import {number,duration,date,reasons,tasks} from './common';
 import {campaignStatus} from './campaign-status.mjs';
 export function CampaignActions({w}:any){const {c,busy,connected,h0Ready,command,setLimits,setLimitsError,finalReport,readReport}=w;
@@ -23,6 +24,7 @@ export function CampaignNotices({c,onDetails,onResume,busy='',connected=true}:an
    {onDetails&&<button onClick={onDetails}>查看中断详情 →</button>}
   </div>
  </section>}
+ {c.storage&&<StorageNotice storage={c.storage} connected={connected}/>}
  {status.recovering&&<section className="mh-notice" role="status" aria-label="Meta 正在恢复"><strong>{status.manualRecovery?'Meta 正在恢复':'Meta 正在自动恢复'}</strong><p>{status.manualRecovery?'恢复请求已受理，后台正在接续 Meta 会话。':status.reason+'。后台正在尝试接续会话。'}已受理实验仍由后台监督。</p></section>}
  {c.state==='paused'&&<p className="mh-notice">已暂停新工作，已启动实验继续；Meta 当前请求中断。墙钟仍在计时，恢复时先对账。</p>}
  {c.state==='closing'&&!status.attention&&!status.recovering&&<p className="mh-notice">正在收尾，等待外部任务终止确认、用量归集和报告。操作受理不代表任务已经停止。</p>}

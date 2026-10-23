@@ -1,5 +1,5 @@
 // Startup watchdogs remain effective without the controller. Admission waiting is not a provider retry.
-export const ADMISSION_CODES=new Set(['budget_admission_denied','budget_inflight_wait','budget_plan_wait',
+export const ADMISSION_CODES=new Set(['storage_capacity_wait','budget_admission_denied','budget_inflight_wait','budget_plan_wait',
  'accounting_unavailable','accounting_lease_expired','accounting_auth_failed','accounting_protocol_error',
  'request_cancelled','trial_deadline','campaign_deadline']);
 function fault(code,details={}){

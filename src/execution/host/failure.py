@@ -35,6 +35,8 @@ MESSAGES = {
     'runtime_failed': '执行进程未正常完成，具体原因尚未确认',
     'result_collection_failed': '官方评分已完成，但平台收集结果失败',
     'container_transport_error': '容器工具桥接异常，官方评分未完成',
+    'storage_capacity': '存储空间达到保护线，已保留捕获内容并停止生产者',
+    'storage_capacity_wait': '正在等待存储空间恢复',
     'archive_invalid': '结果或归档未通过完整性检查',
     'unknown_failure': '实验未正常完成，具体原因尚未确认',
 }

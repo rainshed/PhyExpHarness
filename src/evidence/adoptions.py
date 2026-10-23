@@ -1,7 +1,9 @@
 """Explicit user grants for historical inspiration; never imports trials or scores."""
 import hashlib
+import os
 from pathlib import Path
 from src.control.store import Refused,identity,encoded
+from .objects import Objects, enabled
 
 POLICIES={'public-development-v1','public-development-full-v2'}
 class Adoptions:
@@ -42,7 +44,10 @@ class Adoptions:
             if prior:return prior
         data,origin=self._source(campaign,sourceCampaignId,sourceKind,sourceId)
         file=self.data/'evidence'/origin['sha256'];file.parent.mkdir(parents=True,exist_ok=True)
-        if not file.exists():file.write_bytes(data);file.chmod(0o444)
+        canonical=Objects(self.data).put(data) if enabled(self.store.get('campaigns',campaign)['config']) else file
+        if not file.exists():
+            if canonical!=file:os.link(canonical,file)
+            else:file.write_bytes(data);file.chmod(0o444)
         if file.is_symlink() or hashlib.sha256(file.read_bytes()).hexdigest()!=origin['sha256']:raise Refused('Adopted copy integrity mismatch')
         with self.store.connection(True) as db:
             prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
@@ -54,7 +59,7 @@ class Adoptions:
             evidence=None
             if access=='meta-research':
                 evidence=self.store._save(db,'evidence',{'id':identity('evidence'),'campaignId':campaign,'trialId':None,
-                    'kind':'historical-inspiration','sha256':origin['sha256'],'path':str(file),'bytes':len(data),
+                    'kind':'historical-inspiration','sha256':origin['sha256'],'path':str(canonical),'bytes':len(data),
                     'policy':'explicit-history-adoption-v1','source':{'archive':'historical-source.txt','adoption':provenance}})
             row=self.store._save(db,'source_adoptions',{'id':id,'campaignId':campaign,'source':provenance,'reason':reason,
                 'access':access,'evidenceId':evidence['id'] if evidence else None,'recordedAt':now,'author':'user','sha256':origin['sha256']})

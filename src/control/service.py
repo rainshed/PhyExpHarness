@@ -69,6 +69,8 @@ class ControlService:
         self.providers=ProviderSettings(self)
         from .reference.service import References
         self.references=References(self)
+        from .storage import Storage
+        self.storage=Storage(self)
     def authenticate(self,token):
         if secrets.compare_digest(token,self.user_token):return {'role':'user'}
         digest=hashlib.sha256(token.encode()).hexdigest()
@@ -101,6 +103,7 @@ class ControlService:
         if pack.manifest['id']!=id:raise Refused('Knowledge pack identity mismatch')
         return pack
     def _operation(self,campaign,kind,payload,fn):
+        if hasattr(self,'storage') and not self.storage.permit(campaign,'build'):raise Refused('存储空间不足，暂不启动构建；释放空间后重试。')
         row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
         def work():
             try:result=fn();row.update(state='finished',result=result)
@@ -201,6 +204,7 @@ class ControlService:
         value['retentionRuleDescription']=retention_rule_description(value['config'])
         value['selectionDecisions']=[{k:r.get(k) for k in ['id','candidateId','previousCandidateId','createdAt','summary','limitations']}|{'detailsAvailable':True} for r in self.store.list('selection_decisions',campaign)]
         value['researchRevision']=[len(self.store.list(t,campaign)) for t in ['research_records','research_links','source_adoptions']]
+        if value['config'].get('storagePolicy')==STORAGE_POLICY:value['storage']=self.storage.view(campaign)
         value['observedAt']=self.store.clock()
         value['taskEvaluation']=evaluation(value['trials'],value['config']['tasks'],value['candidates'],value['config'])
         value['tables']=self.reports.tables(campaign,context=value)
@@ -451,6 +455,7 @@ class ControlService:
             # Finished Campaigns can still own supervisors that exited after collection.
             reap_children(self.children,self.store,'trials',{'finished','failed','cancelled','unknown'})
             if self.meta_driver:self.meta_driver.reap_children()
+            self.storage.schedule()
             for campaign in self.store.list('campaigns'):
                 id=campaign['id']
                 if campaign['state'] in ['draft','finished','failed']:continue
@@ -472,7 +477,7 @@ class ControlService:
                 if cfg['softTokenLimit'] is not None and not usage['inflightReservedTokens'] and usage['confirmedTokens']+usage['unknownReservedTokens']+300000>cfg['softTokenLimit']-cfg['reserveTokens']:
                     self.store.close_admission(id,'token_threshold')
                 if now>=c['deadline']-(0 if planning.enabled(cfg) else cfg['reserveSeconds']) and c['state']!='closing':self.store.close_admission(id,'time_limit')
-                if c['state']=='running':
+                if c['state']=='running' and self.storage.permit(id,'trial'):
                     trial=self.store.claim(id)
                     if trial:
                         try:self._launch(trial)
@@ -484,6 +489,11 @@ class ControlService:
                     for t in self.store.runs(id):
                         if t['state'] in ['launching','running'] and (cfg['stopMode']=='strict' or now>=t['deadline']):self.stop_trial(t,'campaign_deadline')
                     if self.meta_driver:self.meta_driver.interrupt(id,'campaign_deadline')
+                pressure=self.storage.view(id)
+                if pressure['critical'] and cfg.get('storagePolicy')==STORAGE_POLICY:
+                    for t in self.store.runs(id):
+                        if t['state'] in ('launching','running') and not t.get('stopRequestedAt'):self.stop_trial(t,'storage_capacity')
+                    if self.meta_driver:self.meta_driver.interrupt(id,'storage_capacity')
                 if self.meta_driver:self.meta_driver.tick(id)
                 elif c['state']=='closing' and c['counts']['activeTrials']==0:
                     self.store.finalize(id);self.reports.status_summary(id,'达到活动上限；Meta 分析尚未完成。')

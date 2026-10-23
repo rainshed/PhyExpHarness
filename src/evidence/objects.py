@@ -116,6 +116,10 @@ class Objects:
         """Metadata roots plus filesystem references; publication and collection share a lock."""
         removed = 0
         with self.locked():
+            for file in self.root.glob('.publishing-*'):
+                info=file.lstat()
+                if stat.S_ISREG(info.st_mode) and info.st_mtime<before:
+                    file.unlink();removed+=info.st_blocks*512
             for file in self.root.glob('*/*'):
                 if file.is_symlink() or not re.fullmatch('[0-9a-f]{64}', file.name): continue
                 info = file.stat()

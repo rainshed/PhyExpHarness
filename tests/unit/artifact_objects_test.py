@@ -39,6 +39,14 @@ class ArtifactObjectsTests(unittest.TestCase):
         self.objects.prune({a.name},time.time()+1)
         self.assertTrue(a.exists());self.assertFalse(b.exists());self.assertTrue(c.exists())
 
+    def test_stale_publish_temporary_file_is_removed_but_recent_and_links_survive(self):
+        self.objects.put(b'initialize')
+        stale=self.objects.root/'.publishing-stale';stale.write_bytes(b'unfinished');os.utime(stale,(0,0))
+        recent=self.objects.root/'.publishing-recent';recent.write_bytes(b'active')
+        link=self.objects.root/'.publishing-link';link.symlink_to(recent)
+        self.objects.prune(set(),time.time()-60)
+        self.assertFalse(stale.exists());self.assertTrue(recent.exists());self.assertTrue(link.is_symlink())
+
     def test_symlinks_and_missing_official_files_are_rejected(self):
         raw=self.root/'trial';raw.mkdir();(raw/'link').symlink_to('/etc/passwd')
         with self.assertRaisesRegex(ValueError,'symbolic'):self.objects.archive(raw)

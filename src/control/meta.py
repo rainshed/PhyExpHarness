@@ -29,6 +29,7 @@ class MetaDriver:
     def reap_children(self):
         reap_children(self.children,self.store,'meta_sessions',{'completed','failed','interrupted','recovering','needs_attention'})
     def start(self,campaign):
+        if hasattr(self.service,'storage') and not self.service.storage.permit(campaign,'meta'):return
         # The persisted row and process launch are one host-owned admission window.
         self.store.get('campaigns',campaign)
         lockfile=self.service.data/'campaigns'/campaign/'meta-start.lock';lockfile.parent.mkdir(parents=True,exist_ok=True)
@@ -163,7 +164,7 @@ class MetaDriver:
                 if review['sessionId']==row['id'] and review['state']=='pending':
                     review.update(state='failed',failure='Owner session ended before review completion',finishedAt=time.time());self.store.put('stop_reviews',review)
             self.store.mark_unknown(row['leaseId'])
-            row.update(state='completed' if summary['status']=='completed' else 'interrupted' if row.get('stopReason') in ('pause','reference_policy_changed') else 'failed',
+            row.update(state='completed' if summary['status']=='completed' else 'interrupted' if row.get('stopReason') in ('pause','reference_policy_changed','storage_capacity') else 'failed',
                 finishedAt=time.time(),summary=summary);self._save_session(row)
             if row['state']=='failed':
                 if native_config(c):

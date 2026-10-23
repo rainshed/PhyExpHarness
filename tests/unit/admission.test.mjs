@@ -18,12 +18,12 @@ async function fixture(t,handle){
  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-admission-'));t.after(()=>fs.rmSync(folder,{recursive:true,force:true}));
  return {url:`http://127.0.0.1:${server.address().port}`,audit:path.join(folder,'audit.jsonl')};
 }
-test('waiting uses one request identity, calls no provider until granted, and does not run stream idle timer',async t=>{
+for(const waitCode of ['budget_inflight_wait','storage_capacity_wait'])test(waitCode+' uses one request identity and calls no provider until granted',async t=>{
  let attempts=0,calls=0,settles=0;const ids=[];
  const f=await fixture(t,(url,body)=>{
   if(url==='/settle'){settles++;return {body:{status:'reported'}}}
   attempts++;ids.push(body.id);assert.equal(body.admissionVersion,1);
-  return attempts<3?{code:429,body:{status:'waiting',code:'budget_inflight_wait',retryAfterMs:20}}:{body:{status:'granted'}};
+  return attempts<3?{code:429,body:{status:'waiting',code:waitCode,retryAfterMs:20}}:{body:{status:'granted'}};
  });
  const gate=budgetGate({deadline:Date.now()+5000,softTokenLimit:null,url:f.url,token:'fixture'});
  const gateway=new ModelGateway({model,deadline:Date.now()+5000,audit:f.audit,reserve:gate.reserve,settle:gate.settle,

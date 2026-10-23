@@ -36,8 +36,12 @@ class EvidenceLibrary:
             existing=[x for x in self.store._list(db,'evidence',campaign) if x['trialId']==trial and x['kind']==kind and x['sha256']==sha]
             if existing:return existing[0]
             row={'id':identity('evidence'),'campaignId':campaign,'trialId':trial,'kind':kind,'sha256':sha,'path':str(file),
-                 'bytes':len(data),'source':source,'policy':policy}
+                 'bytes':len(data),'source':source,'policy':policy,'encoding':'utf-8' if self._utf8(data) else 'binary'}
             return self.store._save(db,'evidence',row)
+    @staticmethod
+    def _utf8(data):
+        try:data.decode('utf-8');return True
+        except UnicodeDecodeError:return False
     def ingest(self,trial,summary=None):
         folder=Path(trial['output']);summary=summary if summary is not None else json.loads((folder/'summary.json').read_text());items=[]
         config=self.store.get('campaigns',trial['campaignId'])['config']

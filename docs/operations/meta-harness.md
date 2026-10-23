@@ -580,7 +580,7 @@ python3 tests/contracts/harbor-score-pipeline.py --native-meta \
 
 新活动冻结 `meta-tools-v4`、`meta-tool-receipt-v1`、`meta-report-analysis-v2`、`evolution-research-v1` 及渲染摘要。v3 精确资产归档在 `packages/meta-harness/protocols/meta-tools-v3/`，旧活动仍使用原 v3 契约及报告 v1。`evidence_list`、`sdk_read`、`results_compare`、`candidate_retain`、`campaign_status`、`candidate_list`、`report_save` 返回描述、必要状态/计数和完整文件路径，实际模型回执上限 4 KiB。原生 read/grep/bash 仍按请求返回内容；原始终端捕获保留。业务回执归档标为 `business-receipt`，不冒充原始证据全文。
 
-`campaign_status` 和 `candidate_list` 使用空对象，`evidence_list` 可带 batchId/trialId、无分页，`sdk_read` 仅带文档 id，同版本文档导航为 `/sdk/index.json`。状态和通知通过完整快照文件提供历史详情，快照非全库原子事务；写操作仍校验修订。不可用原件保留目录条目及原因。
+`campaign_status` 和 `candidate_list` 使用空对象，`evidence_list` 可带 batchId/trialId、无分页，`sdk_read` 仅带文档 id，同版本文档导航为 `/sdk/index.json`。状态和通知通过快照文件提供历史详情；新存储策略使用下述一致读取与分层快照，旧格式保留原逐项读取方式；写操作仍校验修订。不可用原件保留目录条目及原因。
 
 新报告另需独立简短 `brief` 与准确 `researchRefs`（可为空）。报告优先先写 `/work/analysis/*.json`，再提交 path/sha256。`report_get_facts` 提供同版本正文 schema 与最小模板；直接 analysis 对象使用同一规则。problems 必须为数组，元素含 status（resolved/unresolved）、description，可附 evidenceRefs。未声明字段拒绝保存；所有已知格式和引用错误进入诊断文件，`rejected/committed=false` 不占未决操作。修正参数必须换幂等键。
 
@@ -693,3 +693,30 @@ python3 tests/smoke/references/run.py --execute-real-models \
 更新部署时，先核对活动、运行中的 Trial、Meta 会话及模型请求。存在在途任务时将新版同步到独立发布目录，保留当前服务的工作目录与冻结运行包；仅同步代码不会让既有进程或旧活动自动切换协议。切换后台服务应在没有在途任务的维护窗口进行，并重新核对冻结版本和未结算请求。不要直接覆盖活动中服务正在校验的协议源文件，不要通过重启替换活动的冻结组合。
 
 收到服务端 `CONTEXT_WINDOW_EXCEEDED` 后，网关保留失败审计与用量核对，同时允许原生 SDK 发起压缩；它不触发新的宿主重试循环。压缩和压缩后的模型请求仍检查固定路由、额度、取消及截止时间。只有同一会话完成压缩且后续正常请求成功，才将此溢出记为恢复；压缩失败不能标记恢复。认证等终止错误仍会锁止后续请求。旧活动已冻结的网关代码与历史巨型事件不会自动被更新。
+
+### 长活动的存储管理
+
+新活动自动绑定 `storagePolicy=shared-artifacts-v1`；部署不修改旧活动，也不清空历史。原始实验、完整归档和证据索引引用 `artifacts/sha256/` 的同一不可变正文。后台在生产者退出且结果收集完成后，将原路径转换为硬链接视图，并保存 `artifact-archive.json`；原始路径、官方清单及摘要仍可核验。不要单独删除原始目录、证据目录或内容对象来省空间。
+
+新活动的 `campaign_status` 使用 SQLite 一致读取事务，返回 `query-tree-v1` 根清单。根的 `data` 字段可能内嵌值，也可能是 `{format, file}` 引用；按 `file.path` 读取，检查 `file.sha256`，再按节点 `kind` 处理：`object.fields` 逐字段展开，`list.shards` 逐片读取并按 `items[].position` 排序，`value.value` 为原值。旧快照仍可读，重复查询复用内容。原生脚本须依据 `format`/`reading` 遍历；不能假定整个活动仍内嵌在单个 JSON 文件中。写操作仍校验修订。
+
+受管 RPC、网关审计与输出日志每约 8 MiB 关闭一段，gzip 无损压缩并登记在 `<日志名>.segments/index.json`。原日志名是当前尾段，完整日志是有序关闭段加尾段。宿主计量、回放及 `meta_file_read` 已支持完整读取；直接用原生 read/grep/bash 读尾段不会自动包含旧段，应依照段清单逐段解压，或使用宿主 `src/execution/host/log_store.py` / `.mjs` 读取器。证据索引公开段清单、每个压缩段和尾段，`evidence_read` 可解压单个 gzip 证据。原生会话持久文件不轮转。每个受管逻辑日志默认上限 256 MiB，写入还保留至少 64 MiB 空间；达到上限明确报错并保留已经捕获的内容。
+
+容量策略保存在数据目录 `storage-policy.json`，用户可在活动页「容量趋势与存储上限」调整常用阈值；完整策略通过带用户凭证的 `GET /storage`、`POST /storage/policy`（也支持 PUT）读取和修改。Meta 凭证不能修改策略。
+
+| 策略字段 | 默认值 | 含义 |
+|---|---:|---|
+| `maxDataBytes` | 40 GiB | 数据目录实际占用上限，硬链接只计一次 |
+| `maxCampaignBytes` | 20 GiB | 每个新活动的归属数据上限，共享正文可归属多个活动 |
+| `minFreeBytes` / `criticalFreeBytes` | 10 / 2 GiB | 启动保护线 / 停止在途生产者的紧急水位 |
+| `resumeMarginBytes` | 1 GiB | 从等待恢复时的额外余量 |
+| `trialReserveBytes` / `metaReserveBytes` | 512 / 256 MiB | 每个在途试验 / Meta 会话的收尾预留 |
+| `scanSeconds` | 60 秒 | 深度统计与后台整理间隔 |
+| `garbageGraceSeconds` / `cacheAgeSeconds` | 6 / 24 小时 | 无引用对象 / 旧缓存代际的最小保留时间 |
+| `additionalPaths` | `[]` | 另需检查的容器等存储目录，按实际文件系统去重 |
+
+字节字段使用整数；日志的 8/256 MiB 是当前宿主实现常量，不由上述 API 修改。容量不足时阻止新试验、Meta、构建和模型请求；模型请求在现有截止时间内等待，不消耗新的 token 预留。释放空间或调整容量后恢复，不延长墙钟。正在运行的试验与会话占用收尾预留；磁盘跌到紧急水位时后台请求停止，保留部分输出及原因。任意工作区写入尚无操作系统硬配额，极快写入或其他程序占盘仍可能先于巡检耗尽空间。
+
+后台仅回收宽限期外、无数据库/归档引用且无硬链接视图的对象，以及已过期的对象发布临时文件。依赖/适配缓存只清理非当前代际，且须无活动任务、无进程引用、无文件视图引用并取得构建锁。冻结镜像、当前依赖、会话、研究证据不按年龄或分数删除；无法判断使用状态则跳过。自动整理异常在活动存储面板显示。容器存储监测实际空闲容量，不按镜像累计虚拟大小估算，也不自动执行镜像 prune。
+
+增长预测至少需要一小时观测，重启重新积累；没有有效正增长时不提供剩余时长。有限磁盘不能保证任意一周活动持续产出，等待存储是保护状态。外部归档、历史迁移及历史清空不属于本次更新。

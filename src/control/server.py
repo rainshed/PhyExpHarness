@@ -68,6 +68,13 @@ def make_app(service,supervise=True):
     @app.post('/campaigns/{id}/references/cancel')
     def reference_cancel(id:str,request:Request,body:dict):
         user(request);return service.references.cancel(id,body)
+    @app.get('/storage')
+    def storage(request:Request):
+        user(request);return service.storage.snapshot()
+    @app.put('/storage/policy')
+    @app.post('/storage/policy')
+    def storage_policy(request:Request,body:dict):
+        user(request);return service.storage.configure(body)
     @app.get('/models')
     def models(request:Request):
         user(request);return service.providers.catalog()
@@ -228,6 +235,8 @@ def make_app(service,supervise=True):
         if lease.get('id')!=lease_id or lease['role'] not in ['meta','solver']:raise Refused('Accounting lease mismatch')
         campaign=lease['campaignId']
         if action=='reserve':
+            if not service.storage.permit(campaign,'request'):
+                return JSONResponse({'status':'waiting','code':'storage_capacity_wait','retryAfterMs':1000,'boundary':'host_storage'},status_code=429)
             if body.get('admissionVersion')==1:
                 decision=service.store.admit(campaign,lease_id,body['id'],body['reservedTokens'],lease['role'])
                 return JSONResponse(decision,status_code=200 if decision['status']=='granted' else 429 if decision['status']=='waiting' else 403)

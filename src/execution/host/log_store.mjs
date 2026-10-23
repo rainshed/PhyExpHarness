@@ -9,7 +9,7 @@ const version='segmented-log-v1';
 function indexPath(file){return file+'.segments/index.json';}
 function durable(file,bytes){const fd=fs.openSync(file,'w',0o600);try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
 function save(file,index){const target=indexPath(file);fs.mkdirSync(path.dirname(target),{recursive:true});const temp=target+'.'+randomUUID();durable(temp,JSON.stringify(index)+'\n');fs.renameSync(temp,target);}
-function load(file){const index=indexPath(file);return fs.existsSync(index)?JSON.parse(fs.readFileSync(index)):{version,segments:[],pending:null};}
+function load(file){const index=indexPath(file);if(fs.existsSync(index)&&(fs.lstatSync(path.dirname(index)).isSymbolicLink()||fs.lstatSync(index).isSymbolicLink()||!fs.lstatSync(index).isFile()))throw new Error('Invalid log index path');return fs.existsSync(index)?JSON.parse(fs.readFileSync(index)):{version,segments:[],pending:null};}
 function validate(index){if(index.version!==version||!Array.isArray(index.segments))throw new Error('Invalid segmented log');for(const [i,s] of index.segments.entries())if(s.name!==String(i).padStart(8,'0')+'.gz'||!Number.isSafeInteger(s.bytes)||s.bytes<0||s.bytes>256*1024*1024||!/^[a-f0-9]{64}$/.test(s.sha256))throw new Error('Invalid log segment identity');}
 function tail(file,index){let data=fs.existsSync(file)?fs.readFileSync(file):Buffer.alloc(0);if(index.pending&&data.length){const n=index.pending.bytes;if(data.length<n||hash(data.subarray(0,n))!==index.pending.sha256)throw new Error('Interrupted log rotation is inconsistent');data=data.subarray(n);}return data;}
 export function readLogSync(file){
