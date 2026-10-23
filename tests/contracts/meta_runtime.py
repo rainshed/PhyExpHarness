@@ -1,4 +1,4 @@
-"""Full frozen Meta host + authenticated controller + native reviewer, using only loopback synthetic SSE."""
+"""Full frozen Meta host + authenticated controller + goal completion (legacy reviewer), using only loopback synthetic SSE."""
 import hashlib,json,os,socket,sys,tempfile,threading,time
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +28,12 @@ class Provider(BaseHTTPRequestHandler):
         count=sum(m['role']=='tool' for m in messages)
         request=self.server.request
         if NATIVE:
+            system='\n'.join(str(m['content']) for m in messages if m['role'] in ('system','developer'))
+            assert 'User objective with literal {{Solver配置}}' in system
+            assert 'Everything is Plug-in' in system and 'guides/README.md' in system
+            assert '原生工作环境（meta-runtime-v2）' not in system and 'stop-review-v1' not in system
+            finish=next(t['function'] for t in body['tools'] if t['function']['name']=='campaign_finish')
+            assert finish['parameters']['properties']['condition']['enum']==['stable']
             analysis={'brief':'Native synthetic report','researchRefs':[],'summary':'Native synthetic report','observations':['Fixture only'],'hypotheses':[],'limitations':['No real model'],'decision':'Closeout','evidenceRefs':['evidence-fixture']}
             if child:
                 assert 'campaign_finish' not in tools and 'subagent' not in tools
@@ -72,20 +78,26 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
     model={'provider':'openai-codex','model':'gpt-6-astra','reasoningEffort':'medium'}
     cfg={'meta':model,'solver':{**model,'model':'gpt-6-sol'},'tasks':['time_budgeted_hamlearn_10q'],'concurrency':1,'wallTimeSeconds':120,'reserveSeconds':5,
          'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
-    if NATIVE:cfg.pop('metaCompositionConfig')
-    # Seven responses (including two reviewer responses) commit both reports.
-    # The eighth request cannot reserve 300,000 tokens for the final model reply.
-    if CLOSEOUT_DENIAL:cfg.update(softTokenLimit=300072,reserveTokens=0)
+    if NATIVE:
+        cfg.pop('metaCompositionConfig')
+        cfg['objective']='User objective with literal {{Solver配置}}'
+        cfg['stabilityRule']={'minTrialsPerTask':2,'minimumOfficialScore':1}
+    else:cfg['stopPolicy']='stop-review-v1'
+    # Five main responses commit both reports.
+    # The sixth request cannot reserve 300,000 tokens for the final model reply.
+    if CLOSEOUT_DENIAL:cfg.update(softTokenLimit=300048,reserveTokens=0)
     if PLANNING:cfg.update(resourcePolicy='meta-resource-planning-v1',wallTimeSeconds=1200)
-    composition=freeze(ROOT,data,cfg);campaign=service.store.create(cfg,'fixture',defaults={'stopPolicy':'stop-review-v1','metaComposition':composition})
+    composition=freeze(ROOT,data,cfg);campaign=service.store.create(cfg,'fixture',defaults={'stopPolicy':composition['stopPolicy'],'metaComposition':composition})
     c=campaign['id'];service.store.control(c,'start','start');candidate=service.store.candidate(c,{'id':'fixture','path':str(data/'nonexistent-bundle'),'plugins':[]},'Synthetic H0',check={'status':'passed'})
     if PLANNING:service.store.update_plan(c,PLAN,'Initial fixture plan','initial-plan',0,source='operator')
-    batch=service.store.submit(c,candidate['id'],cfg['tasks'],1,'fixture');trial=service.store.list('trials',c)[0];service.store.trial_update(trial['id'],state='finished',score=1,startedAt=time.time(),finishedAt=time.time())
+    batch=service.store.submit(c,candidate['id'],cfg['tasks'],2 if NATIVE else 1,'fixture')
+    for trial in service.store.list('trials',c):service.store.trial_update(trial['id'],state='finished',score=1,startedAt=time.time(),finishedAt=time.time())
     evidence=data/'evidence.json';evidence.write_text('{"fixture":true}')
     service.store.put('evidence',{'id':'evidence-fixture','campaignId':c,'trialId':trial['id'],'kind':'runtime','path':str(evidence),'sha256':hashlib.sha256(evidence.read_bytes()).hexdigest(),'size':evidence.stat().st_size,'bytes':evidence.stat().st_size,'source':{'archive':'fixture.json'},'policy':'public-development-full-v2' if NATIVE else 'public-development-v1'})
-    campaign=service.store.get('campaigns',c);campaign['config']['meta']['provider']='synthetic-meta';campaign['config']['modelRoutes']['meta']={'adapter':'pi-ai','api':'openai-completions','baseURL':f'http://127.0.0.1:{provider.server_port}/v1','auth':{'type':'api-key','env':'PHYEXP_SYNTHETIC_META_KEY'},'models':[{'id':'gpt-6-astra','maxTokens':1024,'contextWindow':32000,'defaultReasoningEffort':'medium','reasoningEfforts':{'medium':'medium'}}]};service.store.put('campaigns',campaign)
+    campaign=service.store.get('campaigns',c);campaign['retainedCandidateId']=candidate['id'];campaign['config']['meta']['provider']='synthetic-meta';campaign['config']['modelRoutes']['meta']={'adapter':'pi-ai','api':'openai-completions','baseURL':f'http://127.0.0.1:{provider.server_port}/v1','auth':{'type':'api-key','env':'PHYEXP_SYNTHETIC_META_KEY'},'models':[{'id':'gpt-6-astra','maxTokens':1024,'contextWindow':32000,'defaultReasoningEffort':'medium','reasoningEfforts':{'medium':'medium'}}]};service.store.put('campaigns',campaign)
     os.environ['PHYEXP_SYNTHETIC_META_KEY']='synthetic-not-a-real-secret'
     provider.request={'condition':'exhausted','candidateId':candidate['id'],'reason':'Synthetic exhaustion fixture','evidenceRefs':['evidence-fixture'],'attempts':[{'direction':'Fixture direction','finding':'Fixture result','evidenceRefs':['evidence-fixture']}],'remainingDirections':[],'unresolved':[]};provider.batch=batch['id']
+    if NATIVE:provider.request={'condition':'stable','candidateId':candidate['id'],'reason':'User target met on all attempts','evidenceRefs':['evidence-fixture']}
     server=uvicorn.Server(uvicorn.Config(make_app(service,supervise=False),host='127.0.0.1',port=port,log_level='error'));thread=threading.Thread(target=server.run,daemon=True);thread.start()
     try:
         deadline=time.monotonic()+40
@@ -105,9 +117,14 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
             assert summary['status']=='error' and summary['failure']['code']=='budget_admission_denied',summary
         else:assert summary['status']=='completed',summary
         driver.tick(c)
-        review=service.store.list('stop_reviews',c)[0];assert review['state']=='consumed',review
-        assert review['usage']['confirmedTokens']==24,review['usage']
-        expected_tokens=84 if CLOSEOUT_DENIAL else (108 if FINAL_FIRST else 96) if NATIVE else 84 if PLANNING else 72
+        reviews=service.store.list('stop_reviews',c)
+        if NATIVE:
+            assert reviews==[]
+            assert service.store.get('campaigns',c)['finishAssessment']['source']=='controller-verified-stability'
+        else:
+            assert reviews[0]['state']=='consumed',reviews
+            assert reviews[0]['usage']['confirmedTokens']==24,reviews
+        expected_tokens=60 if CLOSEOUT_DENIAL else (84 if FINAL_FIRST else 72) if NATIVE else 84 if PLANNING else 72
         assert service.store.usage(c)['confirmedTokens']==expected_tokens,service.store.usage(c)
         if PLANNING:
             plan=service.store.get('campaigns',c)['resourcePlan']
@@ -118,14 +135,14 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
             assert service.store.get('meta_sessions',session['id'])['state']=='needs_attention'
             reports=service.store.list('reports',c)
             assert len(reports)==2 and all(r['status']=='analysis' and r['analysisRevision']==1 for r in reports),reports
-            assert len(provider.calls)==7,provider.calls
-        assert len(service.store.get('meta_sessions',session['id'])['agents'])==2
+            assert len(provider.calls)==5,provider.calls
+        assert len(service.store.get('meta_sessions',session['id'])['agents'])==(1 if NATIVE else 2)
         if RECOVERY:
             sessions=service.store.list('meta_sessions',c);assert len(sessions)==2,[{k:s.get(k) for k in ['id','state','summary']} for s in sessions]
             assert sessions[0]['nativeSessionId']==sessions[1]['nativeSessionId']
             assert summary['resumed'] and sessions[1]['recoveryAttempt']==1
             assert not service.store.get('campaigns',c)['stopReason']=='meta_session_failed'
-        print(json.dumps({'status':'passed','native':NATIVE,'resourcePlanning':PLANNING,'closeoutBudgetDenial':CLOSEOUT_DENIAL,'providerCalls':len(provider.calls),'reviewCalls':sum(x['child'] for x in provider.calls),'sharedTokens':expected_tokens,'reviewTokensIncluded':24,'frozenComposition':composition['id'],'externalModelCalls':0}))
+        print(json.dumps({'status':'passed','native':NATIVE,'resourcePlanning':PLANNING,'closeoutBudgetDenial':CLOSEOUT_DENIAL,'providerCalls':len(provider.calls),'reviewCalls':sum(x['child'] for x in provider.calls),'sharedTokens':expected_tokens,'reviewTokensIncluded':0 if NATIVE else 24,'frozenComposition':composition['id'],'externalModelCalls':0}))
     finally:
         for process in driver.children.values():
             if process.poll() is None:process.terminate();process.wait(timeout=10)

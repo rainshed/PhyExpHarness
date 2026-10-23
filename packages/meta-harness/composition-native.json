@@ -1,6 +1,6 @@
 {
   "version": "meta-composition-v2",
-  "id": "meta-native-v2",
+  "id": "meta-native-v3",
   "mode": "complete",
   "plugins": [
     {
@@ -78,7 +78,7 @@
     {
       "id": "meta-stop-review",
       "module": "domain-stop-review.mjs",
-      "enabled": true,
+      "enabled": false,
       "config": {},
       "roles": [
         "meta"

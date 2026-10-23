@@ -8,6 +8,8 @@
 
 执行版本的保存与导出已按[插件版本管理与按需导出方案](plugin-versioning-and-export.md)实现：新 Solver 候选使用组合清单、共享对象及安装缓存；历史 Runtime Bundle 保留兼容。Meta 通用 Agent、完整证据路径与会话恢复已通过新 `meta-composition-v2` 实现核心链路，完整目标见[专项方案](meta-agent-and-evidence.md)，实际限制与验收进度见运行说明。旧活动不自动切换。
 
+新活动采用 `meta-system-v9`、`meta-tools-v7` 与 `goal-or-budget-v1`：系统正文按用户确认的模板渲染，操作说明归工具和资料；主动结束仅接受已约定标准的核验，资源停止仍归后台。停止审查插件对新活动关闭，旧活动保持冻结策略和精确 v6 工具资产。职责和目标见[需求第 2.4 节](../requirements/meta-harness.md#24-meta-系统职责与动态活动目标)，完成契约见[第 7.4.1 节](../requirements/meta-harness.md#741-探索结束判断)。
+
 ## 1. 核心架构决定
 
 可选参考实验按[两个参考插件设计](meta-reference-experiments.md)及其[开发计划](../plans/meta-reference-experiments.md)扩展：参考模型来自 DeepSeek Harness 原生配置；参考 Harness 首期为 Codex、Claude Code 与 DeepSeek 标准模式，默认绑定固定 Solver。两个插件分别开放模型和 Harness 选择维度，同时启用时可提交联合参考；UI 独立开关并冻结用户选择集合及自主/指定配对模式。共享后台核验兼容性和两项能力，联合运行只记一次总消耗。两个插件独立装配/移除，共用后台预算、监督和证据；新增参考执行身份，不修改原候选或把参考成绩混入主线。可选包/契约装配和适配器入口是待实现增量，以下既有核心链路不以其存在为前提。

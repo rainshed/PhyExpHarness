@@ -30,7 +30,7 @@ class CompositionTests(unittest.TestCase):
             with patch('src.control.meta_composition.subprocess.run') as docker:
                 docker.return_value.returncode=0;docker.return_value.stdout='sha256:'+'a'*64
                 first=freeze(ROOT,temp,config)
-                manifest=json.loads((ROOT/'packages/meta-harness/composition.json').read_text());manifest['plugins'][4]['enabled']=False
+                manifest=json.loads((ROOT/'packages/meta-harness/composition.json').read_text());manifest['plugins'][5]['enabled']=False
                 second=freeze(ROOT,temp,{**config,'metaCompositionConfig':manifest})
             self.assertNotEqual(first['id'],second['id']);verify(temp,first,ROOT);verify(temp,second,ROOT)
     def test_cannot_mount_outside_frozen_package(self):

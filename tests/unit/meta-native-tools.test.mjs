@@ -25,6 +25,14 @@ test('contract rejects string encoded JSON, unknown fields, malformed nested par
  assert.throws(()=>validateInput('candidate_freeze',{plugins:[{path:'p',config:3}],description:'test',idempotencyKey:'x'}),/Invalid/);
  assert.throws(()=>validateInput('campaign_status',{role:'reviewer'}),/Invalid/);
 });
+test('current completion tool only permits verified goal completion',()=>{
+ const input={condition:'stable',candidateId:'candidate',reason:'Target met',evidenceRefs:['evidence'],idempotencyKey:'finish'};
+ validateInput('campaign_finish',input);
+ assert.throws(()=>validateInput('campaign_finish',{...input,condition:'exhausted'}),/Invalid/);
+ const source=JSON.parse(fs.readFileSync(new URL('../../packages/meta-harness/composition-native.json',import.meta.url)));
+ const main=nativeEntries(source,{systemPrompt:'fixture'}).find(e=>e.id==='active-meta-preset').config.plugins;
+ assert.ok(!main.some(e=>e.id==='meta-stop-review'));
+});
 test('composition validates role dependencies and removing a required domain fails',()=>{
  const source=JSON.parse(fs.readFileSync(new URL('../../packages/meta-harness/composition-native.json',import.meta.url)));
  const missing=structuredClone(source);missing.plugins.find(p=>p.id==='meta-evidence').enabled=false;assert.throws(()=>validateNativeComposition(missing),/Missing complete/);

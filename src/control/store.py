@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from .stop_policy import CONTROLLED_POLICIES
 from .defaults import effective_objective
 from src.execution.host.models import supported_model,load_model_config,provider_route,campaign_model_config
 from src.evidence.diagnostics import trial_diagnostics
@@ -152,7 +153,6 @@ def validate_config(config,model_config=None):
         if type(config[key]) is not int or config[key]<0 or (config[total] is not None and config[key]>=config[total]):raise Refused('Invalid '+key)
     if config['softTokenLimit'] is None:config['reserveTokens']=0
     if 'authorizationDeadline' in config:
-        import math
         if type(config['authorizationDeadline']) not in [int,float] or not math.isfinite(config['authorizationDeadline']) or config['authorizationDeadline']<=0:raise Refused('Invalid authorization deadline')
     if config.get('retries',0)!=0 or config.get('hardTokenLimit') or config.get('dollarLimit'):
         raise Refused('This provider supports a soft token threshold, no verified hard token/dollar limit or automatic retries')
@@ -355,7 +355,7 @@ class Store:
                     self._save(db,'meta_sessions',latest)
             elif action in ['stop','finish']:
                 if c['state'] in ['finished','failed']:raise Refused('Campaign already finalized')
-                if action=='finish' and c['config'].get('stopPolicy')=='stop-review-v1':
+                if action=='finish' and c['config'].get('stopPolicy') in CONTROLLED_POLICIES:
                     from .stop_review import finish
                     c['finishAssessment']=finish(self,db,c,changes or {})
                 elif action=='finish' and changes and changes.get('reason'):

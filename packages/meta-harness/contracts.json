@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v6",
+  "version": "meta-tools-v7",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -44,7 +44,8 @@
             "type": "integer"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -56,7 +57,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "Update parallelism and activity closeout reserves. Benchmark task time is fixed and cannot be changed."
+      "description": "Submit the initial resource plan to admit H0, or update future parallelism and closeout reserves. Read resourcePlanning in campaign_status for user limits and expectedPlanRevision. Benchmark task times are fixed. When tokens are unlimited, closeoutReserveTokens must be 0. A reserve blocking execution can be adjusted; it does not mean the activity budget is exhausted."
     },
     "campaign_finish": {
       "plugin": "campaign",
@@ -66,8 +67,7 @@
           "condition": {
             "type": "string",
             "enum": [
-              "stable",
-              "exhausted"
+              "stable"
             ]
           },
           "candidateId": {
@@ -82,46 +82,9 @@
               "type": "string"
             }
           },
-          "attempts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "direction": {
-                  "type": "string"
-                },
-                "finding": {
-                  "type": "string"
-                },
-                "evidenceRefs": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "required": [
-                "direction",
-                "finding",
-                "evidenceRefs"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "remainingDirections": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "unresolved": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -134,7 +97,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "End exploration and request closeout. "
+      "description": "Request closeout after the selected frozen candidate meets the user-agreed stabilityRule on all selected tasks and all attempts; no implicit threshold. Budget closeout is automatic. Exhaustion of research ideas is not a finish condition."
     },
     "candidate_check": {
       "plugin": "experiments",
@@ -162,7 +125,8 @@
             }
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -209,7 +173,8 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           },
           "researchRefs": {
             "type": "array",
@@ -244,7 +209,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "Check and freeze an execution plugin combination. "
+      "description": "Check and freeze an execution plugin combination from paths relative to /work/plugins. Link exact researchRefs for development/adoption reasons; use the version-matched plugin-manifest SDK document for plugin metadata."
     },
     "candidate_list": {
       "plugin": "experiments",
@@ -296,7 +261,8 @@
             "type": "integer"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -396,7 +362,8 @@
             "type": "integer"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           },
           "summary": {
             "type": "string",
@@ -477,7 +444,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "Select, reaffirm or roll back to a checked frozen candidate.  Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents."
+      "description": "Select, reaffirm or roll back to a checked frozen candidate using all attempts and the backend taskEvaluation. Read expectedSelectionRevision from campaign_status.selectionRevision. Supply readable summary, alternatives considered, researchRefs, evidence and tradeoffs. Returns a compact receipt and immutable decision file."
     },
     "materials_list": {
       "plugin": "evidence",
@@ -705,7 +672,8 @@
             "type": "integer"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -738,7 +706,7 @@
         ]
       },
       "write": true,
-      "description": "Append an analysis revision against exactly the supplied facts snapshot. Supply either analysis or analysisFile, never both. Returns a compact receipt with a complete immutable file path; use native read/grep/bash for contents. Supply exactly one of analysis or analysisFile. Prefer /work/analysis/file.json with SHA-256. Read schema/template paths from report_get_facts. All six analysis fields are required; problems is an array of {status: resolved|unresolved, description, evidenceRefs?}. Corrections require a new idempotencyKey."
+      "description": "Append an analysis revision against the factsId from report_get_facts. Supply exactly one of analysis or analysisFile; prefer a JSON file under /work/analysis with SHA-256. Read the schema/template and current revision from the facts result; use expectedReportRevision=0 for a new report. brief is a separate readable conclusion; researchRefs must belong to that facts snapshot. Each round and the final report have independent revisions. Corrections require a new idempotencyKey."
     },
     "report_get": {
       "plugin": "reporting",
@@ -766,7 +734,8 @@
             "type": "string"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [
@@ -1155,7 +1124,8 @@
           "idempotencyKey": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 200,
+            "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
           }
         },
         "required": [

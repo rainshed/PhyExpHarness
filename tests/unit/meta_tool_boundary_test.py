@@ -22,7 +22,7 @@ class ToolBoundaryTests(unittest.TestCase):
         self.assertEqual(len(data),file['bytes']);self.assertEqual(hashlib.sha256(data).hexdigest(),file['sha256'])
         return json.loads(data)
     def test_all_business_operations_and_optional_results_have_one_boundary(self):
-        names=set(CONTRACTS['meta-tools-v6'])|{'reference_'+axis+'_'+action for axis in ('model','harness') for action in ('list','status','submit','cancel')}
+        names=set(CONTRACTS['meta-tools-v7'])|{'reference_'+axis+'_'+action for axis in ('model','harness') for action in ('list','status','submit','cancel')}
         for operation in names:
             with self.subTest(operation=operation),patch.object(self.api,'_dispatch',return_value={'state':'completed','diagnostic':BIG}):
                 result=self.api.call(self.c,operation,{})
@@ -74,7 +74,7 @@ class ToolBoundaryTests(unittest.TestCase):
                 parts.append(result['text']);offset=result['nextOffset']
             self.assertEqual(''.join(parts),text)
     def test_v4_binding_retains_original_source_hashes(self):
-        self.assertEqual(version(self.service,self.c),'meta-tools-v6')
+        self.assertEqual(version(self.service,self.c),'meta-tools-v7')
         for name,sha in binding('meta-tools-v4')['files'].items():
             file=base.ROOT/'packages/meta-harness/protocols/meta-tools-v4'/name
             self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(),sha)

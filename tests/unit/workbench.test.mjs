@@ -21,6 +21,11 @@ test('goal defaults upgrade only the previous literal default and preserve custo
  const raw=JSON.stringify({objective:old,maxTrials:7});data.set('phyexp-draft',raw);
  assert.deepEqual(loadGoalDraft(storage,{}),{objective:defaultObjective,maxTrials:7});
  assert.equal(data.get('phyexp-draft-before-meta-goal-v1'),raw);
+ const previous='在活动规定的资源和权限范围内，持续改进执行 Harness，使固定 Solver 能够更稳定地完成目标范围内的任务。依据真实执行结果和轨迹，自主决定如何改进与验证。达到约定的稳定完成标准、根据已有尝试和证据判断暂未发现值得继续投入当前资源的改进方向，或触及活动资源上限时结束；如实报告结果、未解决的问题与证据局限。';
+ const previousRaw=JSON.stringify({objective:previous,maxTrials:9});data.set('phyexp-draft',previousRaw);
+ assert.deepEqual(loadGoalDraft(storage,{}),{objective:defaultObjective,maxTrials:9});
+ assert.equal(data.get('phyexp-draft-before-meta-goal-v2'),previousRaw);
+ assert.equal(data.get('phyexp-draft-before-meta-goal-v1'),raw);
  for(const goal of ['自定义目标','']){data.set('phyexp-draft',JSON.stringify({objective:goal}));assert.equal(loadGoalDraft(storage,{}).objective,goal);}
 });
 

@@ -75,6 +75,32 @@ class StopReviewTests(unittest.TestCase):
         self.assertEqual(self.store.control(self.c,'stop','stop')['stopReason'],'user_stop')
     def test_no_implicit_stability_threshold(self):
         with self.assertRaisesRegex(Refused,'pre-agreed'):self.store.control(self.c,'finish','stable',changes={**self.request,'condition':'stable'})
+    def test_goal_policy_rejects_exhaustion_at_runtime_and_store_even_with_approval(self):
+        review=self.begin();self.result(review)
+        c=self.store.get('campaigns',self.c);c['config']['stopPolicy']='goal-or-budget-v1';self.store.put('campaigns',c)
+        with self.assertRaisesRegex(Refused,'exhaustion'):self.finish(review)
+        with self.assertRaisesRegex(Refused,'exhaustion'):self.dispatch('review_request',{'agentId':'main','request':self.request})
+        with self.assertRaisesRegex(Refused,'exhaustion'):self.dispatch('call',{'agentId':'main','operation':'campaign_finish','input':{**self.request,'reviewId':review['id']}})
+        with self.assertRaisesRegex(Refused,'pre-agreed'):self.store.control(self.c,'finish','stable',changes={**self.request,'condition':'stable'})
+        self.assertEqual(self.store.status(self.c)['state'],'running')
+        self.assertEqual(self.store.control(self.c,'stop','user-stop')['stopReason'],'user_stop')
+    def test_goal_policy_uses_user_threshold_and_keeps_failures_in_completion_check(self):
+        c=self.store.get('campaigns',self.c);c['config'].update(stopPolicy='goal-or-budget-v1',stabilityRule={'minTrialsPerTask':3,'minimumOfficialScore':0.9});c['retainedCandidateId']=self.candidate['id'];self.store.put('campaigns',c)
+        trial={'campaignId':self.c,'candidateId':self.candidate['id'],'task':'time_budgeted_hamlearn_10q','state':'finished','score':1,'startedAt':1000}
+        for i in range(3):self.store.put('trials',{**trial,'id':str(i)})
+        self.store.put('trials',{**trial,'id':'failed','state':'failed','score':None})
+        with self.assertRaisesRegex(Refused,'all attempts'):self.store.control(self.c,'finish','stable',changes={**self.request,'condition':'stable'})
+        # A genuinely different candidate has its own complete evidence history.
+        candidate=self.store.candidate(self.c,{'id':'improved','path':'/improved','plugins':[]},'Improved',check={'status':'passed'})
+        c=self.store.get('campaigns',self.c);c['retainedCandidateId']=candidate['id'];self.store.put('campaigns',c)
+        for i in range(3):self.store.put('trials',{**trial,'id':'new-'+str(i),'candidateId':candidate['id']})
+        result=self.store.control(self.c,'finish','stable',changes={**self.request,'condition':'stable','candidateId':candidate['id']})
+        self.assertEqual(result['finishAssessment']['rule'],{'minTrialsPerTask':3,'minimumOfficialScore':0.9})
+    def test_user_stability_rule_can_be_set_when_creating_an_activity(self):
+        config=self.store.get('campaigns',self.c)['config']
+        rule={'minTrialsPerTask':3,'minimumOfficialScore':1}
+        created=self.store.create({**config,'stopPolicy':'goal-or-budget-v1','stabilityRule':rule},'configured-goal')
+        self.assertEqual(created['config']['stabilityRule'],rule)
     def test_relevant_policy_changes_invalidate_approval(self):
         r=self.begin();self.result(r);self.store.control(self.c,'limits','limits',changes={'concurrency':2})
         with self.assertRaisesRegex(Refused,'stale'):self.finish(r)

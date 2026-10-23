@@ -70,8 +70,14 @@ test('long native command, human answer, research delegation and persisted sessi
  }finally{await host.dispose();}
 });
 
-test('raw PTY tail survives preview truncation; reviewer has a separate workspace and channel',async()=>{
+test('historical v6 PTY tail survives preview truncation; reviewer has a separate workspace and channel',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-meta-native-'));const seen=[];const counts=new Map();let approved=false;
+ const legacyRoot=path.join(dir,'legacy');const legacyPlugin=path.join(legacyRoot,'packages/meta-harness');
+ fs.cpSync(path.join(root,'packages/meta-harness'),legacyPlugin,{recursive:true});
+ fs.cpSync(path.join(root,'src/execution'),path.join(legacyRoot,'src/execution'),{recursive:true});
+ for(const name of fs.readdirSync(path.join(legacyPlugin,'protocols/meta-tools-v6')))fs.copyFileSync(path.join(legacyPlugin,'protocols/meta-tools-v6',name),path.join(legacyPlugin,name));
+ const composition=JSON.parse(fs.readFileSync(path.join(legacyPlugin,'composition-native.json')));
+ composition.plugins.find(p=>p.id==='meta-stop-review').enabled=true;
  const config={id:'main-isolation',model,deadline:Date.now()/1000+120,workRoot:path.join(dir,'work'),sessionRoot:path.join(dir,'sessions'),pluginWorkspace:path.join(dir,'plugins'),filesRoot:path.join(dir,'files')};
  for(const p of [config.workRoot,config.sessionRoot,config.pluginWorkspace,...['evidence','materials','sdk','versions','outputs'].map(n=>path.join(config.filesRoot,n))])fs.mkdirSync(p,{recursive:true});
  fs.writeFileSync(path.join(config.workRoot,'parent-secret'),'must not be readable by children');
@@ -87,7 +93,7 @@ test('raw PTY tail survives preview truncation; reviewer has a separate workspac
    else yield*call('structured_output',{verdict:'approve',reason:'Isolated fixture',evidenceRefs:['evidence-fixture'],missingEvidence:[],nextDirections:[]},'review-verdict');
   }
  }}});
- const host=new MetaHost({config,root,image,logs:path.join(dir,'logs'),frozen:{id:'fixture',composition:JSON.parse(fs.readFileSync(path.join(root,'packages/meta-harness/composition-native.json'))),systemPrompt:{text:'Research'},reviewerPrompt:'Review'},gateway,
+ const host=new MetaHost({config,root:legacyRoot,image,logs:path.join(dir,'logs'),frozen:{id:'fixture',composition,systemPrompt:{text:'Research'},reviewerPrompt:'Review'},gateway,
   modelInfo:{provider:model.provider,id:model.model,name:model.model,context:{contextWindow:272000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}},
   async api(route,body){
    if(body.action==='review_request')return {id:'review-fixture',state:'pending'};

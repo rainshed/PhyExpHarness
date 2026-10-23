@@ -5,7 +5,7 @@ import hashlib
 import math
 from pathlib import Path
 from .store import Refused, identity, encoded
-from .meta_composition import POLICY
+from .stop_policy import REVIEW_POLICY as POLICY, GOAL_POLICY, CONTROLLED_POLICIES
 
 READ_OPERATIONS={'materials_list','materials_search','materials_read','sdk_search','sdk_read','sdk_inspect','workspace_read','candidate_list','campaign_status','evidence_read','evidence_list'}
 TERMINAL={'finished','failed','cancelled'}
@@ -67,6 +67,7 @@ def finish(store,db,c,args):
     ready(store,db,c);no_pending(store,db,c);required_text(args.get('reason'),'reason')
     condition=args.get('condition')
     if condition=='exhausted':
+        if c['config'].get('stopPolicy')==GOAL_POLICY:raise Refused('Exploration exhaustion cannot end this activity; continue until the goal is met or the activity budget is reached')
         review=store._get(db,'stop_reviews',args.get('reviewId',''))
         if review['campaignId']!=c['id'] or review['state']!='approved' or review['policy']!=POLICY:raise Refused('Independent approval required')
         references(store,db,c['id'],review['request']['evidenceRefs']);references(store,db,c['id'],review['result']['evidenceRefs'])
@@ -94,7 +95,7 @@ class StopRuntime:
         store=self.store
         with store.connection(True) as db:
             session=store._get(db,'meta_sessions',session_id);campaign=session['campaignId'];c=store._get(db,'campaigns',campaign)
-            if c['config'].get('stopPolicy')!=POLICY or session['state'] not in ['starting','running','waiting']:raise Refused('Active composed Meta session required')
+            if c['config'].get('stopPolicy') not in CONTROLLED_POLICIES or session['state'] not in ['starting','running','waiting']:raise Refused('Active composed Meta session required')
             agents=session.get('agents',{})
             native=c['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
             main=session.get('nativeSessionId',session_id)
@@ -121,6 +122,7 @@ class StopRuntime:
                 if not actor:raise Refused('Unregistered native caller')
                 if actor['preset']!='phyexp-meta' and data.get('operation') not in READ_OPERATIONS|{'research_list','research_read','evidence_excerpt'}:raise Refused('Child is read-only')
                 if data.get('operation')=='campaign_finish' and data.get('input',{}).get('condition')=='exhausted':
+                    if c['config'].get('stopPolicy')==GOAL_POLICY:raise Refused('Exploration exhaustion cannot end this activity')
                     review=store._get(db,'stop_reviews',data['input'].get('reviewId',''))
                     if not owns_review(store,db,session,review):raise Refused('Stop approval belongs to a different main session')
                 # Dispatch outside this transaction; its own writes are transactional.
@@ -140,6 +142,7 @@ class StopRuntime:
                 key=sha([session_id,data.get('agentId'),data.get('pluginId'),data.get('callId'),data.get('event')])
                 return store._save(db,'meta_observations',{'id':key,'campaignId':campaign,'sessionId':session_id,**data,'recordedAt':store.clock()})
             elif action=='review_request':
+                if c['config'].get('stopPolicy')==GOAL_POLICY:raise Refused('This activity does not support exhaustion reviews')
                 if data.get('agentId')!=main or agents.get(main,{}).get('preset')!='phyexp-meta':raise Refused('Only main Meta may request review')
                 ready(store,db,c);no_pending(store,db,c);request=data.get('request',{});request_valid(store,db,c,request)
                 snapshot_data=snapshot(store,db,c);fingerprint=sha(snapshot_data);key=sha([campaign,POLICY,fingerprint,request])

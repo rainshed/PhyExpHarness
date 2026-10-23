@@ -835,7 +835,7 @@
           "const": "meta-composition-v1"
         },
         "stopPolicy": {
-          "const": "stop-review-v1"
+          "enum": ["stop-review-v1", "goal-or-budget-v1"]
         },
         "preset": {
           "type": "string"

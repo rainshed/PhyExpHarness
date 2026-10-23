@@ -1,52 +1,39 @@
 # Meta 资源规划接口
 
-适用于活动状态 `resourcePlanning.policy = meta-resource-planning-v1`。用户上限、Meta 运行计划和已受理实验条件分别保存；旧活动继续使用原有规则。
+适用于活动状态 `resourcePlanning.policy = meta-resource-planning-v1`。新活动采用 `benchmark-time-v1`，用户上限、Meta 运行计划和已受理实验条件分别保存；旧活动按其绑定的工具契约执行。
 
 ## 提交和修改计划
 
-首先读取 `campaign_status`。`resourcePlanning.configurationSources` 说明限制来源，`suggestions` 是建议，`planRevision` 是当前计划版本。首次调用 `campaign_plan_update` 后，后台自动受理全部所选任务各一次的 H0 基线，无须重复提交基线批次。
+首先读取 `campaign_status` 的完整状态文件。`resourcePlanning.configurationSources` 说明限制来源，`suggestions` 是建议，`planRevision` 是当前计划版本。首次调用 `campaign_plan_update` 后，后台自动受理全部所选任务各一次的 H0 基线，无须重复提交基线批次。
 
-工具的 `input` 是 JSON 字符串，包含：
+当前原生工具直接接收对象参数：
 
 ```json
 {
   "changes": {
     "parallelism": 1,
-    "defaultTrialTimeSeconds": 3600,
     "closeoutReserveSeconds": 0,
     "closeoutReserveTokens": 0
   },
-  "reason": "按当前任务规模分配后续实验时间",
+  "reason": "按当前活动余额安排并发和收尾预留",
   "expectedPlanRevision": 0,
   "idempotencyKey": "initial-plan"
 }
 ```
 
-示例值需要按当前活动条件选择，不是固定实验策略。四个 `changes` 字段必须一起提交；并发和单次时长为正整数，预留可为 0。token 不限时 token 预留必须为 0。提交不可执行的值会被拒绝，不自动裁剪；重复同一幂等键须保持相同输入。修改计划时使用新的键和最新版本。
+示例值需要按当前活动条件选择，不是固定实验策略。三个 `changes` 字段必须一起提交；并发为正整数，预留可为 0。token 不限时 token 预留必须为 0。提交不可执行的值会被拒绝，不自动裁剪；重复同一幂等键须保持相同输入。修改计划时使用新的键和最新版本。
 
-计划修改影响未来批次，已受理和运行任务保留其条件。Meta 不能提高用户上限或改变 Solver 配置；达到自己的阶段目标、增加预留或缩短计划不能代替停止审查。
+计划修改影响未来批次，已受理和运行任务保留其条件。Meta 不能提高用户上限或改变 Solver 配置。新活动只在用户目标满足或活动额度达到上限时结束探索；阶段目标、调整预留或暂时没有方向不能代替活动目标。
 
 `resourcePlanning.schedulingWait` 说明收尾时间或 token 额度阻止待执行任务启动，后台同时发送 `resource_plan_waiting` 通知。检查实际余额、在途占用和预留；计划预留可以调整。即使次数上限已关闭新批次受理，只要活动尚未关闭且已有任务未完成，仍可调整计划来完成已受理任务；不能因此受理额外批次。
 
-## 批次和排队条件
+## 批次与任务时限
 
-`batch_submit` 保留 `candidateId`、`tasks`、`repeats`、`idempotencyKey`，可附加：
+`batch_submit` 接收 `candidateId`、`tasks`、`repeats`、`idempotencyKey`。每道题的求解和评分时限由 benchmark 原始配置决定，可在状态中的 `taskTimeLimits` 查询。准备与评分不占用求解时间；计划和批次不能覆盖任务时限，也不能接受缩短执行。
 
-```json
-{"execution":{"trialTimeSeconds":1800,"allowShortened":false}}
-```
+活动剩余时间不足以完整执行时，选择仍可完整运行的任务或处理已有证据。比较实验时使用后台记录的实际资源条件。
 
-省略时采用当前计划时长，默认不接受因排队而缩短。超过用户上限或冻结配方能力的时长会被拒绝。实际获配时间、计划版本和条件差异进入证据与报告。
-
-单次时长包含启动、Solver、评分和清理，不等于纯 Solver 时间。`resourcePlanning.executionTimePolicy` 公开执行层固定评分与清理预留；当前为 330 秒，单次分配必须大于该值，启动还会消耗部分时间。批次、缩短确认和启动检查均执行这个最低要求，避免先受理再因不可执行时长产生未评分。此固定执行预留与 Meta 的活动收尾预留分别记录。
-
-待启动任务剩余时间不足时，`campaign_status.pendingConditions` 给出任务 ID 和可用时间。确认可以缩短后调用 `trial_conditions_accept`：
-
-```json
-{"trialId":"使用返回的任务ID","trialTimeSeconds":600,"reason":"接受剩余时间用于有限诊断","idempotencyKey":"accept-shortened"}
-```
-
-时长不能超过原受理条件。该操作明确接受随剩余时间缩短；实际分配仍会记录。不能把缩短的试验当作原定完整时间条件的对照。
+历史活动可能仍包含 `defaultTrialTimeSeconds`、批次 `execution` 和 `trial_conditions_accept`，其含义以该活动冻结的契约和资料为准。当前活动不要发送这些字段或操作。
 
 ## 准入等待和结果
 

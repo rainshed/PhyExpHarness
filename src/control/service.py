@@ -34,7 +34,8 @@ from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, DEFAULT_RULE
 from src.evidence.materials import Materials,snapshot_tasks
 from .meta_context import activity_state
-from .meta_composition import freeze as freeze_meta, verify as verify_meta, POLICY as STOP_POLICY
+from .meta_composition import freeze as freeze_meta, verify as verify_meta
+from .stop_policy import GOAL_POLICY, CONTROLLED_POLICIES
 from .stop_review import StopRuntime
 from .processes import reap_children
 from . import resource_planning as planning
@@ -169,8 +170,8 @@ class ControlService:
             reference_defaults=self.references.freeze(config) if not replay else {}
             time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark agent phase; startup and verification are separate.'},
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
-            composition=freeze_meta(self.source,self.data,{**config,**time_defaults}) if not replay else None
-            campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':STOP_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
+            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,'stopPolicy':GOAL_POLICY}) if not replay else None
+            campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':GOAL_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **time_defaults,
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
@@ -649,7 +650,7 @@ class ControlService:
         if operation=='campaign_finish':
             reason=args.get('reason')
             if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('A concise evidence-based stop reason is required')
-            return self.store.control(campaign,'finish','meta-finish-'+hashlib.sha256(encoded(args).encode()).hexdigest(),changes=args if c['config'].get('stopPolicy')==STOP_POLICY else {'reason':reason})
+            return self.store.control(campaign,'finish','meta-finish-'+hashlib.sha256(encoded(args).encode()).hexdigest(),changes=args if c['config'].get('stopPolicy') in CONTROLLED_POLICIES else {'reason':reason})
         if c['state']!='running' or c['explorationClosed']:raise Refused('Search writes closed; evidence and reports remain available')
         if operation=='workspace_write':return write_workspace(self.workspace(campaign),**args)
         if operation=='workspace_exec':

@@ -7,6 +7,7 @@ import subprocess
 import time
 import fcntl
 from pathlib import Path
+from .stop_policy import CONTROLLED_POLICIES
 from .store import identity,Refused
 from .meta_context import system_prompt,startup_context,activity_state
 from .processes import reap_children
@@ -119,14 +120,14 @@ class MetaDriver:
         pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts']['reservedTrials'])
         from .meta_contracts import version
         state=activity_state(self.service,campaign)
-        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6'):
+        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7'):
             state=self.service.meta_api.receipts.status(campaign)
             details=self.service.meta_api.receipts.snapshot(campaign,'notifications',{'after':after,'cursor':cursor},selected)
             selected=[{k:e[k] for k in ['seq','type','operationId','trialId','batchId','state'] if k in e} for e in selected]
             # Event count can also grow while offline: keep the complete event list in a file.
             selected={'total':len(selected),'file':{k:details[k] for k in ['ref','path','mediaType','bytes','sha256','completeness']}}
         return {'cursor':cursor,'events':selected,'status':state,'finish':finish,
-            'continue':c['config'].get('stopPolicy')=='stop-review-v1' and c['state'] in ['running','closing'] and not pending and not finish}
+            'continue':c['config'].get('stopPolicy') in CONTROLLED_POLICIES and c['state'] in ['running','closing'] and not pending and not finish}
     def acknowledge(self,id,cursor):
         with self.store.connection(True) as db:
             row=self.store._get(db,'meta_sessions',id)

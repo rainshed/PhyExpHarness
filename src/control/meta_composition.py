@@ -7,8 +7,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 from .store import Refused, encoded
+from .stop_policy import REVIEW_POLICY, GOAL_POLICY
 
-POLICY='stop-review-v1'
+POLICY=REVIEW_POLICY
 VERSION='meta-composition-v1'
 
 def digest(value):return hashlib.sha256(encoded(value).encode()).hexdigest()
@@ -36,8 +37,13 @@ def freeze(source,data,config):
     source=Path(source);data=Path(data);plugin=source/'packages/meta-harness'
     manifest=validate(json.loads((plugin/'composition.json').read_text()),plugin)
     # A caller may select declarative settings, never an arbitrary host path or source upload.
-    if config.get('metaCompositionConfig') is not None:manifest=validate(config['metaCompositionConfig'],plugin)
-    system=system_prompt({**config,'stopPolicy':POLICY})
+    if config.get('metaCompositionConfig') is not None:manifest=validate(json.loads(json.dumps(config['metaCompositionConfig'])),plugin)
+    stop_policy=config.get('stopPolicy',GOAL_POLICY)
+    if stop_policy==GOAL_POLICY:
+        for p in manifest['plugins']:
+            if p['id']=='stop-review':p['enabled']=False
+        validate(manifest,plugin)
+    system=system_prompt({**config,'stopPolicy':stop_policy})
     reviewer=(plugin/'reviewer.md').read_text()
     files={}
     for root in [plugin,source/'src/execution']:
@@ -49,7 +55,7 @@ def freeze(source,data,config):
     image=subprocess.run(['docker','image','inspect','phyexp-runner:0.2.1-rc.2','--format','{{.Id}}'],capture_output=True,text=True,timeout=30)
     if image.returncode or not image.stdout.strip().startswith('sha256:'):raise Refused('Meta Runner image unavailable')
     document={'version':VERSION,'composition':manifest,'files':files,'systemPrompt':system,'reviewerPrompt':reviewer,
-              'runnerImage':image.stdout.strip(),'stopPolicy':POLICY,'reviewerModelPolicy':'inherit-meta',
+              'runnerImage':image.stdout.strip(),'stopPolicy':stop_policy,'reviewerModelPolicy':'inherit-meta',
               'lockSha256':files['package-lock.json'],'parentId':manifest.get('parentId'),
               'hostBoundary':'frozen trusted plugins; generated code runs in separate Runner'}
     id=digest(document);parent=data/'meta-compositions';parent.mkdir(parents=True,exist_ok=True);dest=parent/id
@@ -69,7 +75,7 @@ def freeze(source,data,config):
     verify(data,{'id':id},source)
     return {'id':id,'version':VERSION,'preset':manifest['id'],'parentId':manifest.get('parentId'),
             'runnerImage':document['runnerImage'],'lockSha256':document['lockSha256'],
-            'plugins':manifest['plugins'],'stopPolicy':POLICY}
+            'plugins':manifest['plugins'],'stopPolicy':stop_policy}
 
 def verify(data,reference,source):
     id=reference['id']

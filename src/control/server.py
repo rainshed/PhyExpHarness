@@ -5,6 +5,7 @@ import contextlib
 import fcntl
 import json
 from pathlib import Path
+from .stop_policy import CONTROLLED_POLICIES
 from fastapi import FastAPI,Request,HTTPException
 from fastapi.responses import JSONResponse,FileResponse,Response
 from .service import ControlService
@@ -224,7 +225,7 @@ def make_app(service,supervise=True):
     def meta(campaign:str,request:Request,body:dict):
         role=request.state.identity
         if role['role']!='meta' or role['campaignId']!=campaign:raise Refused('Meta lease required for this Campaign')
-        if service.store.get('campaigns',campaign)['config'].get('stopPolicy')=='stop-review-v1':raise Refused('Composed Meta must use authenticated runtime channel')
+        if service.store.get('campaigns',campaign)['config'].get('stopPolicy') in CONTROLLED_POLICIES:raise Refused('Composed Meta must use authenticated runtime channel')
         return service.meta_call(campaign,body['operation'],body.get('input',{}))
     @app.post('/meta-sessions/{id}/runtime')
     def runtime(id:str,request:Request,body:dict):
