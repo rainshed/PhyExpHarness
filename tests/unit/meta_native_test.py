@@ -101,11 +101,27 @@ class NativeMetaTests(unittest.TestCase):
         self.assertEqual(len(self.store.list('meta_questions',self.c)),1)
         with self.assertRaises(Conflict):answer(self.store,row['id'],{'answers':[{'id':'scope','selected':['second']}]})
     def test_recovery_bounded_without_closing_activity(self):
-        self.assertEqual(recovery({},0,100,1000)['retryAt'],102)
-        self.assertEqual(recovery({},1,100,1000)['retryAt'],110)
-        self.assertEqual(recovery({},2,100,1000)['state'],'needs_attention')
-        self.assertEqual(recovery({'error':'integrity mismatch'},0,100,1000)['state'],'needs_attention')
-        self.assertEqual(recovery({},0,100,101)['state'],'needs_attention')
+        summary={'failure':{'code':'model_transport_error'}}
+        for attempt,delay in enumerate((2,5,10,20,30,60)):
+            with self.subTest(attempt=attempt):
+                decision=recovery(summary,attempt,100,1000)
+                self.assertEqual(decision['state'],'recovering')
+                self.assertTrue(decision['automaticRecovery'])
+                self.assertEqual(decision['retryAt'],100+delay)
+                self.assertEqual(decision['nextAttempt'],attempt+1)
+                # Recovery at or after the original deadline must not be admitted.
+                self.assertEqual(recovery(summary,attempt,100,100+delay)['state'],'needs_attention')
+        exhausted=recovery(summary,6,100,1000)
+        self.assertEqual(exhausted['state'],'needs_attention')
+        self.assertEqual(exhausted['reason'],'recovery_exhausted')
+        self.assertFalse(exhausted['automaticRecovery'])
+        for failure in [{'error':'integrity mismatch'},{'failure':{'code':'budget_exhausted'}},
+                        {'failure':{'observed':{'transport':{'httpStatus':401}}}}]:
+            with self.subTest(failure=failure):
+                decision=recovery(failure,5,100,1000)
+                self.assertEqual(decision['state'],'needs_attention')
+                self.assertEqual(decision['reason'],'nonrecoverable')
+        self.assertEqual(recovery(summary,5,100,1000,stopped=True)['state'],'needs_attention')
         self.assertEqual(self.store.get('campaigns',self.c)['state'],'running')
     def test_native_research_registration_and_accounting_remain_scoped_after_host_replacement(self):
         runtime=self.service.stop_runtime

@@ -1,5 +1,6 @@
 """Meta technical recovery is separate from Solver request/scientific retries."""
-DELAYS=(2,10)
+# Host-owned backoff; replacing a frozen Meta plugin does not change this policy.
+DELAYS=(2,5,10,20,30,60)
 NONRECOVERABLE={'model_authentication','model_permission','model_invalid_request','request_cancelled',
     'model_auth_error','model_permission_error','model_invalid_request_error','model_configuration_error',
     'trial_deadline','token_limit','budget_exhausted','budget_admission_denied','admission_denied','integrity_error',
