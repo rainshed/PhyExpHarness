@@ -38,6 +38,7 @@ try{
  const plugins=bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}));
  session=isolatedSession({executionRoot:resolved.executionRoot,logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
   config:{disableLocalTools:true,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),modelInfo:provider.info,mcpConnections:connections,
+   requestRecovery:recipe.requestRecovery,recoveryDeadline:deadline,
    environment:{PHYEXP_MAX_OUTPUT_CHARS:String(recipe.maxOutputChars)},
    plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},...plugins]},
   mounts:pluginMounts(resolved),

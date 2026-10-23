@@ -115,6 +115,17 @@ class BundleTests(unittest.TestCase):
         self.recipe.update(id='renamed',name='Display name',notes='Different documentation',createdAt=123)
         self.assertEqual(first['id'],self.freeze()['id'])
 
+    def test_recovery_policy_is_frozen_exported_and_changes_composition_identity(self):
+        current=self.freeze()
+        exported=Path(export_project(current['path'],self.base/'recovery-export')['path'])
+        self.assertEqual(json.loads((exported/'recipe.json').read_text())['requestRecovery']['retryDelaysSeconds'],[2,5,20,30,60])
+        self.assertTrue((exported/'src/execution/runner/request_recovery.mjs').is_file())
+        del self.recipe['requestRecovery']
+        old=self.freeze()
+        self.assertNotEqual(current['id'],old['id'])
+        self.assertNotIn('requestRecovery',json.loads((Path(old['path'])/'recipe.json').read_text()))
+        self.assertEqual(verify(current['path'])['id'],current['id'])
+
     def test_portable_export_survives_store_removal_and_rejects_missing_or_tampered_objects(self):
         b=self.freeze([{'path':self.plugin}])
         exported=Path(export_project(b['path'],self.base/'exports')['path'])

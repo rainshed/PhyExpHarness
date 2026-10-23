@@ -21,6 +21,7 @@ const gateway=new ModelGateway({model:recipe,deadline:Date.now()+20000,audit:pat
 }}});
 const session=isolatedSession({executionRoot:resolved.executionRoot,logs,gateway,image:bundle.runnerImage,
  config:{disableLocalTools:true,modelInfo,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),
+ requestRecovery:recipe.requestRecovery,recoveryDeadline:gateway.deadline,
  plugins:[{id:'container-tools',name:'/opt/phyexp/src/execution/adapters/quantum_harbor/container_tool.mjs'},
  ...bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}))]},
  mounts:pluginMounts(resolved),

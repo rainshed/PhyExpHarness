@@ -37,6 +37,7 @@ for(const selected of cases)test(`frozen assembly accepts ${selected.provider}/$
   const assembly=JSON.parse(fs.readFileSync(path.join(logs,'assembly.json')));
   assert.equal(assembly.status,'passed');assert.equal(assembly.model,'controlled-fake-provider');assert.equal(assembly.bundleId,bundle.id);
   const config=JSON.parse(fs.readFileSync(path.join(logs,'runner-config/runner.json')));
+  assert.deepEqual(config.requestRecovery,recipe.requestRecovery);assert.ok(config.recoveryDeadline>Date.now());
   assert.deepEqual(new Set(config.modelInfo.reasoning?.efforts.map(e=>e.id)??[]),new Set(selected.providerConfig.models[0].reasoningEfforts?Object.keys(selected.providerConfig.models[0].reasoningEfforts):[]));
   if(selected.providerConfig.models[0].contextWindow)assert.equal(config.modelInfo.context.contextWindow,selected.providerConfig.models[0].contextWindow);
   const audit=fs.readFileSync(path.join(logs,'check-gateway.jsonl'),'utf8').trim().split('\n').map(JSON.parse);

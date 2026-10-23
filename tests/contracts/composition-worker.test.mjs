@@ -8,7 +8,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 
 const run=promisify(execFile),source=path.resolve('.');
-test('stored composition worker loads immutable plugin and configuration through a shared runtime',{timeout:60000},async()=>{
+test('stored composition worker recovers an HTTP overload and loads immutable plugin configuration',{timeout:60000},async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp composition worker '));
  let requests=0,providerFailure;
  const server=http.createServer(async(req,res)=>{
@@ -18,12 +18,13 @@ test('stored composition worker loads immutable plugin and configuration through
    assert.equal(req.headers.authorization,'Bearer fixture-composition-key');
    assert.equal(body.model,'fixture-model');
    assert.deepEqual(new Set(body.tools.map(t=>t.function.name)),new Set(['bash','example_echo']));
+   if(requests===1){res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'Our servers are currently overloaded.',type:'server_error'}}));return;}
    let delta,reason;
-   if(requests===1){
+   if(requests===2){
     delta={role:'assistant',tool_calls:[{index:0,id:'echo-call',type:'function',function:{name:'example_echo',arguments:'{"text":"payload"}'}}]};
     reason='tool_calls';
    }else{
-    assert.equal(requests,2);
+    assert.equal(requests,3);
     assert.ok(body.messages.some(m=>m.role==='tool'&&m.content.includes('frozen:payload')));
     delta={role:'assistant',content:'fixture completed'};reason='stop';
    }
@@ -65,7 +66,12 @@ test('stored composition worker loads immutable plugin and configuration through
   assert.equal(receipt.framework.version,recipe.dshVersion);
   assert.equal(receipt.plugins[0].config.prefix,'frozen:');
   const summary=JSON.parse(fs.readFileSync(path.join(logs,'runtime-summary.json')));
-  assert.equal(summary.status,'completed');assert.equal(summary.toolCalls,1);assert.equal(requests,2);
+  assert.equal(summary.status,'completed');assert.equal(summary.toolCalls,1);assert.equal(requests,3);
+  assert.equal(summary.requestRecovery.recoveredRequests,1);assert.equal(summary.failure,null);
+  const events=JSON.parse(fs.readFileSync(path.join(logs,'events.json')));
+  assert.deepEqual(events.filter(e=>e.type==='plugin:phyexp-request-recovery/scheduled').map(e=>e.data.delayMs),[2000]);
+  const config=JSON.parse(fs.readFileSync(path.join(logs,'runner-config/runner.json')));
+  assert.deepEqual(config.requestRecovery,recipe.requestRecovery);
   assert.equal(summary.usage.totalTokens,24);
  }finally{
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));

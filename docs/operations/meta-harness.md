@@ -177,7 +177,7 @@ Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid
 
 H0 使用 `sdk-minimal` 原生循环和上下文压缩，默认配方为 [gpt-6-sol / medium](../../recipes/h0-sol.json)。任务原文与公开环境信息交给 Solver，不追加科学算法提示、答案修复或失败后追问。[Luna 配方](../../recipes/h0-luna.json)与对应计划保留供显式选择。
 
-模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与官方未评分记录；默认不自动重试，执行插件可恢复模型过载或连接故障。派生任务完成分按活动绑定规则计算。架构边界见[实现方案](../design/meta-harness-implementation.md)。
+模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与官方未评分记录；新 H0 v2 内置模型请求恢复，连接失败、断线、响应不完整及明确服务过载时按 2、5、20、30、60 秒重试；不重跑整个 Trial。派生任务完成分按活动绑定规则计算。架构边界见[实现方案](../design/meta-harness-implementation.md)。
 
 ## 创建和运行
 
@@ -311,7 +311,7 @@ python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor
 
 请求模型名为 `deepseek-flash`，官方当前将其映射至 `DeepSeek-V4.1-Flash-1017`；这是滚动别名，并非固定快照承诺。活动保存请求配置，冻结执行项目保存所选供应商路由快照（含预期版本、别名性质和端点），审计保存调用时间与请求名；不能据此认定远端未来始终是 1017。[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)。已创建活动和已有冻结版本保持原配置，选择新模型须创建新活动。
 
-DeepSeek 沿用现有软 token 阈值、未知用量保留和无自动重试规则；当前仍不提供经过验证的美元硬额度。离线合成流验证不代表真实 API Key、远端模型响应或实验评分已验证。
+DeepSeek 沿用现有软 token 阈值、未知用量保留和冻结配方中的模型请求恢复策略；当前仍不提供经过验证的美元硬额度。离线合成流验证不代表真实 API Key、远端模型响应或实验评分已验证。
 
 ## 任务成功率与官方评分
 
@@ -500,9 +500,11 @@ Meta 普通回合结束不会结束活动；无在途实验/构建时，后台�
 
 ### 请求恢复诊断
 
-Solver 网关的过载和连接故障只结束当前请求；默认没有自动恢复，Meta 可开发执行侧恢复插件。新 Meta 自身采用下述独立技术恢复策略，不改变 Solver 约定。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是失败历史与明确恢复的请求关联。网关审计保留每次请求、失败、结算及恢复记录；未知用量不清零。旧失败文件继续兼容读取。
+新 H0 v2 的 `requestRecovery.version=solver-request-recovery-v1` 是固定执行基础设施：连接失败、断线、缺少结束回执及明确服务过载后，依次等待 **2、5、20、30、60 秒**，最多重试五次（包含首次共六次请求）。普通循环只重试当前模型步骤，保留已完成工具结果；原生上下文压缩单独恢复当前摘要请求，失败的部分摘要不会写入有效上下文。成功后下一个步骤重新从 2 秒开始。提供方给出的有效 Retry-After 大于本档等待时采用更长等待；剩余墙钟不足则停止。鉴权、参数、预算、用户取消及其他终止保护不自动恢复。提供方适配器继续保持零次通用重试，避免与基线叠加。新 Meta 自身采用下述独立技术恢复策略；旧失败文件继续兼容读取。
 
-本次改动仅对新冻结执行版本生效，旧 Bundle 不热修改。模型保护、预算和用户停止仍由宿主执行。详见[修改计划与验收](../plans/model-request-recovery.md)及[插件恢复接口](../../knowledge/plugin-sdk/guides/request-recovery.md)。
+重试的计划、开始与停止原因保存在会话 `plugin:phyexp-request-recovery/*` 事件，计数通过原生会话投影重建；网关审计逐次保留请求、失败、结算与恢复关联，未知用量不清零。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是请求失败历史。
+
+恢复配方与代码均进入冻结身份和独立导出。缺少 `requestRecovery` 的历史配方仍不启用内置恢复，旧 Bundle 不热修改；新比较应重新准备同一基础设施的 H0 与候选。模型保护、预算和用户停止仍由宿主执行，五档等待最多合计 117 秒（不含请求耗时及服务端要求的更长等待），不会增加原时长或额度。详见[修改计划与验收](../plans/model-request-recovery.md)及[插件恢复接口](../../knowledge/plugin-sdk/guides/request-recovery.md)。
 
 
 ## 工作台中的等待状态与历史记录

@@ -46,7 +46,8 @@ fs.writeFileSync('/tmp/mcp-connections.json',JSON.stringify(connections));
 const child = spawn(process.execPath, ['/opt/phyexp/src/execution/runner/boot.mjs','/tmp/gateway.patch.json'], {
   cwd: config.nativeMeta?'/work':'/tmp/work', env: { PATH: process.env.PATH, HOME: '/tmp/home', DSH_HOME: config.nativeMeta?'/session':'/tmp/home/dsh', NO_COLOR:'1',
     PHYEXP_MODEL_INFO: JSON.stringify(config.modelInfo), PHYEXP_FIXED_MODEL: JSON.stringify(config.fixedModel), PHYEXP_GATEWAY_URL: `http://127.0.0.1:${server.address().port}`,
-    PHYEXP_MCP_CONNECTIONS:'/tmp/mcp-connections.json',PHYEXP_TOOL_RECEIPT:'/tmp/tool-ready.json',...config.environment }, stdio: ['pipe','pipe','inherit'] });
+    PHYEXP_MCP_CONNECTIONS:'/tmp/mcp-connections.json',PHYEXP_TOOL_RECEIPT:'/tmp/tool-ready.json',...config.environment,
+    PHYEXP_REQUEST_RECOVERY:JSON.stringify(config.requestRecovery??null),PHYEXP_RECOVERY_DEADLINE:String(config.recoveryDeadline??'') }, stdio: ['pipe','pipe','inherit'] });
 const output = readline.createInterface({ input: child.stdout });
 output.on('line', line => { if (Buffer.byteLength(line) < 32*1024*1024) process.stdout.write(line+'\n'); else child.kill('SIGKILL'); });
 const input = readline.createInterface({ input: process.stdin });
