@@ -1,7 +1,8 @@
 // A frozen authentication handle, never a frozen access/refresh token or host path.
 export function codexHostProfile(adapter,provider,profile){
  return adapter==='pi-ai'&&provider==='openai-codex'&&profile&&
-  ['apiKeyEnv','api','baseURL','headers'].every(key=>profile[key]==null);
+  ['apiKeyEnv','api','baseURL'].every(key=>profile[key]==null)&&
+  (profile.headers==null||typeof profile.headers==='object'&&!Array.isArray(profile.headers)&&Object.keys(profile.headers).length===0);
 }
 export function usesCodexHost(snapshot){
  if(snapshot.nativeAuth===undefined)return false;

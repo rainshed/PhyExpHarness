@@ -20,7 +20,8 @@ def uses_codex_host(snapshot):
     profile=profiles.get('openai-codex',{})
     if (snapshot['nativeAuth']!='codex-host' or snapshot.get('credentialRef') is not None or
         snapshot.get('adapter')!='pi-ai' or snapshot.get('call',{}).get('provider')!='openai-codex' or
-        list(profiles)!=['openai-codex'] or any(profile.get(k) is not None for k in ('apiKeyEnv','api','baseURL','headers'))):
+        list(profiles)!=['openai-codex'] or any(profile.get(k) is not None for k in ('apiKeyEnv','api','baseURL')) or
+        profile.get('headers') not in (None,{})):
         raise Refused('Invalid native Codex host authentication binding')
     return True
 
