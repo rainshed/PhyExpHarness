@@ -6,6 +6,7 @@ import {isolatedSession} from '../execution/host/isolation.mjs';
 import {nativeEntries,presets} from '../../packages/meta-harness/composition-native.mjs';
 import {reviewSchema} from '../../packages/meta-harness/stop-review.mjs';
 import {MetaOutputs} from './meta_outputs.mjs';
+import {readToolFile} from './meta_file_read.mjs';
 const READ=new Set(['campaign_status','materials_list','materials_search','materials_read','evidence_list','evidence_read','sdk_search','sdk_read','sdk_inspect','research_list','research_read','evidence_excerpt']);
 const validateReview=new Ajv().compile(reviewSchema);
 // One activity research boundary (main + native children), separate stop-review boundary.
@@ -39,6 +40,15 @@ export class MetaHost{
   this.runners.set(id,{session,binding});return session;
  }
  async *handle(binding,operation,payload,signal){
+  try{yield* this.dispatch(binding,operation,payload,signal);}
+  catch(error){
+   let file;
+   try{file=binding.outputs.tool({name:payload.action,error:String(error),stack:error.stack});}
+   catch{file={path:'/outputs/index.json',completeness:'partial'};}
+   throw new Error(JSON.stringify({status:payload.action==='call'?'outcome_unknown':'failed',summary:error.message?.length<=200?error.message:'Host action failed; read the diagnostic file.',file}));
+  }
+ }
+ async *dispatch(binding,operation,payload,signal){
   if(operation==='receipt'){
    fs.writeFileSync(path.join(binding.logs,'bootstrap-receipt.json'),JSON.stringify({role:binding.role,compositionId:this.frozen.id,image:this.image,...payload}));
    yield {ok:true};return;
@@ -49,6 +59,7 @@ export class MetaHost{
   if(action==='output_append'){yield outputs.append(input.id,input.sequence,input.bytes);return;}
   if(action==='output_close'){yield outputs.close(input.id,'complete');return;}
   if(action==='tool_output'){yield outputs.tool(input);return;}
+  if(action==='file_read'){yield await readToolFile(this.config.filesRoot,outputs.root,input);return;}
   if(action==='register'){
    const research=role==='meta'&&input.preset===presets.research&&input.agentId!==id;
    if(typeof input.agentId!=='string'||!/^[-\w]+$/.test(input.agentId)||(!research&&(input.agentId!==id||input.preset!==presets[role])))throw new Error('Runner identity mismatch');
@@ -74,10 +85,10 @@ export class MetaHost{
    yield await this.runtime(action,{...input,agentId:id});return;
   }
   if(action==='review_request'){
-   const review=await this.runtime(action,{agentId:id,request:input.request});this.pendingReview=review;yield review;return;
+   const review=await this.runtime(action,{agentId:id,request:input.request});this.pendingReview=review;yield this.reviewReceipt(review);return;
   }
   if(action==='review_status'){
-   yield await this.runtime(action,{agentId:id,reviewId:input.reviewId});return;
+   yield this.reviewReceipt(await this.runtime(action,{agentId:id,reviewId:input.reviewId}));return;
   }
   if(action==='child_start'){
    if([...this.children.values()].filter(c=>!c.result).length>=2)throw new Error('Child capacity reached');
@@ -87,7 +98,7 @@ export class MetaHost{
    if(role==='reviewer'&&(!review||review.state!=='pending'||review.replayed||[...this.children.values()].some(c=>c.reviewId===review.id)))throw new Error('No unconsumed stop review');
    const child={id:'child-'+randomUUID(),role,reviewId:review?.id};this.children.set(child.id,child);
    // Never use a parent's supplied reviewer schema/prompt as authoritative.
-   child.promise=this.runChild(child,role==='reviewer'?[{type:'text',text:JSON.stringify(review)}]:input.prompt,role==='reviewer'?reviewSchema:input.outputSchema);
+   child.promise=this.runChild(child,role==='reviewer'?[{type:'text',text:JSON.stringify(this.reviewReceipt(review))}]:input.prompt,role==='reviewer'?reviewSchema:input.outputSchema);
    yield {id:child.id};return;
   }
   if(action==='child_status'||action==='child_cancel'){
@@ -98,6 +109,17 @@ export class MetaHost{
   // In particular: no parent review_result, review_attach, register-reviewer,
   // model_request, credentials or arbitrary backend URLs are forwarded.
   throw new Error('Unavailable runtime action');
+ }
+ reviewReceipt(review){
+  // Reviewer receives the same immutable snapshot through its own read-only
+  // materials mount; never interpolate that snapshot into a new model prompt.
+  const data=JSON.stringify(review),sha=createHash('sha256').update(data).digest('hex');
+  const folder=path.join(this.config.filesRoot,'materials','stop-reviews');fs.mkdirSync(folder,{recursive:true});
+  const target=path.join(folder,sha+'.json');
+  if(!fs.existsSync(target)){const temp=target+'.'+randomUUID();fs.writeFileSync(temp,data);fs.renameSync(temp,target);}
+  if(createHash('sha256').update(fs.readFileSync(target)).digest('hex')!==sha)throw new Error('Published review integrity mismatch');
+  return {id:review.id,state:review.state,replayed:!!review.replayed,summary:'Independent review snapshot and findings are in the file. Read it before deciding.',
+   file:{path:'/materials/stop-reviews/'+sha+'.json',bytes:Buffer.byteLength(data),sha256:sha,completeness:'complete'}};
  }
  async runChild(child,prompt,outputSchema){
   let binding,result;
@@ -115,10 +137,10 @@ export class MetaHost{
     await this.runtime('review_result',{reviewId:child.reviewId,childId:child.id,result:binding.structured,stopReason:'completed'});
    }
   }catch(error){
-   result={output:[],stopReason:child.cancelled?'aborted':'error',diagnostic:String(error).slice(0,4000)};
+   result={output:[],stopReason:child.cancelled?'aborted':'error',diagnostic:String(error)};
    if(child.role==='reviewer')await this.runtime('review_failed',{reviewId:child.reviewId,error:String(error)}).catch(()=>{});
   }finally{try{await child.session?.dispose();binding?.outputs.dispose();}catch(error){result={...result,stopReason:'error',cleanupError:String(error)};}}
-  try{if(binding){
+  try{
    const folder=path.join(this.config.filesRoot,'materials','agents',child.id);fs.mkdirSync(folder,{recursive:true});
    const artifacts=[];let bytes=0;
    const publish=(source,relative)=>{
@@ -128,15 +150,21 @@ export class MetaHost{
     const target=path.join(folder,relative);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(source,target);
     artifacts.push({path:'/materials/agents/'+child.id+'/'+relative,bytes:stat.size,sha256:createHash('sha256').update(fs.readFileSync(target)).digest('hex'),source:'child-generated',completeness:'complete'});
    };
-   try{
+   try{if(binding){
     for(const row of binding.outputs.entries.values())publish(path.join(binding.outputs.root,row.id+'.log'),'outputs/'+row.id+'.log');
     const work=path.join(path.dirname(this.config.workRoot),'meta-children',child.id,'work');
     const visit=(dir,rel='work')=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.isSymbolicLink())continue;const next=path.join(dir,entry.name),r=rel+'/'+entry.name;if(entry.isDirectory())visit(next,r);else publish(next,r);}};
     visit(work);
+   }
    }catch(error){result.publicationError=String(error);}
    fs.writeFileSync(path.join(folder,'index.json'),JSON.stringify({id:child.id,artifacts,result}));
-   result.output.push({type:'text',text:JSON.stringify({childFiles:'/materials/agents/'+child.id+'/index.json',publicationError:result.publicationError})});
-  }}catch(error){result.publicationError=String(error);}
+   result={stopReason:result.stopReason,output:[{type:'text',text:JSON.stringify({status:result.stopReason,childFiles:'/materials/agents/'+child.id+'/index.json',summary:'Complete child output and structured result are in the file.'})}]};
+  }catch(error){
+   let file;
+   try{file=this.runners.get(this.config.id)?.binding.outputs.tool({name:'child_result',result,publicationError:String(error)});}
+   catch{file={path:'/outputs/index.json',completeness:'partial'};}
+   result={stopReason:'error',output:[{type:'text',text:JSON.stringify({status:'failed',summary:'Child result publication failed; inspect retained diagnostics.',file})}]};
+  }
   child.result=result;
   return child.result;
  }

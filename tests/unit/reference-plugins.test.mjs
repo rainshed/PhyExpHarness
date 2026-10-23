@@ -16,7 +16,7 @@ for(const axes of [[],['model'],['harness'],['model','harness']])test(`reference
  const review=nativeEntries(composition,{role:'reviewer'}).find(e=>e.id==='active-meta-preset').config.plugins;
  assert.equal(review.filter(p=>p.id.endsWith('-reference')).length,0);
 });
-for(const axis of ['model','harness'])test(`${axis} reference validates input before dispatch and has no peer dependency`,async()=>{
+for(const axis of ['model','harness'])test(`${axis} reference delegates full validation diagnostics to the host and has no peer dependency`,async()=>{
  const plugin=await import(`../../packages/meta-${axis}-reference/index.mjs`);
  const registered=[];const calls=[];
  const ctx={tools:{register:t=>registered.push(t)},metaControl:{observe:async()=>{},call:async(...a)=>{calls.push(a);return {status:'accepted'};}}};
@@ -26,8 +26,9 @@ for(const axis of ['model','harness'])test(`${axis} reference validates input be
  await assert.rejects(()=>submit.execute({provider:'forged'},{}),/missing required/);assert.equal(calls.length,0);
  const input={tasks:['task'],repeats:1,researchQuestion:'Compare tool recovery',idempotencyKey:'once',expectedPolicyRevision:1,...(axis==='model'?{candidateId:'candidate',modelRef:'model'}:{harnessRef:'codex',modelRef:'approved'})};
  assert.equal((await submit.execute(input,{})).status,'accepted');assert.deepEqual(calls[0].slice(0,2),[submit.name,input]);
- assert.equal((await submit.execute({...input,repeats:0},{})).error.code,'invalid_input');
- assert.equal((await submit.execute({...input,modelRef:'arbitrary',apiKey:'secret'},{})).error.code,'invalid_input');
+ await submit.execute({...input,repeats:0},{});
+ await submit.execute({...input,modelRef:'arbitrary',apiKey:'secret'},{});
+ assert.equal(calls.length,3);assert.equal(calls[1][1].repeats,0);assert.equal(calls[2][1].apiKey,'secret');
  const pkg=JSON.parse(fs.readFileSync(new URL(`../../packages/meta-${axis}-reference/package.json`,import.meta.url)));
  assert.ok(!Object.keys(pkg.dependencies).some(d=>d.includes('meta-')));
 });

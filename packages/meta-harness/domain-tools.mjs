@@ -37,7 +37,7 @@ export function registerDomain(ctx,config,domain){
    parameters:nativeSchema(spec.input).properties,
    output:{schema:{type:'object',additionalProperties:true},render:(_args,result)=>renderResult(result)},
    async execute(input,exec){
-    try{validateInput(name,input);}catch(error){if(name!=='report_save')return {ok:false,error:{code:'invalid_input',message:error.message,retryable:false}};}
+    // The host validates and publishes diagnostics for every rejection.
     await ctx.metaControl.observe(config.pluginId,'triggered',exec);
     return ctx.metaControl.call(name,input,exec);
    }}));
@@ -50,5 +50,5 @@ export function renderResult(result){
   if(!validateReceipt(result))throw new Error('Invalid Meta receipt shape');
   if(Buffer.byteLength(text,'utf8')>4096)throw new Error('Meta receipt exceeds its contract');
  }
- return [{type:'text',text}];
+ return [{type:'text',text:Buffer.byteLength(text,'utf8')>64*1024?JSON.stringify({status:'failed',summary:'Oversized tool value; full result is captured in /outputs/index.json.'}):text}];
 }

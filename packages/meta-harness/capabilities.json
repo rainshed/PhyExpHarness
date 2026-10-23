@@ -1,5 +1,5 @@
 {
-  "version": "meta-capabilities-v3",
+  "version": "meta-capabilities-v4",
   "base": {
     "profile": "sdk-minimal",
     "version": "0.2.1-rc.2",
@@ -87,5 +87,14 @@
     "researchRecovery": "native durable catalog and session; list_agents then send_message to resume the same child; reconcile interrupted work",
     "researchIsolation": "independent context, shared activity process/files; no OS isolation from main",
     "reviewIsolation": "separate process/container, workspace, session and host-bound identity"
+  },
+  "outputBoundary": {
+    "version": "meta-tools-v5",
+    "receiptBytes": 4096,
+    "nativeReadBytes": 65536,
+    "fileReader": "tool_result_read",
+    "offsetUnit": "Unicode characters",
+    "pageLimit": 8192,
+    "archiveBeforeProjection": true
   }
 }

@@ -8,7 +8,11 @@
       "enum": [
         "completed",
         "committed",
-        "rejected"
+        "rejected",
+        "accepted",
+        "running",
+        "failed",
+        "outcome_unknown"
       ]
     },
     "summary": {
@@ -271,6 +275,36 @@
     },
     "recordId": {
       "type": "string"
+    },
+    "operationId": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "batchId": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "trialId": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "reviewId": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "kind": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "reconciliationRequired": {
+      "type": "boolean"
+    },
+    "nextOffset": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
     }
   },
   "required": [

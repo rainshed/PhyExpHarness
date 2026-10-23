@@ -91,5 +91,5 @@ test('receipt rendering preserves complete JSON and refuses oversized responses'
  const receipt={receiptVersion:'meta-tool-receipt-v1',status:'completed',summary:'完整',file:{ref:'fixture',path:'/materials/objects/a.json',mediaType:'application/json',bytes:1,sha256:'a'.repeat(64),completeness:'complete'}};
  assert.deepEqual(JSON.parse(renderResult(receipt)[0].text),receipt);
  assert.throws(()=>renderResult({...receipt,summary:'大'.repeat(4096)}));
- assert.equal(JSON.parse(renderResult({text:'native output'.repeat(4096)})[0].text).text.length,53248);
+ assert.ok(Buffer.byteLength(renderResult({text:'native output'.repeat(10000)})[0].text)<4096);
 });

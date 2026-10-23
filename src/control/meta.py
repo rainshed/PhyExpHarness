@@ -116,7 +116,7 @@ class MetaDriver:
         pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts']['reservedTrials'])
         from .meta_contracts import version
         state=activity_state(self.service,campaign)
-        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4'):
+        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5'):
             state=self.service.meta_api.receipts.status(campaign)
             details=self.service.meta_api.receipts.snapshot(campaign,'notifications',{'after':after,'cursor':cursor},selected)
             selected=[{k:e[k] for k in ['seq','type','operationId','trialId','batchId','state'] if k in e} for e in selected]

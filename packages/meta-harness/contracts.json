@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v4",
+  "version": "meta-tools-v5",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
