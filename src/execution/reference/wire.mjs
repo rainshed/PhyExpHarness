@@ -5,6 +5,15 @@ import crypto from 'node:crypto';
 export function wireBinding(runtime,harness){
  const profile=runtime.wireProfile,model=runtime.model;
  const doc=JSON.parse(fs.readFileSync(runtime.credentials.credentialFile));
+ if(runtime.raw.auth?.type==='codex'){
+  if(harness!=='codex'||model.provider!=='openai-codex')throw new Error('Codex subscription must retain its native provider and Harness');
+  const token=doc.records?.['llm-pi-ai/openai-codex']?.payload?.access;
+  const claims=JSON.parse(Buffer.from(token?.split('.')[1]||'','base64url').toString());
+  const account=claims['https://api.openai.com/auth']?.chatgpt_account_id;
+  if(!account||!Number.isFinite(claims.exp)||claims.exp*1000<=Date.now())throw new Error('Codex subscription binding is unavailable or expired');
+  return {model,protocol:'responses',codexSubscription:true,baseURL:'https://chatgpt.com/backend-api/codex',
+   headers:{authorization:'Bearer '+token,'chatgpt-account-id':account,originator:'codex_cli_rs','OpenAI-Beta':'responses=experimental',accept:'text/event-stream'}};
+ }
  const deepseek=runtime.raw.adapter==='deepseek';
  const protocol=deepseek?'anthropic':profile.api==='anthropic-messages'?'anthropic':profile.api==='openai-responses'?'responses':null;
  if(protocol!==(harness==='codex'?'responses':'anthropic'))throw new Error('Reference protocol is incompatible');
@@ -26,8 +35,9 @@ export function fixedRequest(binding,payload){
  const cap=binding.model.maxTokens;
  const effort=binding.model.reasoningEffort;
  if(binding.protocol==='responses'){
+  if(binding.codexSubscription){body.store=false;delete body.max_output_tokens;}
   if(!route.endsWith('/compact')){
-   if(cap!==undefined)body.max_output_tokens=cap;
+   if(cap!==undefined&&!binding.codexSubscription)body.max_output_tokens=cap;
    if(effort!==undefined)body.reasoning={...body.reasoning,effort};
   }
  }else if(!route.endsWith('/count_tokens')){
@@ -53,12 +63,17 @@ export class WireGateway{
   const ctl=new AbortController();this.active.add(ctl);
   const bound=AbortSignal.any([ctl.signal,signal||new AbortController().signal,AbortSignal.timeout(Math.max(1,Math.min(DEFAULT_STREAM_POLICY.requestTimeoutMs,this.deadline-Date.now())))]);
   let idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
-  let reserved=false,usage={},finished=false,buffer='';
+  let reserved=false,usage={},finished=false,buffer='',jsonBody='',sse=false;
   const observe=row=>{
    const u=row.response?.usage||row.message?.usage||row.usage;
    if(u)usage={...usage,...u};
-   if(row.type==='response.completed'||row.type==='message_stop')finished=true;
+   if(row.type==='response.completed'||row.type==='response.done')finished=row.response?.status!=='incomplete'&&!row.response?.error;
+   if(row.type==='message_stop')finished=true;
    if(row.model&&row.model!==this.binding.model.model)this.record({type:'server_model_identity',id,requested:this.binding.model.model,actual:row.model});
+  };
+  const observeLine=line=>{
+   line=line.trim();
+   if(line.startsWith('data:')){sse=true;const data=line.slice(5).trim();if(data!=='[DONE]'){try{observe(JSON.parse(data));}catch{}}}
   };
   try{
    await this.budget.reserve(id,body,{signal:bound});reserved=true;
@@ -72,13 +87,13 @@ export class WireGateway{
    for await(const bytes of response.body){
     clearTimeout(idle);idle=setTimeout(()=>ctl.abort('Reference stream idle timeout'),DEFAULT_STREAM_POLICY.streamIdleTimeoutMs);
     size+=bytes.length;if(size>32*1024*1024)throw new Error('Oversized reference response');
-    buffer+=decoder.decode(bytes,{stream:true});
-    if(type.includes('event-stream')){
-     let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(line.startsWith('data:')&&line.slice(5).trim()!=='[DONE]'){try{observe(JSON.parse(line.slice(5)));}catch{}}}
-    }
+    const text=decoder.decode(bytes,{stream:true});buffer+=text;
+    if(!type.includes('event-stream')&&!sse)jsonBody+=text;
+    let end;while((end=buffer.indexOf('\n'))>=0){observeLine(buffer.slice(0,end));buffer=buffer.slice(end+1);}
     yield {bytes:Buffer.from(bytes).toString('base64')};
    }
-   if(!type.includes('event-stream')){try{const data=JSON.parse(buffer);observe(data);finished=response.ok&&!data.error;}catch{}}
+   const tail=decoder.decode();buffer+=tail;observeLine(buffer);
+   if(!sse){try{const data=JSON.parse(jsonBody+tail);observe(data);finished=response.ok&&!data.error;}catch{}}
    if(route.endsWith('/count_tokens')&&response.ok){usage={total_tokens:0};finished=true;}
    if(!response.ok)finished=false;
   }finally{

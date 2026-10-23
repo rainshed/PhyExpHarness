@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {fixedRequest,WireGateway} from '../../src/execution/reference/wire.mjs';
+import {fixedRequest,WireGateway,wireBinding} from '../../src/execution/reference/wire.mjs';
 import {cliLaunch} from '../../src/execution/reference/cli.mjs';
 import {captureNativeModels} from '../../packages/meta-workbench-bridge/reference-native.mjs';
 import {referenceError,defaultReferencePolicy,toggleReference} from '../../packages/meta-workbench-client/reference.mjs';
@@ -36,6 +36,22 @@ test('external CLI launches use fresh homes, exact auxiliary model pinning and n
   else{assert.ok(launch.args.includes('--ephemeral'));assert.ok(launch.args.includes('--ignore-user-config'));assert.match(launch.args.join(' '),/request_max_retries.*0/);}
  }
 });
+test('Codex subscription uses host-only account credentials and its supported request fields',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-codex-binding-'));
+ try{
+  const credentialFile=path.join(dir,'credentials.json');
+  const token='header.'+Buffer.from(JSON.stringify({exp:Date.now()/1000+3600,'https://api.openai.com/auth':{chatgpt_account_id:'account'}})).toString('base64url')+'.signature';
+  fs.writeFileSync(credentialFile,JSON.stringify({records:{'llm-pi-ai/openai-codex':{payload:{access:token}}}}));
+  const runtime={raw:{auth:{type:'codex'}},model:{provider:'openai-codex',model:'pinned',maxTokens:1024,reasoningEffort:'low'},credentials:{credentialFile}};
+  const binding=wireBinding(runtime,'codex');
+  assert.equal(binding.headers['chatgpt-account-id'],'account');assert.equal(binding.headers.authorization,'Bearer '+token);
+  assert.equal(binding.baseURL,'https://chatgpt.com/backend-api/codex');
+  const request=fixedRequest(binding,{method:'POST',path:'/responses',body:JSON.stringify({model:'pinned',store:true,max_output_tokens:1024,input:[]})});
+  assert.equal(request.body.store,false);assert.equal(request.body.max_output_tokens,undefined);assert.equal(request.body.reasoning.effort,'low');
+  assert.throws(()=>wireBinding(runtime,'claude-code'),/retain/);
+  assert.throws(()=>wireBinding({...runtime,model:{...runtime.model,provider:'other'}},'codex'),/retain/);
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
 test('host wire gateway settles complete usage, reserves unknown failures and redacts credentials',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-reference-wire-')),settled=[],admitted=[];
  try{
@@ -55,4 +71,13 @@ test('UI maintains independent toggles, multiselect and removes orphan pinned pa
  const p=defaultReferencePolicy();assert.equal(referenceError(p),'');assert.match(referenceError({...p,modelEnabled:true}),/参考模型/);
  const chosen={...p,modelEnabled:true,harnessEnabled:true,modelRefs:['m1','m2'],harnessRefs:['codex','claude-code'],selectionMode:'pinned-pairs',pairs:[{modelRef:'m1',harnessRef:'codex'}]};
  const next=toggleReference(chosen,'modelRefs','m1');assert.deepEqual(next.modelRefs,['m2']);assert.deepEqual(next.pairs,[]);assert.equal(next.harnessEnabled,true);assert.match(referenceError(next),/参考组合/);
+});
+test('wire accounting accepts SSE with a nonstandard content type and an unterminated final event',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-wire-sse-'));const settled=[];
+ try{
+  const gateway=new WireGateway({binding:{protocol:'responses',model:{model:'pinned'},baseURL:'https://gateway.test'},deadline:Date.now()+5000,audit:path.join(dir,'audit.jsonl'),budget:{reserve:async()=>{},settle:async(id,result)=>settled.push(result)},
+   fetchImpl:async()=>new Response('event: response.done\r\ndata: '+JSON.stringify({type:'response.done',response:{status:'completed',usage:{input_tokens:10,output_tokens:3,total_tokens:13}}}),{headers:{'content-type':'application/octet-stream'}})});
+  for await(const _ of gateway.stream({method:'POST',path:'/responses',body:'{"model":"pinned"}'})){}
+  assert.equal(settled[0].finish.kind,'completed');assert.equal(settled[0].usage.totalTokens,13);
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });

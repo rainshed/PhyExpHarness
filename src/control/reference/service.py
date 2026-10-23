@@ -39,6 +39,8 @@ class References:
             route=campaign_route(c['config'],'solver');wire='anthropic' if route['adapter']=='deepseek' or route.get('api')=='anthropic-messages' else 'responses' if route.get('api')=='openai-responses' else 'native'
             auth=route['auth']['type']=='api-key'
         if harness=='dsh-standard':return {'state':'supported','reason':'使用冻结的原生模型配置与完整 SDK 标准模式'}
+        if not model and harness=='codex' and route['auth']['type']=='codex':
+            return {'state':'supported','reason':'保留固定 Solver 的 Codex 订阅通道；凭据仅在宿主，全部请求纳入共享账本'}
         if not auth:return {'state':'unsupported','reason':'此适配器目前需要明确的 API Key 模型通道；原生账户认证可在 DeepSeek Harness 中使用'}
         if wire!=HARNESS[harness]['wire']:return {'state':'unsupported','reason':'模型服务未提供 '+HARNESS[harness]['wire']+' 接口，不能保持原模型直接运行'}
         from .compatibility import external_settings_issue

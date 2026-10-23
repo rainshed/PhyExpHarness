@@ -122,6 +122,10 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(self.ref.compatibility(c,self.model,'codex')['state'],'unsupported')
         self.assertNotIn('secret-marker',encoded(self.ref.catalog.public()))
         self.assertNotIn('baseURL',encoded(self.ref.catalog.public()))
+    def test_fixed_solver_codex_subscription_keeps_its_native_harness(self):
+        c={'config':{'solver':{'provider':'openai-codex','model':'gpt-6-luna','reasoningEffort':'low'}}}
+        self.assertEqual(self.ref.compatibility(c,None,'codex')['state'],'supported')
+        self.assertEqual(self.ref.compatibility(c,None,'claude-code')['state'],'unsupported')
     def test_finalization_and_stop_cover_both_tables(self):
         self.h0();self.submit(repeats=2);self.store.claim(self.c);run=self.store.claim(self.c)
         with self.assertRaises(Refused):self.store.finalize(self.c)

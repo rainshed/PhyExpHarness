@@ -4,7 +4,7 @@
 
 ## 当前状态与限制
 
-2026-10-23 新增的[参考模型与参考 Harness 两插件方案](../design/meta-reference-experiments.md)目前仅有设计和[开发计划](../plans/meta-reference-experiments.md)，尚不可在工作台使用。规划中的参考模型读取 DeepSeek Harness 原生配置，参考 Harness 可选 Codex、Claude Code 和 DeepSeek 标准模式。规划中的 UI 提供两个独立开关、多选允许集合及 Meta 自主选择/指定配对；两插件都开启时，Meta 可在已选且兼容的模型 × Harness 组合中按需取得参考轨迹；这不改变当前下文的 Solver/Meta 模型配置入口，也不表示已安装或接通参考执行器。
+2026-10-23 已实现[参考模型与参考 Harness 两插件方案](../design/meta-reference-experiments.md)，使用方式、适配范围和验证边界见本文末尾“参考实验插件”。参考模型读取 DeepSeek Harness 原生配置，参考 Harness 可选 Codex、Claude Code 和 DeepSeek 标准模式；这不改变下文的主线 Solver/Meta 模型配置入口。
 
 平台仍在开发中。完整故障恢复、工作台生命周期覆盖、干净环境安装与实际导出包的真实独立运行验收仍需补齐；不能据此声明稳定性能提升或跨任务泛化。
 
@@ -632,7 +632,7 @@ PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1
 
 固定版本为 Codex `0.155.0`、Claude Code `2.1.280`、DeepSeek Harness `0.2.1-rc.2`。创建时按选择准备锁定容器镜像，未选择的 CLI 不安装。标准模式使用完整 `dsh-base + dsh-sdk-app`，保留原生文件/终端工具；官方任务文件、测量与提交走 `task_bash` / qsim 桥，原生 shell 是独立临时工作区。三个 Harness 均以新上下文运行，无个人会话或 Meta 研究材料。
 
-Codex 外部通道要求明确 API Key 的 Responses 服务；Claude Code 要求 Messages 服务。DeepSeek 原生 Messages 可用于 Claude Code。原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。Codex 订阅 OAuth 目前只保留在原生 DeepSeek 执行路径，未接到外部 CLI 网关。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
+Codex 外部通道支持明确 API Key 的 Responses 服务，以及固定 Solver 为 `openai-codex` 时的原有 Codex 订阅通道；订阅访问令牌只在宿主读取，不复制刷新令牌、不进入 Runner。该订阅接口不支持 `max_output_tokens`，因此每次输出没有此参数的硬上限，仍受时限和共享软预算约束。Claude Code 要求 Messages 服务，DeepSeek 原生 Messages 可用于 Claude Code。其他原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
 
 参考运行共享活动的轮次、次数、并发、时限和 token 总账，可附加模型/Harness 子额度；联合运行在总账只计一次，但同时受两项子额度约束。H0 先预留，参考结果独立保存，不能直接抬高主线排名或稳定完成率。运行详情、报告和证据入口按模型参考、Harness 参考、联合参考分组；联合变化不能单独归因。
 
