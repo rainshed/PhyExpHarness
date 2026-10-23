@@ -9,6 +9,8 @@ from jsonschema import Draft202012Validator
 from .store import Refused,Conflict,encoded
 from .meta_contracts import ANALYSIS,CONTRACTS,ROOT,analysis_for,version
 from src.evidence.files import atomic_json
+from src.evidence.objects import enabled
+from src.evidence.snapshots import Snapshots
 
 RECEIPT_SCHEMA=json.loads((ROOT/'receipt.schema.json').read_text())
 TOOLS={'campaign_status','candidate_list','evidence_list','sdk_read','results_compare','candidate_retain','report_save'}
@@ -60,7 +62,10 @@ class Receipts:
     def publish(self,campaign,ref,value):
         return self.files.publish(campaign,ref,encoded(public(value)),kind='query',source={'archive':'query.json'})
     def snapshot(self,campaign,op,filters,value):
-        value=stable(public(value));digest=hashlib.sha256(encoded([filters,value]).encode()).hexdigest()
+        value=stable(public(value))
+        if enabled(self.store.get('campaigns',campaign)['config']):
+            return Snapshots(self.files,campaign).publish(op,filters,value)
+        digest=hashlib.sha256(encoded([filters,value]).encode()).hexdigest()
         key=hashlib.sha256(encoded([op,filters]).encode()).hexdigest()
         index=self.service.data/'campaigns'/campaign/'meta-snapshots'/(key+'.json')
         if index.exists():
@@ -84,6 +89,8 @@ class Receipts:
             'nextReport':{'batchId':missing[0] if missing else None,'expectedReportRevision':0} if missing or final else None,
             'rule':'Every accepted batch requires its own analysis, including failed/cancelled trials; a final report does not replace round reports.'}
     def status(self,campaign):
+        with self.store.read_snapshot():return self._status(campaign)
+    def _status(self,campaign):
         from .meta_context import activity_state
         c=self.store.status(campaign);state=activity_state(self.service,campaign)
         requests=self.api.requests(campaign);operations=self.store.list('operations',campaign)
@@ -96,7 +103,7 @@ class Receipts:
         file=self.snapshot(campaign,'campaign_status',{},full)
         usage=c['usage'];plan=c.get('resourcePlanning') or {}
         unresolved=sum(r['state'] not in ['completed','rejected'] for r in requests)+sum(o['state'] in ['running','outcome_unknown'] for o in operations)
-        summary='当前活动状态与待处理事项；完整快照见文件。'
+        summary='当前活动状态与待处理事项；文件为完整快照或分层索引，按 reading 和 file.path 遍历。'
         if c['state']=='closing' and closeout['nextReport'] and not (c['counts']['activeTrials'] or c['counts']['reservedTrials']):
             target=closeout['nextReport']['batchId']
             summary='活动已关闭探索，无需再调用 campaign_finish。尚缺 '+str(len(closeout['missingRoundBatchIds']))+' 份每轮报告'+('及总报告' if closeout['finalReportRequired'] else '')+'。下一份：report_get_facts('+encoded({'batchId':target} if target else {})+')，然后 report_save（expectedReportRevision=0）。失败实验也须单独报告；总报告不能代替每轮报告。完整清单见快照 data.closeout。'

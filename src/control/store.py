@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -170,7 +171,7 @@ def validate_config(config,model_config=None):
 class Store:
     def __init__(self,path,clock=time.time,model_config=None):
         self.model_config=load_model_config() if model_config is None else model_config
-        self.path=Path(path);self.path.parent.mkdir(parents=True,exist_ok=True);self.clock=clock
+        self._read_local=threading.local();self.path=Path(path);self.path.parent.mkdir(parents=True,exist_ok=True);self.clock=clock
         with self.connection() as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute('CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY)')
@@ -180,7 +181,25 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
     @contextlib.contextmanager
+    def read_snapshot(self):
+        if not hasattr(self, '_read_local'): self._read_local=threading.local()
+        if getattr(self._read_local, 'db', None) is not None:
+            yield
+            return
+        db=sqlite3.connect(self.path,timeout=30);db.row_factory=sqlite3.Row
+        db.execute('PRAGMA query_only=ON');db.execute('BEGIN')
+        self._read_local.db=db
+        try: yield
+        finally:
+            self._read_local.db=None;db.rollback();db.close()
+
+    @contextlib.contextmanager
     def connection(self,write=False):
+        active=getattr(getattr(self,'_read_local',None),'db',None)
+        if active is not None:
+            if write:raise RuntimeError('Writes are not allowed inside a query snapshot')
+            yield active
+            return
         db=sqlite3.connect(self.path,timeout=30);db.row_factory=sqlite3.Row
         try:
             if write:db.execute('BEGIN IMMEDIATE')
