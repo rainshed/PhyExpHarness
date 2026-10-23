@@ -11,6 +11,7 @@ import {providerRoute,piAiProfile} from './providers.mjs';
 import {classifyModelFailure,RECOVERABLE_REQUEST_FAILURES} from './model_failures.mjs';
 import {ADMISSION_CODES} from './budget.mjs';
 import {TransportDiagnostics} from './transport_diagnostics.mjs';
+const contextOverflow=failure=>failure?.observed?.providerCode==='CONTEXT_WINDOW_EXCEEDED';
 
 // The trusted caller owns route, deadline, accounting and credentials. Runner input owns none of them.
 function bounded(promise,ms){let timer;return Promise.race([promise,new Promise(resolve=>{timer=setTimeout(resolve,ms);})]).finally(()=>clearTimeout(timer));}
@@ -34,7 +35,9 @@ export class ModelGateway {
   this.firstFailure??=failure;
   const request=this.requests.get(failure.requestId);
   if(request){request.failure=failure;request.failedAt=Date.now();}
-  if(!RECOVERABLE_REQUEST_FAILURES.has(failure.code)&&!this.terminalFailure){this.terminalFailure=failure;
+  // Native overflow recovery must be able to send its compaction request. This
+  // does not add a retry loop or relax fixed-route, budget or deadline checks.
+  if(!RECOVERABLE_REQUEST_FAILURES.has(failure.code)&&!contextOverflow(failure)&&!this.terminalFailure){this.terminalFailure=failure;
    const file=path.join(path.dirname(this.audit),'failure.json');fs.writeFileSync(file+'.tmp',this.redact(JSON.stringify(failure,null,2))+'\n');fs.renameSync(file+'.tmp',file);
   }
  }
@@ -85,7 +88,7 @@ export class ModelGateway {
    this.active.delete(id);throw error;
   }finally{clearTimeout(admissionTimer);}
   const {signal:ignoredSignal,...contents}=request;
-  const state={id,startedAt:Date.now(),key:crypto.createHash('sha256').update(JSON.stringify(contents)).digest('hex')};
+  const state={id,sessionId:request.sessionId,purpose:request.purpose,startedAt:Date.now(),key:crypto.createHash('sha256').update(JSON.stringify(contents)).digest('hex')};
   const transport=new TransportDiagnostics({configuredTransport:this.adapter?.transport,redact:this.redact,
    record:event=>this.record({type:'transport',id,...event})});
   state.transport=transport;
@@ -145,7 +148,7 @@ export class ModelGateway {
    if(!state.failure)failure(combined.aborted?'request_cancelled':normalized.code,normalized.observed);
    state.providerCode=state.failure.code==='model_stream_incomplete'?'TRANSPORT':normalized.failure.code;
    // Carry safe structured facts through the process bridge; arbitrary stack text stays local.
-   error.gatewayFailure={...normalized.failure,code:RECOVERABLE_REQUEST_FAILURES.has(state.failure.code)?state.providerCode:state.failure.code,requestId:id};
+   error.gatewayFailure={...normalized.failure,code:RECOVERABLE_REQUEST_FAILURES.has(state.failure.code)||contextOverflow(state.failure)?state.providerCode:state.failure.code,requestId:id};
    throw error;
   }finally{
    clearTimeout(timeout);clearTimeout(idle);controller.abort('Request finished');
@@ -157,9 +160,13 @@ export class ModelGateway {
    this.record({type:'settled',id,usage,finish,usageStatus});
    try{await this.settle(id,{usage,finish});}catch(error){this.record({type:'settlement_pending',id,reason:'controller_unavailable'});}
    finally{this.active.delete(id);}
-   if(!state.failure&&finish&&finish.kind!=='error')for(const prior of this.requests.values()){
-    if(prior.failure&&!prior.recoveredBy&&prior.key===state.key&&prior.failedAt<=state.startedAt){
-     prior.recoveredBy=id;this.record({type:'request_recovered',id:prior.id,recoveredBy:id});
+   if(!state.failure&&finish&&finish.kind!=='error'){
+    state.completedAt=Date.now();
+    for(const prior of this.requests.values()){
+     const compacted=contextOverflow(prior.failure)&&state.purpose!=='compaction'&&prior.sessionId===state.sessionId&&[...this.requests.values()].some(r=>r.sessionId===state.sessionId&&r.purpose==='compaction'&&r.completedAt>=prior.failedAt&&r.completedAt<=state.startedAt);
+     if(prior.failure&&!prior.recoveredBy&&(prior.key===state.key||compacted)&&prior.failedAt<=state.startedAt){
+      prior.recoveredBy=id;this.record({type:'request_recovered',id:prior.id,recoveredBy:id});
+     }
     }
    }
   }

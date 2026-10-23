@@ -64,3 +64,20 @@ test('missing stream receipt is recoverable and final failure points to the last
  assert.equal(final.failure.requestId,second.requestId);assert.notEqual(final.failure.requestId,first.requestId);
  assert.equal(final.failure.code,'model_service_overloaded');assert.equal(final.requestRecovery.failedRequests,2);
 });
+for(const thrown of [false,true])test('context overflow permits native compaction and only a resumed success counts as recovery: '+thrown,async t=>{
+ let calls=0;const settled=[];const g=setup(t,{async *stream(){
+  if(calls++===0){if(thrown)throw Object.assign(new Error('context too large'),{code:'CONTEXT_WINDOW_EXCEEDED'});yield {type:'finish',reason:{kind:'error',failure:{code:'CONTEXT_WINDOW_EXCEEDED'}}};}
+  else yield {type:'finish',reason:{kind:'stop'}};
+ }},{settle:async(id,result)=>settled.push({id,result})});
+ if(thrown)await assert.rejects(run(g),error=>error.gatewayFailure.code==='CONTEXT_WINDOW_EXCEEDED');else assert.equal((await run(g)).at(-1).reason.failure.code,'CONTEXT_WINDOW_EXCEEDED');
+ assert.equal(g.terminalFailure,null);
+ await run(g,{...request,purpose:'compaction',sessionId:'other'});
+ await run(g,{...request,messages:['changed']});assert.equal(g.diagnostics().requestRecovery.recoveredRequests,0);
+ await run(g,{...request,purpose:'compaction'});assert.equal(g.diagnostics().requestRecovery.recoveredRequests,0);
+ await run(g,{...request,messages:['summary']});assert.equal(g.diagnostics().requestRecovery.recoveredRequests,1);assert.equal(settled.length,5);
+ await assert.rejects(run(g,{...request,model:'wrong'}),/mismatch/);g.abort();await assert.rejects(run(g),/cancelled/);
+});
+test('authentication failure still prevents subsequent compaction calls',async t=>{
+ const g=setup(t,{async *stream(){yield {type:'finish',reason:{kind:'error',failure:{code:'INVALID_CREDENTIAL'}}};}});
+ await run(g);assert.equal(g.terminalFailure.code,'model_response_error');await assert.rejects(run(g,{...request,purpose:'compaction'}),/model_response_error/);
+});
