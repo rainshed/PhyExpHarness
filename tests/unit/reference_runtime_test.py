@@ -109,6 +109,7 @@ class ReferencesTest(unittest.TestCase):
         snapshot={'adapter':'pi-ai','call':{'provider':'p','model':'m','reasoningEffort':'high'},'config':{'providers':{'p':{'api':'anthropic-messages'}}}}
         self.assertIsNotNone(external_settings_issue(snapshot,{},None))
         snapshot['call'].pop('reasoningEffort');self.assertIsNone(external_settings_issue(snapshot,{},None))
+        snapshot['config']['providers']['p']['thinkingBudgets']={};self.assertIsNone(external_settings_issue(snapshot,{},None))
         snapshot['config']['providers']['p']['thinkingBudgets']={'high':3000};self.assertIsNotNone(external_settings_issue(snapshot,{},None))
     def test_allowlists_pinned_pairs_and_native_integrity(self):
         self.h0()
@@ -129,7 +130,7 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(self.ref.compatibility(c,None,'claude-code')['state'],'unsupported')
     def test_native_codex_host_handle_compatibility_and_private_credential_boundary(self):
         frozen={'adapter':'pi-ai','pluginVersion':'0.2.1-rc.2','nativeAuth':'codex-host','credentialRef':None,
-                'config':{'providers':{'openai-codex':{'models':[{'id':'gpt-6-sol'}],'reasoning':'medium','headers':{}}}},
+                'config':{'providers':{'openai-codex':{'models':[{'id':'gpt-6-sol'}],'reasoning':'medium','headers':{},'thinkingBudgets':{}}}},
                 'call':{'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'},'info':{}}
         row={'id':'native-'+'b'*64,'provider':'openai-codex','model':'gpt-6-sol','label':'GPT','frozen':frozen}
         document={'version':'native-reference-catalog-v1','bindings':[row]}
