@@ -632,6 +632,8 @@ PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1
 
 固定版本为 Codex `0.155.0`、Claude Code `2.1.280`、DeepSeek Harness `0.2.1-rc.2`。创建时按选择准备锁定容器镜像，未选择的 CLI 不安装。标准模式使用完整 `dsh-base + dsh-sdk-app`，保留原生文件/终端工具；官方任务文件、测量与提交走 `task_bash` / qsim 桥，原生 shell 是独立临时工作区。三个 Harness 均以新上下文运行，无个人会话或 Meta 研究材料。
 
+Claude Code 使用 `dontAsk` 配合显式工具授权：原生终端、文件与研究辅助工具，以及本次冻结的 task/qsim MCP。未授权操作由 CLI 拒绝，不使用 `--dangerously-skip-permissions`。这同时兼容普通 Docker 用户和单 UID Podman 的容器 UID 0；宿主普通用户映射、禁网、只读根文件系统和禁止提权等隔离条件保持不变。此启动策略进入冻结运行时，新活动采用新策略，历史冻结参考运行不热替换。
+
 Codex 外部通道支持明确 API Key 的 Responses 服务，以及固定 Solver 为 `openai-codex` 时的原有 Codex 订阅通道；订阅访问令牌只在宿主读取，不复制刷新令牌、不进入 Runner。该订阅接口不支持 `max_output_tokens`，因此每次输出没有此参数的硬上限，仍受时限和共享软预算约束。Claude Code 要求 Messages 服务，DeepSeek 原生 Messages 可用于 Claude Code。其他原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
 
 参考运行共享活动的轮次、次数、并发、时限和 token 总账，可附加模型/Harness 子额度；联合运行在总账只计一次，但同时受两项子额度约束。H0 先预留，参考结果独立保存，不能直接抬高主线排名或稳定完成率。运行详情、报告和证据入口按模型参考、Harness 参考、联合参考分组；联合变化不能单独归因。

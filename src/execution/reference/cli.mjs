@@ -13,8 +13,12 @@ export function cliLaunch(config,port){
    env:{...env,CODEX_HOME:'/work/home/codex',PHYEXP_REFERENCE_KEY:'isolated-reference'},input:config.prompt};
  }
  if(config.harness!=='claude-code')throw new Error('Unknown reference CLI');
+ // Single-UID rootless Podman maps its unprivileged host user to container UID 0.
+ // Use normal explicit tool grants so Claude's root bypass guard stays intact.
+ const allowedTools=['Bash','Read','Write','Edit','Glob','Grep','NotebookEdit','TodoWrite','Agent','Task','Skill','ToolSearch',
+  ...Object.keys(mcp).map(name=>'mcp__'+name+'__*')];
  return {executable:'claude',args:['-p','--output-format','stream-json','--verbose','--include-partial-messages','--no-session-persistence','--setting-sources','',
-  '--strict-mcp-config','--mcp-config',JSON.stringify({mcpServers:mcp}),'--model',model,'--dangerously-skip-permissions'],
+  '--strict-mcp-config','--mcp-config',JSON.stringify({mcpServers:mcp}),'--model',model,'--permission-mode','dontAsk','--allowedTools',allowedTools.join(',')],
   env:{...env,CLAUDE_CONFIG_DIR:'/work/home/claude',ANTHROPIC_BASE_URL:root,ANTHROPIC_API_KEY:'isolated-reference',
    ANTHROPIC_MODEL:model,ANTHROPIC_SMALL_FAST_MODEL:model,ANTHROPIC_DEFAULT_HAIKU_MODEL:model,ANTHROPIC_DEFAULT_SONNET_MODEL:model,ANTHROPIC_DEFAULT_OPUS_MODEL:model,
    CLAUDE_CODE_SUBAGENT_MODEL:model,CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1',CLAUDE_CODE_DISABLE_AUTO_MEMORY:'1',

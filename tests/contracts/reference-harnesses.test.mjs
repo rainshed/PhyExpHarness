@@ -50,7 +50,12 @@ for(const harness of ['codex','claude-code'])test(harness+' real CLI runs fresh 
     events=[{type:'message_start',message:{id:'message'+calls,type:'message',role:'assistant',model:body.model,content:[],stop_reason:null,stop_sequence:null,usage:{input_tokens:20,output_tokens:0}}},
      {type:'content_block_start',index:0,content_block:content},
      {type:'content_block_delta',index:0,delta:calls===1?{type:'input_json_delta',partial_json:'{"command":"printf reference-ok"}'}:{type:'text_delta',text:'done'}},
-     {type:'content_block_stop',index:0},{type:'message_delta',delta:{stop_reason:calls===1?'tool_use':'end_turn',stop_sequence:null},usage:{output_tokens:10}},{type:'message_stop'}];
+     {type:'content_block_stop',index:0},
+     ...(calls===1?[
+      {type:'content_block_start',index:1,content_block:{type:'tool_use',id:'native1',name:'Bash',input:{}}},
+      {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"command":"printf native-reference-ok","description":"Check isolated native shell"}'}},
+      {type:'content_block_stop',index:1}]:[]),
+     {type:'message_delta',delta:{stop_reason:calls===1?'tool_use':'end_turn',stop_sequence:null},usage:{output_tokens:10}},{type:'message_stop'}];
    }else{
     assert.ok(found?.name,'task MCP schema must be attached');
     const item=calls===1?{type:'function_call',id:'fc_1',call_id:'call_1',name:found.name,...(found.namespace?{namespace:found.namespace}:{}),arguments:'{"command":"printf reference-ok"}',status:'completed'}:{type:'message',id:'msg_2',role:'assistant',status:'completed',content:[{type:'output_text',text:'done',annotations:[]}]};
@@ -60,6 +65,12 @@ for(const harness of ['codex','claude-code'])test(harness+' real CLI runs fresh 
      {type:'response.output_item.done',output_index:0,item},{type:'response.completed',response}];
    }
    if(calls>1)assert.match(JSON.stringify(body),/reference-ok/);
+   if(calls>1&&harness==='claude-code'){
+    const results=body.messages.flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(b=>b.type==='tool_result');
+    const native=results.find(b=>b.tool_use_id==='native1');
+    assert.ok(native&&!native.is_error,'Native shell must run under explicit tool permissions');
+    assert.match(JSON.stringify(native.content),/native-reference-ok/);
+   }
    yield{bytes:Buffer.from(events.map((e,i)=>'event: '+e.type+'\ndata: '+JSON.stringify({...e,sequence_number:i})+'\n\n').join('')).toString('base64')};
   }});
  const timer=setTimeout(()=>session.dispose(),75000);
