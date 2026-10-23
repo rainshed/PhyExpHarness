@@ -27,6 +27,7 @@ class MaterialTests(unittest.TestCase):
         self.quantum = self.root/'quantum'
         folder = self.quantum/'harbor_tasks'/TASK
         folder.mkdir(parents=True)
+        (folder/'task.toml').write_text('[agent]\ntimeout_sec = 3600\n')
         (folder/'instruction.md').write_text('公开任务：保留原始材料。\n' + '长文本'*12000 + '\n末尾查询锚点。')
         (folder/'hidden.json').write_text('SECRET_NOT_FOR_META')
         self.service = ControlService(ROOT,self.root/'data',self.quantum,'http://127.0.0.1:1')
@@ -41,6 +42,22 @@ class MaterialTests(unittest.TestCase):
     def tearDown(self):
         self.service.pool.shutdown(wait=True)
         self.temp.cleanup()
+
+    def test_task_catalog_and_new_activity_freeze_the_same_benchmark_limits(self):
+        task=next(t for t in self.service.task_catalog()['tasks'] if t['id']==TASK)
+        self.assertEqual(task['solverTimeSeconds'],3600)
+        config=self.store.get('campaigns',self.c)['config']
+        self.assertEqual(config['executionTimePolicy']['version'],'benchmark-time-v1')
+        frozen=json.loads((self.service.data/'meta-compositions'/config['metaComposition']['id']/'manifest.json').read_text())
+        self.assertIn('benchmark 原始配置',frozen['systemPrompt']['text'])
+        self.assertNotIn('trial_conditions_accept',frozen['systemPrompt']['text'])
+        self.assertEqual(config['taskTimeLimits'][TASK],{k:v for k,v in task.items() if k!='id'})
+        (self.quantum/'harbor_tasks'/TASK/'task.toml').write_text('[agent]\ntimeout_sec=1800\n')
+        with patch.object(self.service,'_operation',return_value={}):
+            self.assertEqual(self.service.create(self.config,'new')['config']['taskTimeLimits'],config['taskTimeLimits'])
+        with self.assertRaisesRegex(ValueError,'changed'):self.service._verify_task_images(config)
+        for changes in [{'trialTimeSeconds':1200},{'resourcePolicy':None},{'executionTimePolicy':{}}]:
+            with self.assertRaises(Refused):self.service.create({**self.config,**changes},'invalid')
 
     def test_default_blank_and_custom_goals_without_history_rewrite(self):
         self.assertEqual(self.store.get('campaigns',self.c)['config']['objective'],DEFAULT_OBJECTIVE)
@@ -171,7 +188,7 @@ class MaterialTests(unittest.TestCase):
                       [{'path':draft}],self.service.knowledge.manifest)
         c=self.store.candidate(self.c,bundle,'中文版本说明',check={'status':'passed'})
         (draft/'index.mjs').write_text('changed draft')
-        self.store.update_plan(self.c,{'parallelism':1,'defaultTrialTimeSeconds':3600,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'Fixture execution plan','plan',0,source='operator')
+        self.store.update_plan(self.c,{'parallelism':1,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'Fixture execution plan','plan',0,source='operator')
         batch=self.store.submit(self.c,c['id'],[TASK],1,'batch')
         return c,batch
 

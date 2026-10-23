@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 from src.execution.host.single_run import TRIAL_CLOSEOUT_RESERVE_SECONDS
+from src.execution.host.task_time import benchmark_time, POLICY as BENCHMARK_TIME
 
 POLICY = 'meta-resource-planning-v1'
 LIMITS = ('maxRounds', 'maxTrials', 'concurrency', 'wallTimeSeconds', 'trialTimeSeconds',
@@ -15,6 +16,7 @@ def execution_time_policy():
 
 
 def trial_closeout(campaign):
+    if benchmark_time(campaign['config']):return 0
     # Activities created before this metadata existed used the same fixed 330-second reserve.
     return campaign['config'].get('executionTimePolicy',{'trialCloseoutReserveSeconds':330})['trialCloseoutReserveSeconds']
 
@@ -40,17 +42,18 @@ def reserves(campaign):
 def validate_plan(campaign, value):
     from .store import Refused
     cfg = campaign['config']
-    if set(value) - set(FIELDS) or set(FIELDS) - set(value):
-        raise Refused('Plan requires exactly: ' + ', '.join(FIELDS))
-    for key in FIELDS:
+    fields=tuple(k for k in FIELDS if k!='defaultTrialTimeSeconds' or not benchmark_time(cfg))
+    if set(value) != set(fields):
+        raise Refused('Plan requires exactly: ' + ', '.join(fields))
+    for key in fields:
         if type(value[key]) is not int or value[key] < (0 if key.startswith('closeout') else 1):
             raise Refused('Invalid plan field: ' + key)
     if value['parallelism'] > cfg['concurrency']:
         raise Refused('Plan parallelism exceeds configured concurrency ceiling')
     ceiling = cfg['trialTimeSeconds'] or cfg['wallTimeSeconds'] + (cfg['drainGraceSeconds'] if cfg['stopMode'] == 'drain' else 0)
-    if value['defaultTrialTimeSeconds'] > ceiling:
+    if not benchmark_time(cfg) and value['defaultTrialTimeSeconds'] > ceiling:
         raise Refused('Plan trial time exceeds configured execution ceiling')
-    if value['defaultTrialTimeSeconds'] <= trial_closeout(campaign):
+    if not benchmark_time(cfg) and value['defaultTrialTimeSeconds'] <= trial_closeout(campaign):
         raise Refused('Trial time must exceed fixed verification/cleanup reserve: '+str(trial_closeout(campaign))+' seconds')
     if value['closeoutReserveSeconds'] >= cfg['wallTimeSeconds']:
         raise Refused('Plan closeout time must be less than total time')
@@ -68,6 +71,10 @@ def trial_settings(campaign, candidate, execution=None):
     if not plan:
         raise Refused('Submit a resource plan before accepting experiments')
     execution = execution or {}
+    if benchmark_time(campaign['config']):
+        if execution:raise Refused('Benchmark owns task time; batch overrides and shortening are unavailable')
+        return {'solver':campaign['config']['solver'],'timePolicy':BENCHMARK_TIME,
+                'resourcePlanRevision':plan['revision'],'userLimitsRevision':campaign.get('userLimitsRevision',1)}
     if set(execution) - {'trialTimeSeconds', 'allowShortened'}:
         raise Refused('Unknown batch execution setting')
     seconds = execution.get('trialTimeSeconds', plan['defaultTrialTimeSeconds'])
@@ -99,8 +106,9 @@ def view(campaign, trials=()):
             'configurationSources': cfg.get('configurationSources', {}),
             'executionTimePolicy':cfg.get('executionTimePolicy',execution_time_policy()),
             'suggestions': {'parallelism': cfg['concurrency'],
-                'defaultTrialTimeSeconds': min(3600, cfg['trialTimeSeconds'] or cfg['wallTimeSeconds']),
+                **({} if benchmark_time(cfg) else {'defaultTrialTimeSeconds': min(3600, cfg['trialTimeSeconds'] or cfg['wallTimeSeconds'])}),
                 'closeoutReserveSeconds': 0, 'closeoutReserveTokens': 0},
+            'taskTimeLimits':cfg.get('taskTimeLimits',{}),
             'effectiveReserves': dict(zip(('seconds', 'tokens'), reserves(campaign))),
             'schedulingWait':campaign.get('resourcePlanWait'),
             'runningConditions': [{k: t.get(k) for k in ('id', 'task', 'deadline', 'effectiveConditions', 'launchLimits')}

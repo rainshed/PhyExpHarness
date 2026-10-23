@@ -34,7 +34,7 @@ def main():
     output=data/'runs/h0'/run_id
     subprocess.run([sys.executable,str(runtime/'run.py'),'--bundle',str(folder),
                     '--quantum-harbor',str(args.quantum_harbor),'--task',plan['task'],
-                    '--output',str(output),'--timeout',str(recipe['agentTimeoutSec'])],cwd='/tmp',check=False)
+                    '--output',str(output),*(['--timeout',str(recipe['agentTimeoutSec'])] if 'agentTimeoutSec' in recipe else [])],cwd='/tmp',check=False)
     result=json.loads((output/'summary.json').read_text())
     report=data/'reports/h0'/f'{run_id}.json';report.parent.mkdir(parents=True,exist_ok=True);write_json(report,result)
     print(json.dumps({k:result.get(k) for k in ['runId','status','officialReward']},ensure_ascii=False))

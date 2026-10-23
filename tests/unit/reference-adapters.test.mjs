@@ -4,9 +4,27 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {fixedRequest,WireGateway,wireBinding} from '../../src/execution/reference/wire.mjs';
+import {BENCHMARK_STREAM_POLICY} from '../../src/execution/host/stream_guard.mjs';
 import {cliLaunch} from '../../src/execution/reference/cli.mjs';
 import {captureNativeModels} from '../../packages/meta-workbench-bridge/reference-native.mjs';
 import {referenceError,defaultReferencePolicy,toggleReference} from '../../packages/meta-workbench-client/reference.mjs';
+
+test('reference wire requests also retain the complete benchmark time window',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:1000000});
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'benchmark-wire-'));
+ let release,entered,signal;const ready=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ const gateway=new WireGateway({binding:{protocol:'responses',model:{model:'pinned'},baseURL:'https://fixture.invalid'},
+  policy:BENCHMARK_STREAM_POLICY,deadline:Date.now()+1800000,audit:path.join(dir,'audit.jsonl'),
+  budget:{reserve:async()=>{},settle:async()=>{}},fetchImpl:async(url,options)=>{
+   signal=options.signal;entered();await wait;
+   return new Response('{"usage":{"input_tokens":1,"output_tokens":1}}');
+  }});
+ try{
+  const work=(async()=>{for await(const _ of gateway.stream({method:'POST',path:'/responses',body:'{"model":"pinned"}'})){} })();
+  await ready;t.mock.timers.tick(700000);assert.equal(signal.aborted,false);release();await work;
+  assert.equal(gateway.failure,undefined);
+ }finally{gateway.abort();fs.rmSync(dir,{recursive:true,force:true});}
+});
 
 test('native model capture uses effective native configuration and credential handles',async()=>{
  const config={providers:{custom:{api:'anthropic-messages',baseURL:'https://gateway.test',apiKeyEnv:'SECRET_REF',models:[{id:'pinned-model'}],compat:{}}}};

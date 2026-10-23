@@ -144,7 +144,7 @@ def freeze(source,data,config):
     system.update(version='meta-system-v8',sha256=hashlib.sha256(system['text'].encode()).hexdigest())
     from .meta_contracts import binding
     from .meta_contracts import CONTRACTS
-    extra_contracts=optional_contracts(source,composition,CONTRACTS['meta-tools-v5'])
+    extra_contracts=optional_contracts(source,composition,CONTRACTS['meta-tools-v6'])
     document={'toolContract':binding(),'version':VERSION,'composition':composition,'files':files,'groups':{k:{'id':digest(v),'files':v} for k,v in groups.items()},
         'framework':{'package':package,**{k:framework[k] for k in ['version','resolved','integrity']}},
         'systemPrompt':system,'reviewerPrompt':(plugin/'reviewer.md').read_text(),

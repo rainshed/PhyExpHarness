@@ -106,8 +106,9 @@ export class ModelGateway {
    }})().catch(()=>{}),this.policy.cleanupGraceMs);}finally{open=false;}
   };
   this.record({type:'request',id,request,streamPolicy:this.policy});
-  timeout=setTimeout(()=>cancel(this.deadline<=guard.startedAt+this.policy.requestTimeoutMs?'trial_deadline':'request_timeout'),Math.max(1,Math.min(this.deadline-Date.now(),this.policy.requestTimeoutMs)));
-  idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
+  const requestLimit=this.policy.requestTimeoutMs??Infinity;
+  timeout=setTimeout(()=>cancel(this.deadline<=guard.startedAt+requestLimit?'trial_deadline':'request_timeout'),Math.max(1,Math.min(this.deadline-Date.now(),requestLimit)));
+  if(this.policy.streamIdleTimeoutMs!=null)idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
   try{
    // Admission can await the remote ledger; cancellation/deadline still apply when it returns.
    if(this.stopped||signal?.aborted){failure('request_cancelled');throw new Error('Model call cancelled');}
@@ -124,7 +125,7 @@ export class ModelGateway {
     }
     if(result.done)break;
     const chunk=result.value;consume(chunk);this.record({type:'chunk',id,chunk});
-    clearTimeout(idle);idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
+    clearTimeout(idle);if(this.policy.streamIdleTimeoutMs!=null)idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
     const fault=guard.accept(chunk);
     for(const warning of guard.warnings.splice(0))this.record({type:'warning',id,...warning});
     if(fault){this.fail({...fault,requestId:id});controller.abort(fault.code);

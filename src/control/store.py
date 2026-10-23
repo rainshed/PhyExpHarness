@@ -13,6 +13,7 @@ from src.execution.host.models import supported_model,load_model_config,provider
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for, description_for
 from . import resource_planning as planning
+from src.execution.host.task_time import benchmark_time
 
 SCHEMA_VERSION = 5
 TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs')
@@ -141,6 +142,8 @@ def validate_config(config,model_config=None):
         config.setdefault(key,None)
         if config[key] is not None and (type(config[key]) is not int or config[key]<=0):
             raise Refused(key+' must be null or a positive integer')
+    if benchmark_time(config) and config['trialTimeSeconds'] is not None:
+        raise Refused('Benchmark owns task time; single-trial time overrides are unavailable')
     for key in ['concurrency','wallTimeSeconds']:
         if type(config.get(key)) is not int or config[key]<=0:raise Refused(key+' must be a positive integer')
     for key,total in [('reserveSeconds','wallTimeSeconds'),('reserveTokens','softTokenLimit')]:
@@ -386,6 +389,7 @@ class Store:
             prior=self._idem(db,campaign,'trial-conditions',key,payload)
             if prior:return prior
             c=self._get(db,'campaigns',campaign);t=self._get(db,self.run_table(trial_id),trial_id)
+            if benchmark_time(c['config']):raise Refused('Benchmark task time cannot be shortened')
             if not planning.enabled(c['config']) or c['state']!='running' or t['campaignId']!=campaign or t['state']!='reserved':raise Refused('Only pending activity trials may change conditions')
             if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('Condition adjustment reason required')
             if type(seconds) is not int or not 0<seconds<=t['executionSettings']['trialTimeSeconds']:raise Refused('Only explicit shortening of pending conditions is supported')
@@ -426,10 +430,11 @@ class Store:
             batch=self._save(db,'reference_batches' if reference is not None else 'batches',{'id':identity('reference-batch' if reference is not None else 'batch'),'campaignId':campaign,'candidateId':candidate,'round':counts['rounds']+1,
                 'tasks':tasks,'repeats':repeats,'testSettings':settings,'plannedTrials':planned,'state':'accepted','acceptedAt':self.clock(),**extra})
             for task in tasks:
+                task_settings={**settings,'benchmarkTime':cfg['taskTimeLimits'][task]} if benchmark_time(cfg) else settings
                 for repeat in range(repeats):
                     self._save(db,'reference_runs' if reference is not None else 'trials',{'id':identity('reference-run' if reference is not None else 'trial'),'campaignId':campaign,'batchId':batch['id'],'candidateId':candidate,
                         'launchId':identity('launch'),'task':task,'repeat':repeat,'state':'reserved','startedAt':None,
-                        'score':None,'usage':{},'stopReason':None,**extra,**({'executionSettings':settings} if planning.enabled(cfg) else {})})
+                        'score':None,'usage':{},'stopReason':None,**extra,**({'executionSettings':task_settings} if planning.enabled(cfg) else {})})
             round_full=cfg['maxRounds'] is not None and counts['rounds']+1>=cfg['maxRounds']
             trial_full=cfg['maxTrials'] is not None and counts['trials']+planned>=cfg['maxTrials']
             if round_full or trial_full:
@@ -460,7 +465,18 @@ class Store:
             if c.pop('resourcePlanWait',None):self._save(db,'campaigns',c)
             t=None
             for item in pending:
-                if planning.enabled(cfg):
+                if benchmark_time(cfg):
+                    timing=item['executionSettings']['benchmarkTime'];required=timing['requiredTimeSeconds']
+                    available=max(0,planning.end_time(c)-now)
+                    if required is None or available<required:
+                        waiting={'reason':'benchmark_time_unavailable','requiredSeconds':required,'availableSeconds':available,
+                                 'solverTimeSeconds':timing['solverTimeSeconds'],'canShorten':False}
+                        if item.get('conditionsRequired',{}).get('reason')!=waiting['reason']:
+                            item['conditionsRequired']=waiting;self._save_run(db,item)
+                            self._event(db,campaign,'trial_conditions_required',trialId=item['id'],**waiting)
+                        continue
+                    item.pop('conditionsRequired',None)
+                elif planning.enabled(cfg):
                     settings=item['executionSettings'];seconds=settings['trialTimeSeconds']
                     available=max(0,planning.end_time(c)-now)
                     if cfg['trialTimeSeconds'] is not None:available=min(available,cfg['trialTimeSeconds'])
@@ -472,7 +488,14 @@ class Store:
                         continue
                 t=item;break
             if t is None:return None
-            if planning.enabled(cfg):
+            if benchmark_time(cfg):
+                timing=t['executionSettings']['benchmarkTime'];seconds=timing['solverTimeSeconds']
+                deadline=planning.end_time(c)
+                t['effectiveConditions']={**t['executionSettings'],'solverTimeSeconds':seconds,
+                    'solverDeadline':None,'availableTimeSeconds':deadline-now,
+                    'userLimitsRevision':c.get('userLimitsRevision',1),'resourcePlanRevisionAtLaunch':plan['revision']}
+                t['launchLimits']={'softTokenLimit':cfg['softTokenLimit'],'campaignDeadline':c['deadline']}
+            elif planning.enabled(cfg):
                 seconds=t['executionSettings']['trialTimeSeconds']
                 deadline=min(planning.end_time(c),now+seconds,now+(cfg['trialTimeSeconds'] or seconds))
                 t['effectiveConditions']={**t['executionSettings'],'actualTimeSeconds':deadline-now,

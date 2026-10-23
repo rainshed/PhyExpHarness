@@ -78,6 +78,9 @@ def make_app(service,supervise=True):
     @app.get('/models')
     def models(request:Request):
         user(request);return service.providers.catalog()
+    @app.get('/tasks')
+    def tasks(request:Request):
+        user(request);return service.task_catalog()
     @app.get('/providers')
     def providers(request:Request):
         user(request);return service.providers.snapshot()

@@ -60,19 +60,6 @@
             "type": "integer",
             "minimum": 1
           },
-          "execution": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "trialTimeSeconds": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "allowShortened": {
-                "type": "boolean"
-              }
-            }
-          },
           "harnessRef": {
             "type": "string",
             "minLength": 1,

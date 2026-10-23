@@ -1,5 +1,6 @@
 import {readLogSync} from '../host/log_store.mjs';
 import fs from 'node:fs';
+import {BENCHMARK_STREAM_POLICY} from '../host/stream_guard.mjs';
 import path from 'node:path';
 import {referenceProvider} from './native.mjs';
 import {WireGateway,wireBinding} from './wire.mjs';
@@ -13,6 +14,7 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
  const budget=budgetGate({deadline,softTokenLimit:Number(process.env.PHYEXP_RUN_TOKEN_LIMIT)||Infinity,url:process.env.PHYEXP_ACCOUNTING_URL,token:process.env.PHYEXP_ACCOUNTING_TOKEN,purpose:'solver'});
  let runtime,gateway,session,timer,checkpoint;
  const summary={status:'running',bundleId:bundle.id,recipe:JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json'))),reference:{mode:reference.mode,harnessRef:reference.harnessRef,modelRef:reference.modelRef,runtime:reference.runtime},toolCalls:0};
+ const benchmark=summary.recipe.timePolicy==='benchmark-time-v1';
  const save=()=>{
   const events=session?.messages.filter(m=>m.method==='reference/event').map(m=>m.params)||[];
   summary.accounting=budget.snapshot();
@@ -29,9 +31,11 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
  const stop=()=>{summary.status='cancelled';gateway?.abort();session?.dispose();};
  try{
   runtime=await referenceProvider(reference);summary.model=runtime.model.model;summary.provider=runtime.model.provider;
-  gateway=new WireGateway({binding:wireBinding(runtime,reference.harnessRef),budget,deadline,audit:path.join(logs,'gateway-audit.jsonl'),redact:runtime.credentials.redact});
+  gateway=new WireGateway({...(benchmark?{policy:BENCHMARK_STREAM_POLICY}:{}),binding:wireBinding(runtime,reference.harnessRef),budget,deadline,audit:path.join(logs,'gateway-audit.jsonl'),redact:runtime.credentials.redact});
   const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));
-  const prompt=fs.readFileSync(path.join(logs,'instruction.md'),'utf8')+'\n\nTask execution boundary: use the task MCP task_bash tool for commands, files and final submissions in the official task container /app. Native file and shell tools operate only in your separate scratch workspace. Task MCP tools are also attached. No prior task session or Meta context is supplied.';
+  const timing=JSON.parse(fs.readFileSync(path.join(logs,'environment.json'))).timing;
+  const timingNote=timing?'\nBenchmark solver time limit: '+timing.solverTimeSeconds+' seconds. Solver deadline (UTC): '+new Date(timing.solverDeadline*1000).toISOString()+'.\n':'';
+  const prompt=fs.readFileSync(path.join(logs,'instruction.md'),'utf8')+timingNote+'\n\nTask execution boundary: use the task MCP task_bash tool for commands, files and final submissions in the official task container /app. Native file and shell tools operate only in your separate scratch workspace. Task MCP tools are also attached. No prior task session or Meta context is supplied.';
   fs.writeFileSync(path.join(logs,'prompt.txt'),prompt);
   fs.writeFileSync(path.join(logs,'load-receipt.json'),JSON.stringify({bundleId:bundle.id,reference:summary.reference,model:runtime.model,framework:reference.harnessRef,plugins:[],isolation:'network-none; host-only credentials; task command bridge'}));
   session=isolatedSession({executionRoot:path.resolve(import.meta.dirname,'..'),logs,image:process.env.PHYEXP_RUNNER_IMAGE_ID,
@@ -40,7 +44,7 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
    async *handler(op,payload,signal){
     if(op==='wire')yield*gateway.stream(payload,signal);
     else if(op==='mcp')yield*forwardMcp(connections,payload,signal);
-    else if(op==='tool')yield await callContainer(socketPath,payload.command,signal);
+    else if(op==='tool')yield await callContainer(socketPath,payload.command,signal,benchmark?deadline:null);
     else throw new Error('Reference capability unavailable');
    }});
   process.once('SIGTERM',stop);process.once('SIGINT',stop);timer=setTimeout(stop,Math.max(1,deadline-Date.now()));checkpoint=setInterval(save,3000);

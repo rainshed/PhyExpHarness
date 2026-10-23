@@ -62,6 +62,19 @@ class McpTunnelTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_benchmark_commands_use_remaining_phase_time_instead_of_five_minutes(self):
+        environment=SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(stdout='ok',stderr='',return_code=0)))
+        now=[1000]
+        bridge=ContainerBridge(environment,None,deadline=11800,clock=lambda:now[0])
+        await bridge.execute({'command':'long simulation'})
+        self.assertEqual(environment.exec.call_args.kwargs['timeout_sec'],10810)
+        now[0]=11000
+        await bridge.execute({'command':'next simulation'})
+        self.assertEqual(environment.exec.call_args.kwargs['timeout_sec'],810)
+        now[0]=11800
+        with self.assertRaises(TimeoutError):await bridge.execute({'command':'too late'})
+        self.assertEqual(environment.exec.await_count,2)
+
     async def test_only_main_container_exec_and_literal_command(self):
         environment = SimpleNamespace(exec=AsyncMock(return_value=SimpleNamespace(stdout='ok', stderr='', return_code=0)))
         bridge = ContainerBridge(environment, None)

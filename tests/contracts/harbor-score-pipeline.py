@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--native-meta',action='store_true',help='Continue with native Meta investigation, plugin check/freeze and a second official Trial')
     parser.add_argument('--reference',action='store_true',help='Run a joint native-model + full DeepSeek SDK reference instead of the primary fixture')
+    parser.add_argument('--benchmark-time',action='store_true',help='Use unchanged native task phase limits and benchmark scheduling')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     requests = []
@@ -102,6 +103,10 @@ def main():
               'softTokenLimit':None,'reserveSeconds':0,'reserveTokens':0,
               'taskImagePolicy':POLICY,'taskImageLocks':{TASK:json.loads(args.task_image_lock.read_text())}}
     defaults=None
+    if args.benchmark_time:
+        from src.execution.host.task_time import POLICY as TIME_POLICY,read_task_time
+        config.update(resourcePolicy='meta-resource-planning-v1',executionTimePolicy={'version':TIME_POLICY},
+                      taskTimeLimits={TASK:read_task_time(args.quantum_harbor,TASK)},wallTimeSeconds=20000,trialTimeSeconds=None)
     if args.reference:
         from src.control.reference.policy import DEFAULT
         native={'adapter':'pi-ai','pluginVersion':'0.2.1-rc.2','config':{'providers':{'reference-fixture':{'api':'openai-completions','baseURL':route['baseURL'],'apiKeyEnv':'FIXTURE_NATIVE_KEY','models':[{'id':'fixture-model','contextWindow':16000,'maxTokens':1024,'reasoningEfforts':False}]}}},'call':{'provider':'reference-fixture','model':'fixture-model','maxTokens':1024},'info':{},'credentialRef':'FIXTURE_NATIVE_KEY'}
@@ -119,6 +124,8 @@ def main():
     service.workspace(campaign)
     recipe = json.loads((ROOT/'recipes/h0-sol.json').read_text())
     recipe.update(config['solver'],providerConfig=route,agentTimeoutSec=120,maxTokens=1024)
+    if args.benchmark_time:recipe.pop('agentTimeoutSec')
+    else:recipe.pop('timePolicy',None);recipe['commandTimeoutSec']=300
     recipe.pop('reasoningEffort',None)
     bundle = freeze(ROOT,args.output/'objects',recipe)
     assert 'id' not in json.loads((Path(bundle['path'])/'recipe.json').read_text())
@@ -127,6 +134,8 @@ def main():
         prepare_runner_image(runtime,service.data/'runner-locks',log)
     candidate = service.build_candidate(campaign,[],'Engineering baseline') if args.native_meta else service.store.candidate(campaign,bundle,'Engineering pipeline fixture',check={'status':'passed'})
     service.store.control(campaign,'start','start')
+    if args.benchmark_time:
+        service.store.update_plan(campaign,{'parallelism':1,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'Native benchmark time','plan',0)
     service.store.submit(campaign,candidate['id'],[TASK],1,'one')
     if args.reference:
         baseline=service.store.list('trials',campaign)[0]
@@ -155,6 +164,14 @@ def main():
         assert row['scoringStatus'] == 'completed' and row['failure'] is None
         assert row['usage']['totalTokens'] == 48
         output = Path(row['output'])
+        if args.benchmark_time:
+            limits=config['taskTimeLimits'][TASK]
+            phase=json.loads(next(output.glob('harbor/*/phyexp/timing.json')).read_text())
+            assert phase['solverDeadline']-phase['solverStartedAt']==limits['solverTimeSeconds'],phase
+            assert row['effectiveConditions']['solverDeadline']==phase['solverDeadline']
+            assert 'override_timeout_sec' not in json.loads((output/'harbor-config.json').read_text())['agents'][0]
+            assert json.loads((output/'provenance.json').read_text())['solverDeadline']==phase['solverDeadline']
+            assert row['comparisonContext']['executionConditions']==limits
         verify_manifest(output)
         harbor = json.loads(next(output.glob('harbor/*/result.json')).read_text())
         assert harbor['exception_info'] is None and harbor['verifier_result']['rewards']['reward'] == 0
