@@ -6,9 +6,9 @@ import {campaignPreparation} from './campaign-preparation.mjs';
 export function CampaignActions({w}:any){const {c,busy,connected,command,setLimits,setLimitsError,finalReport,readReport}=w;
  const preparation=campaignPreparation(c);
  return <div className="mh-actions studio-actions">
-  {c.state==='draft'&&<button className="primary" disabled={!!busy||!connected||!preparation.ready} onClick={()=>command('start')}>{preparation.label}</button>}
+  {c.state==='draft'&&<button className="primary" disabled={!!busy||!connected||!preparation.ready} onClick={()=>command('start')}>{busy==='start'?'正在检查并启动…':preparation.label}</button>}
   {['running','closing'].includes(c.state)&&<button disabled={!!busy||!connected} onClick={()=>command('pause')}>{c.state==='closing'?'Ⅱ 暂停收尾':'Ⅱ 暂停新工作'}</button>}
-  {c.state==='paused'&&<button className="primary" disabled={!!busy||!connected} onClick={()=>command('resume')}>恢复活动</button>}
+  {c.state==='paused'&&<button className="primary" disabled={!!busy||!connected} onClick={()=>command('resume')}>{busy==='resume'?'正在检查并恢复…':'恢复活动'}</button>}
   {!['finished','failed'].includes(c.state)&&<button disabled={!!busy||!connected} onClick={()=>{setLimits({...c.config});setLimitsError('')}}>调整上限</button>}
   {['running','paused','closing'].includes(c.state)&&<button className="studio-danger" disabled={!!busy||!connected} onClick={()=>command('stop')}>停止并收尾</button>}
   {finalReport&&<button onClick={()=>readReport(finalReport.id)}>{finalReport.kind==='status_summary'?'阅读阶段摘要 ↗':'阅读总报告 ↗'}</button>}

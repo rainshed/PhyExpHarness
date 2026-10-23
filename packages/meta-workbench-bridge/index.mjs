@@ -27,12 +27,22 @@ export function apply(ctx){
     res.writeHead(400).end('Invalid route');return;
    }
    let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw new Error('Request too large');}
+   // Control can verify many frozen images and provider endpoints before it
+   // commits. A UI timeout does not cancel that controller-side operation.
+   const control=req.method==='POST'&&/^\/campaigns\/[-a-zA-Z0-9_]+\/control$/.test(route);
    const response=await fetch(base+route+parsed.search,{method:req.method,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-    body:req.method==='POST'?body:undefined,signal:AbortSignal.timeout(20000)});
+    body:req.method==='POST'?body:undefined,signal:AbortSignal.timeout(control?120000:20000)});
    const headers={'content-type':response.headers.get('content-type')||'application/json','cache-control':'no-store'};
    if(response.headers.has('content-disposition'))headers['content-disposition']=response.headers.get('content-disposition');
+   const contents=Buffer.from(await response.arrayBuffer());
    res.writeHead(response.status,headers);
-   res.end(Buffer.from(await response.arrayBuffer()));
-  }catch(error){res.writeHead(503,{'content-type':'application/json'}).end(JSON.stringify({error:error.message,connection:'unavailable'}));}
+   res.end(contents);
+  }catch(error){
+   const timedOut=error.name==='TimeoutError';
+   const message=timedOut?(req.method==='POST'
+    ?'等待后台响应超时，操作结果尚未确认，后台可能仍在处理。请刷新查看活动状态，确认前不要重复提交。'
+    :'读取后台状态超时，请稍后刷新。'):error.message;
+   res.writeHead(timedOut?504:503,{'content-type':'application/json','cache-control':'no-store'}).end(JSON.stringify({error:message,connection:'unavailable',...(timedOut?{code:'control_response_timeout'}:{})}));
+  }
  }}));
 }
