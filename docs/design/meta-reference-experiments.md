@@ -1,8 +1,8 @@
 # 参考模型与参考 Harness 插件设计
 
-日期：2026-10-23 · 状态：设计基线，尚未实施 · 需求：[v0.15](../requirements/meta-harness.md) · 实施与验收：[开发计划](../plans/meta-reference-experiments.md)
+日期：2026-10-23 · 状态：工程实现已落地；验证范围与接入限制见第 13 节 · 需求：[v0.15](../requirements/meta-harness.md) · 实施与验收：[开发计划](../plans/meta-reference-experiments.md)
 
-本文定义两个可独立启用和移除的 Meta 插件，分别开放参考模型和参考 Harness 两个选择维度。参考模型遵循 DeepSeek Harness 的原生模型配置；参考 Harness 首期包括 Codex、Claude Code 和 DeepSeek Harness 标准模式，并保留扩展接口。用户在 UI 中独立开关插件、选择允许的模型和 Harness，并可授权 Meta 在兼容组合中自主取样。两个插件同时开启时支持参考模型 × 参考 Harness，无需第三个组合插件。本文中的新工具、协议、目录和界面均是待实现约定，不表示当前已经可用。
+本文定义两个可独立启用和移除的 Meta 插件，分别开放参考模型和参考 Harness 两个选择维度。参考模型遵循 DeepSeek Harness 的原生模型配置；参考 Harness 首期包括 Codex、Claude Code 和 DeepSeek Harness 标准模式，并保留扩展接口。用户在 UI 中独立开关插件、选择允许的模型和 Harness，并可授权 Meta 在兼容组合中自主取样。两个插件同时开启时支持参考模型 × 参考 Harness，无需第三个组合插件。两插件、三适配器与 Studio 授权界面已经实现；设计目标与当前支持范围的差异集中记录在第 13 节。
 
 ## 1. 研究目的与边界
 
@@ -44,7 +44,7 @@
 
 联合运行的 `requiredCapabilities` 同时包含两项能力；这是一笔运行的准入条件，不是两个插件之间的装配依赖。停用任一插件会关闭新的联合提交，另一插件的单维参考仍可使用。仅启用 Harness 插件且固定 Solver 与 Claude Code 不兼容时，UI 显示原因；不能自动换模型或替用户开启模型插件。
 
-使用现有 Cordis 插件、Agent Preset、依赖和生命周期机制，不增加第二套 Meta 插件管理器。两个插件各自拥有入口、契约、说明、可选依赖和测试；建议分别形成 `packages/meta-model-reference/`、`packages/meta-harness-reference/`。已有六个领域插件继续承担原职责，完整 Meta 组合的必需能力不增加这两个插件。
+使用现有 Cordis 插件、Agent Preset、依赖和生命周期机制，不增加第二套 Meta 插件管理器。两个插件各自拥有入口、契约、说明、可选依赖和测试；分别位于 `packages/meta-model-reference/`、`packages/meta-harness-reference/`。已有六个领域插件继续承担原职责，完整 Meta 组合的必需能力不增加这两个插件。
 
 插件通过受控 `metaControl` 提交有限业务操作，不启动宿主命令、不持有供应商密钥、不直接操作数据库。两者不调用对方工具，也不导入 `meta-experiments`、`meta-evidence` 或 `meta-reporting` 的私有实现。公共证据和报告读取后台事实；缺少某个参考插件时，历史结果仍可阅读。
 
@@ -83,7 +83,7 @@ flowchart TD
 
 ### 3.2 冻结与恢复
 
-创建活动时保存版本化的 `referencePolicy` 和 `referenceModelBindings`。每个模型引用至少包含：源 profile 标识、dsh/provider 插件版本和内容身份、原生 provider/model 标识、解析后的有效调用设置、能力信息、非敏感配置摘要、配置来源修订和宿主凭据引用。原生缺省值必须由原生解析器物化并记录，不由插件重新猜测或维护默认值表。
+创建活动时保存版本化的 `referencePolicy` 和 `referenceBindings.models`（原设计称 `referenceModelBindings`）。每个模型引用至少包含：源 profile 标识、dsh/provider 插件版本和内容身份、原生 provider/model 标识、解析后的有效调用设置、能力信息、非敏感配置摘要、配置来源修订和宿主凭据引用。原生缺省值必须由原生解析器物化并记录，不由插件重新猜测或维护默认值表。
 
 “跟随配置”指新活动和创建草稿可从原生配置取得最新可用项；已创建活动使用冻结绑定。重试创建沿用原请求绑定；原生 HMR、模型目录刷新和后台重启不热改活动。首期修改参考模型集合或行为配置需创建新活动；已有凭据可按正常机制续期，不改变模型路由和行为身份。
 
@@ -103,7 +103,7 @@ flowchart TD
 
 ### 4.1 注册与模型绑定
 
-首期注册 `codex`、`claude-code`、`deepseek-standard` 三种适配器。用户选择已安装并验证的 Harness 配置，可在同一活动允许多个；Meta 在冻结允许列表内按需选择。Codex 先接通，Claude Code 和 DeepSeek 标准模式也是首期必交付项，不能以“预留接口”代替实现。各适配器独立发现和加载，缺少一个不会使其他适配器或模型参考插件不可用。
+首期注册 `codex`、`claude-code`、`dsh-standard` 三种适配器。用户选择已安装并验证的 Harness 配置，可在同一活动允许多个；Meta 在冻结允许列表内按需选择。Codex 先接通，Claude Code 和 DeepSeek 标准模式也是首期必交付项，不能以“预留接口”代替实现。各适配器独立发现和加载，缺少一个不会使其他适配器或模型参考插件不可用。
 
 不指定参考模型时，绑定活动固定 Solver 的准确供应商路由、模型及约定调用设置；指定参考模型时，须同时具有模型插件能力，并从第 3 节批准的原生绑定中解析。后者仍以 DeepSeek Harness 配置为权威，适配器不维护另一份模型目录。适配器须检查准确配置是否可以表达；同名模型、服务商别名或类似推理档位不自动视为相等。不支持时返回不可用，不静默替换供应商、模型或参数。
 
@@ -138,7 +138,7 @@ flowchart TD
 
 ### 4.4 Codex 适配
 
-首期优先评估 Codex CLI 非交互 `codex exec --json`，采集其公开 JSONL 事件、命令/工具执行、文件变化、最终输出和用量。若必要的中止、工具挂载或持久状态无法由该入口可靠实现，可改用官方 SDK/app-server，但须保留同一适配契约和冻结身份，并记录选择依据。公开事件不等于完整内部推理；未暴露信息标未知。
+首期已采用锁定的 Codex CLI 非交互 `codex exec --json`，采集其公开 JSONL 事件、命令/工具执行、文件变化、最终输出和用量。若必要的中止、工具挂载或持久状态无法由该入口可靠实现，可改用官方 SDK/app-server，但须保留同一适配契约和冻结身份，并记录选择依据。公开事件不等于完整内部推理；未暴露信息标未知。
 
 Codex 使用专用配置与隔离工作区，不继承个人历史会话、全局技能、未声明 MCP、用户项目指令或默认联网权限。保留已声明的 Harness 内建行为；确需加入的任务说明和工具桥如实记录。通过任务桥提供同一 main/qsim 能力和产物提交路径；宿主仓库、官方 verifier 源码、隐藏材料和容器管理接口不能暴露给执行会话。
 
@@ -146,7 +146,7 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 
 ### 4.5 Claude Code 适配
 
-首期评估锁定版本的非交互 CLI `claude -p`，使用 `--output-format stream-json --verbose` 采集公开事件；需要增量内容时按该版本文档使用 `--include-partial-messages`。若工具桥、取消或恢复必须使用官方 Claude Agent SDK，可在相同适配契约下选择 SDK，并记录其依赖和实际加载的 Claude Code 版本。事件、工具结果、会话标识、产物、最终状态和用量均归档；公开输出不等于完整内部推理。[官方非交互接口](https://code.claude.com/docs/en/headless)
+首期已采用锁定版本的非交互 CLI `claude -p`，使用 `--output-format stream-json --verbose` 采集公开事件；需要增量内容时按该版本文档使用 `--include-partial-messages`。若工具桥、取消或恢复必须使用官方 Claude Agent SDK，可在相同适配契约下选择 SDK，并记录其依赖和实际加载的 Claude Code 版本。事件、工具结果、会话标识、产物、最终状态和用量均归档；公开输出不等于完整内部推理。[官方非交互接口](https://code.claude.com/docs/en/headless)
 
 通过专用隔离环境和明确配置提供任务工作区、MCP 任务桥与权限。CLI 提供 `--mcp-config`、`--strict-mcp-config` 和 `--settings` 等配置入口；其中 `--settings` 不能单独证明未继承其他设置，必须核验最终生效来源。不得继承个人会话、CLAUDE.md、技能、hooks、插件、连接器或未声明 MCP；Harness 内建提示和工具保留，任务适配差异进入身份。无交互运行遇到权限或认证缺口须可诊断地结束，不能等待人工输入或用全面放权代替任务隔离。[CLI 参数](https://code.claude.com/docs/en/cli-reference)
 
@@ -174,7 +174,7 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 
 ## 6. 记录、身份与证据
 
-采用独立的 `ReferenceBatch`、`ReferenceRun` 业务记录，与主线候选/Trial 分开关联，复用监督和账本实现，不复制一套运行状态逻辑。所有新契约须有版本；建议首版策略标识 `meta-reference-v1`，正式实现时发布对应 schema，不修改既有活动协议。
+采用独立的 `ReferenceBatch`、`ReferenceRun` 业务记录，与主线候选/Trial 分开关联，复用监督和账本实现，不复制一套运行状态逻辑。所有新契约须有版本；首版策略标识 `meta-reference-v1`，对应 `schemas/reference/policy.schema.json`，不修改既有活动协议。
 
 | 记录 | 必需内容 |
 |---|---|
@@ -195,18 +195,18 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 
 ## 7. Meta 工具与后台接口
 
-下列名称为拟定接口。两插件分别注册自己的工具和说明，公共查询由后台实现，不能因另一插件卸载而失效。
+下列工具已由各包的 `contracts.json` 发布。两插件分别注册自己的工具和说明，公共查询由后台实现，不能因另一插件卸载而失效。
 
 | 插件 | 工具 | 职责 |
 |---|---|---|
-| 模型参考 | `reference_model_list` | 返回活动批准的原生模型引用、来源修订、能力及与所选执行候选的兼容性 |
+| 模型参考 | `reference_model_list` | 返回活动批准的原生模型引用、来源修订、策略与参考 Harness 兼容矩阵；执行候选沿原检查入口核验 |
 | 模型参考 | `reference_model_submit` | 指定来源候选、模型引用、任务、重复、研究目的与执行安排，提交参考批次 |
 | 模型参考 | `reference_model_status` / `reference_model_cancel` | 查询本类批次/运行及证据路径；显式取消本类工作 |
 | Harness 参考 | `reference_harness_list` | 返回活动批准的 Harness 配置及与固定 Solver/已授权参考模型的兼容配对、策略和原因 |
 | Harness 参考 | `reference_harness_submit` | 指定 Harness 引用、任务、重复、研究目的与执行安排；省略 modelRef 使用固定 Solver，显式 modelRef 提交联合参考并校验两项能力 |
 | Harness 参考 | `reference_harness_status` / `reference_harness_cancel` | 查询本类批次/运行及证据路径；显式取消本类工作 |
 
-提交参数使用对象，包含稳定 `idempotencyKey`、预期策略修订、任务列表、正整数 repeats、researchQuestion、已有可选 researchRefs 和执行条件。后台校验活动、插件授权、模型/Harness 绑定、候选和任务范围、兼容性及资源后事务受理；返回批次/操作 ID、受理状态、执行条件及完整文件路径。
+提交参数使用对象，包含稳定 `idempotencyKey`、预期策略修订、任务列表、正整数 repeats、researchQuestion 和执行条件；研究记录通过已有研究接口追加准确的批次/证据引用。后台校验活动、插件授权、模型/Harness 绑定、候选和任务范围、兼容性及资源后事务受理；返回批次 ID、受理状态与执行条件；status 提供完整证据索引入口。
 
 保留两组工具的唯一归属：当前执行候选的模型参考经 `reference_model_submit` 提交，外部 Harness 的单维/联合参考经 `reference_harness_submit` 提交。后者在模型插件未安装时仍可独立使用，显式传入 modelRef 则拒绝。它只调用共享后台，不导入或调用模型插件；联合能力检查由实际请求和活动授权推导，不信任发起者自报“仅 Harness”标签。Harness 工具查询/取消覆盖其联合批次，公共历史读取也能按所需能力查找记录；停用任一能力时由后台统一处理关联工作。
 
@@ -279,7 +279,7 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 
 ## 11. 实施落点与兼容
 
-| 位置（拟定） | 责任 |
+| 位置 | 责任 |
 |---|---|
 | `packages/meta-model-reference/` | 模型参考工具、契约、说明、原生配置选择所需宿主扩展声明 |
 | `packages/meta-harness-reference/` | Harness 参考工具、契约、说明和适配器配置导航 |
@@ -289,7 +289,7 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 | `src/evidence/`、`src/reporting/` | 参考来源、统一事实与分组比较、研究关联、历史读取 |
 | 公共客户端、桥与 Studio | 原生配置发现桥、独立开关、多选/组合策略、兼容矩阵、运行启停、参考实验和证据阅读 |
 
-当前 `meta_native_composition.py` 只允许主包内模块，`meta_contracts.py` 和 `domain-tools.mjs` 使用集中契约。扩展受信可选包的声明入口、内容依赖闭包和分插件契约装配：未安装且未选中时不导入；已选中缺包或依赖时明确失败；同名工具、缺服务和契约冲突拒绝。原生插件生命周期继续负责注册，不另建并行插件执行框架。
+`meta_native_composition.py` 已支持受信可选包的声明入口、内容闭包和分包契约，既有核心契约保持原版本：未安装且未选中时不导入；已选中缺包或依赖时明确失败；同名工具、缺服务和契约冲突拒绝。原生插件生命周期继续负责注册，不另建并行插件执行框架。
 
 新增能力以新协议绑定/独立版本标记进入新活动，保留已有 v2/v3/v4 工具和报告资产。旧活动缺参考策略等价于未启用，旧候选、评分、报告、原件、预算和幂等回放不迁移。报告扩展引用类型需版本化，不能要求旧 schema 突然接受新字段。工程实现不得为本增量修改全部历史执行模型规则。
 
@@ -303,3 +303,24 @@ Codex 使用专用配置与隔离工作区，不继承个人历史会话、全�
 - 锁定安装的 `@deepseek-ai/dsh@0.2.1-rc.2` README、`dsh-llm` README/类型、`dsh-base` 和 `dsh-sdk-app` 配置：原生 profile、模型目录、调用配置解析与标准 SDK 组合；实施时从对应锁定包核验，不将本机 `node_modules` 路径作为交付依赖。
 - [Codex 非交互模式](https://learn.chatgpt.com/docs/non-interactive-mode)、[MCP 接入](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)、[官方 Harness 集成入口](https://developers.openai.com/blog/codex-as-a-platform)：2026-10-23 查阅。文档说明入口能力，不证明本项目的固定 Solver、隔离和计量已经适配完成。
 - [Claude Code 非交互模式](https://code.claude.com/docs/en/headless)、[CLI 参数](https://code.claude.com/docs/en/cli-reference)、[模型配置](https://code.claude.com/docs/en/model-config)：2026-10-23 查阅。用于确定待验证接入方案；实施时锁定版本重新核验，不能从支持模型参数推断任意原生 provider 已兼容。
+
+
+## 13. 当前实现、版本与已声明限制
+
+首期包为 `meta-model-reference`、`meta-harness-reference`，各四个工具，默认均关闭。策略在创建时冻结，运行期修订可关闭/恢复原有能力、缩小/恢复原允许集合及调整子额度；不能加入未冻结模型、Harness 或插件。联合运行逐次检查两项能力和策略修订。UI 在“目标与模型”配置，在“运行详情 → 参考实验”调整；运行中默认 drain，显式选中停止才撤销相关租约。移除源包影响新装配，已有活动按冻结资产恢复；先停用再移除可撤销已有活动的新提交权。
+
+| Harness 引用 | 锁定实现 | 当前可受理通道 |
+|---|---|---|
+| `codex` | `@openai/codex@0.155.0`，`exec --json --ephemeral --ignore-user-config` | 明确 API Key 的原生 Responses 配置；不转换 Chat Completions 协议 |
+| `claude-code` | `@anthropic-ai/claude-code@2.1.280`，非交互 stream-json | 明确 API Key 的原生 Messages 配置，包括 DeepSeek 原生 Messages；不转换 Responses 协议 |
+| `dsh-standard` | `@deepseek-ai/dsh@0.2.1-rc.2`，完整 `dsh-base + dsh-sdk-app` | 冻结的原生 provider；Harness 单独启用时沿用固定 Solver 的宿主认证通道 |
+
+原生发现当前支持 `llm-pi-ai` 和 `llm-deepseek-api-key` 的明确凭据引用。其他原生账户 provider 仍需专用快照/恢复适配，不从项目供应商目录代填。Codex/Claude Code 的外部接入尚不支持 Codex 订阅 OAuth；配置不兼容时使用明确标记的不可用项。浮动模型别名拒绝进入参考目录。非 DeepSeek 的 Anthropic 推理档位、自定义推理 wire 值、thinkingBudgets、cacheRetention 及非 SSE 传输等尚未验证的等价映射返回 `unverified`，不能提交；这些配置可以由原生 DeepSeek Harness 执行。协议兼容不等于已对用户每个真实服务做在线探测，目录读取不调用模型。
+
+参考模型单独运行复用所选候选的冻结插件与任务工具；模型变化引发的插件运行错误按真实失败留存，不承诺静态核验能证明任意执行插件与任意模型兼容。`requestedDimensions` 保存请求维度，`changedDimensions` 另记实际调用字段差异或待核验，不以模式名证明因果或配置等价。
+
+三种参考 Harness 都运行在已有隔离 Runner 中，使用新 home、无网络容器和宿主受控模型/任务通道。标准 SDK 和两个 CLI 保留自己的文件/终端工具，但这些工具操作独立临时工作区；官方任务 `/app`、提交和测量必须走 `task_bash` / qsim 工具桥。这是明确的任务适配差异，不宣称原生 shell 与官方任务容器是同一目录。未暴露的内部推理不补造。外部协议网关逐请求准入、结算未知量，执行请求时限/空闲流保护/响应尺寸上限；没有把原生参考轨迹重写成统一消息格式。
+
+持久化使用 `reference_batches`、`reference_runs`；主线排名、候选选择与稳定完成只读主线表。参考运行的 lease、事件、取消、重启对账、收集、官方验证器和活动收尾共用原后台。模型/Harness 子额度可能重叠，总账仅计一次。报告事实新增独立 `referenceExperiments`，UI 与 Markdown 分三组展示；研究记录可引用参考运行和证据，旧报告无此字段仍可读。
+
+扩展入口为 `src/control/reference/catalog.py` 的 Harness 注册、`runtime.py` 的冻结镜像装配以及 `src/execution/reference/cli.mjs` / `wire.mjs` 的协议实现；每个新适配器需专用锁文件、兼容判定和容器契约测试。公共工具只接受 Harness 引用，无需新增供应商品牌工具或改动 UI 选择流程。具体复现命令和工程/真实模型证据范围见[运行说明](../operations/meta-harness.md#参考实验插件)。

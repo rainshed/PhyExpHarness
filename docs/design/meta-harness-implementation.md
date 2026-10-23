@@ -1,6 +1,6 @@
 # Meta-Harness 实现方案
 
-日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量已实施，参考实验插件增量仅完成设计 · 需求基线：[meta-harness.md v0.15](../requirements/meta-harness.md)
+日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量与可选参考实验插件已实施，参考接入支持范围见专项设计第 13 节 · 需求基线：[meta-harness.md v0.15](../requirements/meta-harness.md)
 
 开发执行规则、自动完成条件和人工验收点见面向 Codex / GPT-6 Astra 的 [AI 开发任务书](../plans/meta-harness-development.md)。M0–M5 由 AI 自检后连续推进；人工验收聚焦最小真实闭环的使用体验，以及最终交付是否满足需要，不要求用户逐项验收底层技术。通用已知限制见[运行说明](../operations/meta-harness.md)。具体实施进度与验证证据保存在本机被忽略的 `reports/development/meta-harness/`，不随源码分发；不能仅依据本方案认定完成。新克隆应核对代码和可执行检查，不依赖私人记录才能安装。
 

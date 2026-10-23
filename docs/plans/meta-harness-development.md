@@ -1,6 +1,6 @@
 # Meta-Harness AI 开发任务书
 
-日期：2026-10-23 · 状态：开发与验收规则；第 24 节参考实验插件仅完成设计与计划，尚未实施。第 23 节进化可读性增量已实施并通过真实 E2E 验收。插件版本管理与按需导出已落地，Meta 通用 Agent 核心增量已实现、完整验收继续，具体检查和运行证据仅保存在本地 · 执行者：Codex / GPT-6 Astra
+日期：2026-10-23 · 状态：开发与验收规则；第 24 节参考实验插件工程实现及可复现检查已落地。第 23 节进化可读性增量已实施并通过真实 E2E 验收。插件版本管理与按需导出已落地，Meta 通用 Agent 核心增量已实现、完整验收继续，具体检查和运行证据仅保存在本地 · 执行者：Codex / GPT-6 Astra
 需求：[meta-harness.md v0.15](../requirements/meta-harness.md) · 架构：[实现方案](../design/meta-harness-implementation.md) · 仓库入口：[AGENTS.md](../../AGENTS.md)
 
 ## 1. 执行目标与角色
@@ -590,7 +590,7 @@ README 只介绍项目目标与愿景，AGENTS 提供目录、资料导航和简
 
 ## 24. 可选参考模型与参考 Harness 插件
 
-状态：2026-10-23 仅完成[完整设计](../design/meta-reference-experiments.md)和[专项开发计划](meta-reference-experiments.md)，两个插件及其接入均未实施。此次文档授权不启动代码实现、环境变更或真实模型实验。
+状态：2026-10-23 已按授权实现两个独立插件、三种参考 Harness、原生配置绑定、UI 和共享后台控制。已通过单元、真实 CLI/SDK 容器契约及 Studio 合成配置验收；工程与真实模型证据分开记录，完整入口与限制见[专项开发计划第 6 节](meta-reference-experiments.md#6-当前状态与续接)。
 
 参考模型由 DeepSeek Harness 原生配置提供，用户可选一个或多个，Meta 模型仅是可匹配时的快捷项。参考 Harness 首期必须包括 Codex、Claude Code 与 DeepSeek Harness 标准模式，并通过统一适配接口保留扩展能力。仅开 Harness 插件默认绑定固定 Solver，两插件同时开启支持联合参考；UI 提供独立开关、多选、Meta 自主选择/指定配对和兼容矩阵。Meta 只能在用户选定且兼容的范围内按需取样，不自动穷举。两个插件不互相依赖，不加入完整 Meta 的必需列表；四种启用组合、源码移除、后台撤权、历史阅读和旧活动恢复均为验收内容。
 

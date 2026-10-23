@@ -618,3 +618,45 @@ PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1
 夹具包含三版本、两任务、运行与排队、同名异内容插件、跨活动来源、三个解释修订和旧报告快照。追加 `--large` 可生成 26 条研究记录与长中文正文，用于检查 20 条分页及窄屏阅读。单元/契约检查与合成 UI 检查不证明科学收益。
 
 2026-10-22 的真实模型 E2E 已完成 10 比特 Hamiltonian 学习的三次实验：基线成功 1/1，依赖预检候选成功 1/2；候选复核因预算准入失败，Meta 据此保留基线。真实产物覆盖问题来源、插件动机、观察、备选取舍、片段核验及全部尝试的最终报告。过程中人工校准了测试收尾额度，未补跑失败实验；不据此宣称插件有效或研究可全程无干预运行。配置、成本、截图和限制另存本地 `reports/development/meta-harness/evolution-readability/`；验收范围见[开发任务书第 23.3 节](../plans/meta-harness-development.md#233-本次实施与验收结果)。
+
+
+## 参考实验插件
+
+已实现两个可独立启用的包：`packages/meta-model-reference` 与 `packages/meta-harness-reference`。两者默认关闭，不是主线 Meta 的必需能力。创建活动第一步的“参考实验插件”提供双开关、原生模型多选、Harness 多选、Meta 自主组合或指定配对。参考模型先在 DeepSeek Harness 的 Models 中配置；工作台通过原生 `llm/settings/credentials` 服务读取，项目“供应商与模型”仍只配置主线 Solver/Meta。
+
+- 仅开模型插件：选定原生参考模型运行本活动已检查的执行候选。
+- 仅开 Harness 插件：固定 Solver 运行 Codex、Claude Code 或 DeepSeek 标准模式中的选定项。
+- 两者都开：还允许参考模型与参考 Harness 的兼容组合；由 Meta 按研究问题逐次选择，不自动遍历矩阵。
+
+在“运行详情 → 参考实验 → 调整插件与范围”可关闭/恢复创建时的插件和允许项。关闭取消相关待执行批次，运行中默认按原期限完成；勾选“同时停止…”才撤销相关租约。重新开启不清零额度、不恢复取消的实验。增加从未冻结的插件、模型、Harness 或改变原生模型行为配置需要新建活动。插件源码可各自移除；新活动不选缺失插件仍能构建/运行，已有活动使用冻结副本，历史证据不依赖源包存在。要停止旧活动继续使用该能力，应先在对应活动关闭开关，再移走源包并更新 workspace 安装。
+
+固定版本为 Codex `0.155.0`、Claude Code `2.1.280`、DeepSeek Harness `0.2.1-rc.2`。创建时按选择准备锁定容器镜像，未选择的 CLI 不安装。标准模式使用完整 `dsh-base + dsh-sdk-app`，保留原生文件/终端工具；官方任务文件、测量与提交走 `task_bash` / qsim 桥，原生 shell 是独立临时工作区。三个 Harness 均以新上下文运行，无个人会话或 Meta 研究材料。
+
+Codex 外部通道要求明确 API Key 的 Responses 服务；Claude Code 要求 Messages 服务。DeepSeek 原生 Messages 可用于 Claude Code。原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。Codex 订阅 OAuth 目前只保留在原生 DeepSeek 执行路径，未接到外部 CLI 网关。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
+
+参考运行共享活动的轮次、次数、并发、时限和 token 总账，可附加模型/Harness 子额度；联合运行在总账只计一次，但同时受两项子额度约束。H0 先预留，参考结果独立保存，不能直接抬高主线排名或稳定完成率。运行详情、报告和证据入口按模型参考、Harness 参考、联合参考分组；联合变化不能单独归因。
+
+工程检查（使用脚本模型响应，不产生真实模型调用）：
+
+```sh
+npm test
+npm run build:workbench
+python3 scripts/check-boundaries.py
+# 需要可用的 Docker 和已准备的基础 Runner 镜像；依赖从锁文件安装。
+npm run test:references
+npm run test:contracts
+```
+
+`test:references` 先执行 `scripts/reference-images.py`，将三种精确镜像回执写入本地 `.runtime/reference-acceptance/images.json`，然后运行独立插件、控制器、原生桥和真实 CLI/SDK 的容器契约。基础镜像可用 `python3 scripts/reference-images.py --base <已验证镜像>` 指定。普通契约测试在可选镜像尚未准备时明确跳过这三项；专项命令负责准备并执行，不把跳过记为通过。
+
+完整 Harbor 工程链路需要旁边的原始 Quantum-Harbor、官方任务镜像与当前源码匹配的任务锁；锁定方式沿用前文任务镜像准备流程。选取 `time_budgeted_hamlearn_10q` 的单任务锁保存成独立 JSON，然后运行：
+
+```sh
+python3 tests/contracts/harbor-score-pipeline.py \
+  --quantum-harbor ../Quantum-Harbor \
+  --task-image-lock /absolute/hamlearn-image-lock.json \
+  --output /absolute/new-reference-acceptance \
+  --reference --native-meta
+```
+
+该夹具在新数据目录内运行联合参考、由真实原生 Meta 的脚本策略选择模型参考、读取完整证据、开发/检查/冻结插件并提交后续主线验证。科学产物故意不提交，官方零分用于验证归档、计分隔离及用量；不能据此宣布模型或插件有效。Codex、Claude Code 的真实 CLI/MCP 工具回环分别由专项容器契约覆盖。付费真实 provider、长期研究质量和跨任务统计收益不属于已通过的工程证据。

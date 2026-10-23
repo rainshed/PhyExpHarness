@@ -10,6 +10,8 @@ PhyExpHarness 研究如何在给定任务范围、固定 Solver 及其模型和�
 
 后续研究也希望将相同方法用于 Meta Harness 自身：比较不同 Meta 插件组合设计执行 Harness 的能力，通过重复实验和消融判断其贡献，保留有作用、成本合理的能力。
 
+当前支持两个可选参考实验插件：参考模型取自 DeepSeek Harness 原生配置，参考 Harness 可选择 Codex、Claude Code 和 DeepSeek 标准模式。UI 可独立开关、多选并授权 Meta 在兼容范围内自主组合；参考成绩独立保存、成本计入活动总账。使用方式与接入限制见[参考实验插件](docs/operations/meta-harness.md#参考实验插件)。
+
 ## 了解与参与
 
 - [项目设计哲学](docs/design/design-philosophy.md)
