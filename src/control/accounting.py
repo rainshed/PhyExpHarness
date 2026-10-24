@@ -1,12 +1,11 @@
 """Reconcile ended workers from trusted host audit, never from Runner claims."""
 import json
-import io
-from src.execution.host.log_store import read_log
+from src.execution.host.log_store import iter_log_lines
 
 
 def reconcile_audit(store,campaign,lease,file):
     rows=[];contacted=set()
-    for line in io.StringIO(read_log(file).decode('utf-8')):
+    for line in iter_log_lines(file):
         try:row=json.loads(line)
         except json.JSONDecodeError:continue
         if not isinstance(row,dict) or not isinstance(row.get('id'),str):continue

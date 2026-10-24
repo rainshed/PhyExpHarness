@@ -722,7 +722,9 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 新活动的 `campaign_status` 使用 SQLite 一致读取事务，返回 `query-tree-v1` 根清单。根的 `data` 字段可能内嵌值，也可能是 `{format, file}` 引用；按 `file.path` 读取，检查 `file.sha256`，再按节点 `kind` 处理：`object.fields` 逐字段展开，`list.shards` 逐片读取并按 `items[].position` 排序，`value.value` 为原值。旧快照仍可读，重复查询复用内容。原生脚本须依据 `format`/`reading` 遍历；不能假定整个活动仍内嵌在单个 JSON 文件中。写操作仍校验修订。
 
-受管 RPC、网关审计与输出日志每约 8 MiB 关闭一段，gzip 无损压缩并登记在 `<日志名>.segments/index.json`。原日志名是当前尾段，完整日志是有序关闭段加尾段。宿主计量、回放及 `meta_file_read` 已支持完整读取；直接用原生 read/grep/bash 读尾段不会自动包含旧段，应依照段清单逐段解压，或使用宿主 `src/execution/host/log_store.py` / `.mjs` 读取器。证据索引公开段清单、每个压缩段和尾段，`evidence_read` 可解压单个 gzip 证据。原生会话持久文件不轮转。每个受管逻辑日志默认上限 256 MiB，写入还保留至少 64 MiB 空间；达到上限明确报错并保留已经捕获的内容。
+受管 RPC、网关审计与输出日志每约 8 MiB 关闭一段，gzip 无损压缩并登记在 `<日志名>.segments/index.json`。原日志名是当前尾段，完整日志是有序关闭段加尾段。宿主计量、回放及 `meta_file_read` 逐段读取历史，避免一次性展开整份日志；直接用原生 read/grep/bash 读尾段不会自动包含旧段，应依照段清单逐段解压，或使用宿主 `src/execution/host/log_store.py` 的 `iter_log` / `iter_log_lines`、`.mjs` 的 `readLogChunksSync` / `readLogLinesSync`。证据索引公开段清单、每个压缩段和尾段，`evidence_read` 可解压单个 gzip 证据。原生会话持久文件不轮转。RPC、网关审计与 stderr 不设单份逻辑日志的累计 256 MiB 上限；它们受下方活动、全局容量与磁盘水位保护。单次写入最多 256 MiB，大记录独占一段；每次写入保留至少 64 MiB 紧急余量。终端/工具输出捕获器仍保留其显式总额度。
+
+存储故障通过 `storage_capacity`（实际空间保护）、`log_size_limit`（显式输出日志额度）、`log_record_size_limit`（单条记录大小）或 `storage_write_error`（写入错误）保存。Meta 和执行端保留先行故障，退出时产生的 `request_cancelled` 只作为附带诊断，不替代根因。新行为随新冻结运行时生效；仅更新源码或后台不改变旧活动的冻结代码，也不改写既有失败记录。
 
 容量策略保存在数据目录 `storage-policy.json`，用户可在活动页「容量趋势与存储上限」调整常用阈值；完整策略通过带用户凭证的 `GET /storage`、`POST /storage/policy`（也支持 PUT）读取和修改。Meta 凭证不能修改策略。
 
@@ -737,7 +739,7 @@ python3 tests/smoke/references/run.py --execute-real-models \
 | `garbageGraceSeconds` / `cacheAgeSeconds` | 6 / 24 小时 | 无引用对象 / 旧缓存代际的最小保留时间 |
 | `additionalPaths` | `[]` | 另需检查的容器等存储目录，按实际文件系统去重 |
 
-字节字段使用整数；日志的 8/256 MiB 是当前宿主实现常量，不由上述 API 修改。容量不足时阻止新试验、Meta、构建和模型请求；模型请求在现有截止时间内等待，不消耗新的 token 预留。释放空间或调整容量后恢复，不延长墙钟。正在运行的试验与会话占用收尾预留；磁盘跌到紧急水位时后台请求停止，保留部分输出及原因。任意工作区写入尚无操作系统硬配额，极快写入或其他程序占盘仍可能先于巡检耗尽空间。
+字节字段使用整数；日志分段目标、单次写入界限和输出捕获额度属于宿主处理边界，不由上述 API 修改。审计日志累计增长只受总存储策略约束。容量不足时阻止新试验、Meta、构建和模型请求；模型请求在现有截止时间内等待，不消耗新的 token 预留。释放空间或调整容量后恢复，不延长墙钟。正在运行的试验与会话占用收尾预留；磁盘跌到紧急水位时后台请求停止，保留部分输出及原因。任意工作区写入尚无操作系统硬配额，极快写入或其他程序占盘仍可能先于巡检耗尽空间。
 
 后台仅回收宽限期外、无数据库/归档引用且无硬链接视图的对象，以及已过期的对象发布临时文件。依赖/适配缓存只清理非当前代际，且须无活动任务、无进程引用、无文件视图引用并取得构建锁。冻结镜像、当前依赖、会话、研究证据不按年龄或分数删除；无法判断使用状态则跳过。自动整理异常在活动存储面板显示。容器存储监测实际空闲容量，不按镜像累计虚拟大小估算，也不自动执行镜像 prune。
 

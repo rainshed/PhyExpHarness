@@ -106,7 +106,7 @@ def collect(run_dir):
     # Recalculate presentation metrics from the immutable trajectory; never rewrite raw runtime/Harbor results.
     module = Path(__file__).resolve().parents[2] / 'host/usage.mjs'
     external=(runtime.get('reference') or {}).get('harnessRef') in ('codex','claude-code')
-    script = ("import fs from 'node:fs'; const {summarizeWireUsage}=await import(process.argv[1]); const {readLogSync}=await import(new URL('./log_store.mjs',process.argv[1])); console.log(JSON.stringify(summarizeWireUsage(readLogSync(process.argv[2]).toString('utf8').split('\\n').filter(Boolean).map(JSON.parse))));" if external else
+    script = ("import fs from 'node:fs'; const {summarizeWireUsage}=await import(process.argv[1]); const {readLogRecordsSync}=await import(new URL('./log_store.mjs',process.argv[1])); console.log(JSON.stringify(summarizeWireUsage(readLogRecordsSync(process.argv[2]))));" if external else
         "import fs from 'node:fs'; const {summarizeUsage}=await import(process.argv[1]); console.log(JSON.stringify(summarizeUsage(JSON.parse(fs.readFileSync(process.argv[2])))));")
     events = base / 'phyexp/events.json'
     if external and not events.with_name('gateway-audit.jsonl').is_file():

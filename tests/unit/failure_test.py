@@ -6,6 +6,17 @@ from src.execution.host.failure import diagnose, failed_result, public_failure
 from src.evidence.diagnostics import trial_diagnostics
 
 class FailureTests(unittest.TestCase):
+    def test_storage_root_cause_reaches_public_diagnostics_without_becoming_cancellation(self):
+        from src.control.meta_status import meta_status
+        for code in ['storage_capacity','log_size_limit','log_record_size_limit','storage_write_error']:
+            failure={'code':code,'stage':'logging','secondaryCodes':['request_cancelled']}
+            self.write({'status':'error','failureContract':'request-failure-v2','failure':failure})
+            result=diagnose(self.root)
+            self.assertEqual(result['code'],code);self.assertEqual(result['category'],'platform')
+            self.assertEqual(result['secondaryCodes'],['request_cancelled'])
+            status=meta_status([{'id':'session','state':'needs_attention','summary':{'failure':failure}}])
+            self.assertEqual(status['failure']['code'],code)
+
     def test_observed_layers_and_score_impact_do_not_rewrite_original_records(self):
         rows=[{'id':code,'state':'failed','startedAt':1,'finishedAt':2,'score':None,'failure':{'code':code}}
               for code in ['stream_whitespace','model_service_overloaded','control_database_busy','runtime_failed']]

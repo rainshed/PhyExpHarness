@@ -1,6 +1,8 @@
 // Presentation only: never change the activity lifecycle or trigger recovery.
 const labels={draft:'待启动',running:'运行中',paused:'已暂停',closing:'收尾中',finished:'已结束',failed:'失败'};
 const failures={
+ storage_capacity:'存储空间达到保护线',storage_write_error:'日志写入失败，请检查存储状态与文件权限',
+ log_size_limit:'输出日志达到显式容量上限',log_record_size_limit:'单条日志超过可处理大小',
  model_transport_error:'模型连接中断',model_service_overloaded:'模型服务暂时过载',
  request_timeout:'单次模型请求达到时间上限',stream_idle_timeout:'模型连接长时间没有返回数据',
  control_unavailable:'后台运行控制暂时不可用',request_auth_failed:'后台请求凭证验证失败',request_lease_expired:'后台请求凭证已到期或撤销',control_protocol_error:'后台运行控制协议异常',

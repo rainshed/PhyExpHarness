@@ -47,6 +47,9 @@ MESSAGES = {
     'environment_start_interrupted': '容器环境准备被中断',
     'storage_capacity': '存储空间达到保护线，已保留捕获内容并停止生产者',
     'storage_capacity_wait': '正在等待存储空间恢复',
+    'log_size_limit': '输出日志达到显式容量上限，已保留捕获内容',
+    'log_record_size_limit': '单条日志超过可处理大小，已保留此前内容',
+    'storage_write_error': '日志写入失败，请检查存储状态与文件权限',
     'archive_invalid': '结果或归档未通过完整性检查',
     'unknown_failure': '实验未正常完成，具体原因尚未确认',
 }
@@ -63,7 +66,8 @@ def failure_attribution(code):
                 'causeNote':'请求服务或传输异常，不作为模型解题能力的直接证据。'}
     if code in {'startup_failure','verifier_failed','archive_invalid','supervisor_lost_start_not_repeated',
                 'result_collection_failed','container_transport_error','control_database_busy','control_database_error','control_unavailable',
-                'request_auth_failed','request_lease_expired','storage_capacity','storage_capacity_wait'} or code.startswith(('environment_','accounting_')):
+                'request_auth_failed','request_lease_expired','storage_capacity','storage_capacity_wait',
+                'log_size_limit','log_record_size_limit','storage_write_error'} or code.startswith(('environment_','accounting_')):
         return {'category':'platform','categoryLabel':'平台执行或控制',
                 'causeNote':'平台、执行环境或评分流程出现异常。'}
     if code in {'request_timeout','trial_deadline','campaign_deadline','budget_admission_denied','request_cancelled','user_stop'}:

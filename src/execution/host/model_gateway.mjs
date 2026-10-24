@@ -15,6 +15,19 @@ import {ACCESS_CODES} from './model_access.mjs';
 import {TransportDiagnostics} from './transport_diagnostics.mjs';
 const contextOverflow=failure=>failure?.observed?.providerCode==='CONTEXT_WINDOW_EXCEEDED';
 
+// Host storage failures remain authoritative after provider cancellation and
+// repeated final saves. Request-level diagnostics retain all secondary facts.
+export function hostFailureDiagnostics(summary,diagnostics){
+ const host=summary.hostFailure;if(!host)return diagnostics;
+ const model=diagnostics.failure;
+ // An already-terminal model fault can also precede a later cleanup write error.
+ const modelFirst=model&&Date.parse(model.detectedAt)<Date.parse(host.detectedAt);
+ const primary=modelFirst?model:host,secondary=modelFirst?host:model;
+ const secondaryCodes=[...new Set([...(primary.secondaryCodes||[]),...(secondary?.secondaryCodes||[]),
+  ...(secondary&&secondary.code!==primary.code?[secondary.code]:[])])];
+ return {...diagnostics,failureContract:'request-failure-v2',failure:{...primary,...(secondaryCodes.length?{secondaryCodes}:{})}};
+}
+
 // The trusted caller owns route, deadline, accounting and credentials. Runner input owns none of them.
 function bounded(promise,ms){let timer;return Promise.race([promise,new Promise(resolve=>{timer=setTimeout(resolve,ms);})]).finally(()=>clearTimeout(timer));}
 function nextOrAbort(iterator,signal){
@@ -31,7 +44,8 @@ export class ModelGateway {
   this.reserve=reserve;this.settle=settle;this.policy=Object.freeze({...DEFAULT_STREAM_POLICY,...policy});
   this.active=new Map();this.requests=new Map();this.firstFailure=null;this.terminalFailure=null;this.stopped=false;this.redact=redact;
  }
- record(event){appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...event}))+'\n');}
+ record(event){try{appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...event}))+'\n');}
+  catch(error){if(error.hostFailure)this.hostFailure??=error.hostFailure;throw error;}}
  fail(failure){
   this.record({type:'failure',...failure});
   this.firstFailure??=failure;
@@ -43,7 +57,7 @@ export class ModelGateway {
    const file=path.join(path.dirname(this.audit),'failure.json');fs.writeFileSync(file+'.tmp',this.redact(JSON.stringify(failure,null,2))+'\n');fs.renameSync(file+'.tmp',file);
   }
  }
- diagnostics({status,turnEnd}={}){
+ diagnostics({status,turnEnd,hostFailure}={}){
   const error=turnEnd?.error;const request=error?.requestId?this.requests.get(error.requestId):null;
   const last=[...this.requests.values()].at(-1);
   let failure=this.terminalFailure||(turnEnd?.kind==='error'?(request?.failure||
@@ -52,9 +66,9 @@ export class ModelGateway {
   const withTransport=f=>{const transport=this.requests.get(f?.requestId)?.transport;
    return f&&transport?{...f,observed:{...f.observed,transport:transport.snapshot()}}:f;};
   failure=withTransport(failure);
-  return {failureContract:'request-failure-v2',failure:status==='completed'?null:failure,
+  return hostFailureDiagnostics({hostFailure:hostFailure||this.hostFailure},{failureContract:'request-failure-v2',failure:status==='completed'?null:failure,
    requestRecovery:{failedRequests:failures.length,recoveredRequests:failures.filter(r=>r.recoveredBy).length,
-    failures:failures.map(r=>({...withTransport(r.failure),...(r.recoveredBy?{recoveredBy:r.recoveredBy}:{})}))}};
+    failures:failures.map(r=>({...withTransport(r.failure),...(r.recoveredBy?{recoveredBy:r.recoveredBy}:{})}))}});
  }
  persistFinal(summary){
   const value=this.diagnostics(summary);const file=path.join(path.dirname(this.audit),'failure.json');
@@ -62,6 +76,7 @@ export class ModelGateway {
   return value;
  }
  async *stream(request,signal){
+  if(this.hostFailure)throw Object.assign(new Error('Host audit unavailable'),{hostFailure:this.hostFailure});
   // Native compaction omits reasoningEffort. Use the operator's fixed value,
   // rather than rejecting the SDK's summary call or falling back at the provider.
   if(request.purpose==='compaction'&&request.reasoningEffort===undefined)

@@ -6,7 +6,7 @@ export function summarizeUsage(events) {
 // External CLI event schemas are not native assistant/message events. The host
 // gateway records every billable/auxiliary request, including calls hidden by a CLI.
 export function summarizeWireUsage(audit) {
-  const samples=audit.filter(e=>e.type==='settled').map(e=>e.usage);
+  const samples=[];for(const e of audit)if(e.type==='settled')samples.push(e.usage);
   return summarizeSamples(samples.length?samples:[null]);
 }
 function summarizeSamples(samples) {

@@ -33,7 +33,8 @@ OUTPUT_FAILURES = {'invalid_tool_arguments', 'stream_whitespace', 'stream_repeti
 EXTERNAL_FAILURES = {'model_service_overloaded', 'model_transport_error', 'model_response_error', 'model_stream_incomplete',
                      'stream_idle_timeout', 'startup_failure', 'verifier_failed', 'archive_invalid',
                      'supervisor_lost_start_not_repeated', 'result_collection_failed', 'container_transport_error',
-                     'control_database_busy','control_database_error','control_unavailable','request_auth_failed','request_lease_expired'}
+                     'control_database_busy','control_database_error','control_unavailable','request_auth_failed','request_lease_expired',
+                     'log_size_limit','log_record_size_limit','storage_write_error'}
 PENDING = {'reserved', 'queued', 'launching', 'running'}
 
 
@@ -63,6 +64,8 @@ def failure_label(reason):
         'accounting_unavailable':'用量账本异常','accounting_lease_expired':'执行凭证到期或撤销',
         'control_database_busy':'控制数据库繁忙','control_database_error':'控制数据库异常',
         'control_unavailable':'模型访问控制不可用','request_auth_failed':'执行凭证异常','request_lease_expired':'执行凭证到期或撤销',
+        'storage_capacity':'存储空间不足','storage_write_error':'日志写入失败',
+        'log_size_limit':'输出日志容量超限','log_record_size_limit':'单条日志过大',
         'accounting_auth_failed':'执行凭证异常','accounting_protocol_error':'准入接口异常',
         'no_submission':'未提交结果','invalid_submission':'提交无效','request_cancelled':'执行请求取消',
         'invalid_official_result':'官方结果无效'}.get(reason,'结果缺失（原因待查）')

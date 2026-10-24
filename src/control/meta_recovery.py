@@ -2,6 +2,7 @@
 # Host-owned backoff; replacing a frozen Meta plugin does not change this policy.
 DELAYS=(2,5,10,20,30,60)
 NONRECOVERABLE={'model_authentication','model_permission','model_invalid_request','request_cancelled',
+    'log_size_limit','log_record_size_limit','storage_write_error',
     'model_auth_error','model_permission_error','model_invalid_request_error','model_configuration_error',
     'trial_deadline','token_limit','budget_exhausted','budget_admission_denied','admission_denied','integrity_error',
     'accounting_auth_failed','accounting_lease_expired','request_auth_failed','request_lease_expired','control_protocol_error'}

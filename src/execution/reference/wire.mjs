@@ -59,10 +59,12 @@ export function fixedRequest(binding,payload){
 }
 export class WireGateway{
  constructor({binding,budget,deadline,audit,redact=String,fetchImpl=fetch,policy=DEFAULT_STREAM_POLICY}){Object.assign(this,{binding,budget,deadline,audit,redact,fetchImpl,policy});this.active=new Set();this.stopped=false;}
- record(row){appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
+ record(row){try{appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...row}))+'\n');}
+  catch(error){if(error.hostFailure)this.hostFailure??=error.hostFailure;throw error;}}
  fail(code,id,stage,observed={}){const failure={schemaVersion:1,code,requestId:id,stage,source:'reference-model-gateway',detectedAt:new Date().toISOString(),observed};this.failure??=failure;this.record({type:'failure',...failure});}
  abort(){this.stopped=true;for(const ctl of this.active)ctl.abort();}
  async *stream(payload,signal){
+  if(this.hostFailure)throw Object.assign(new Error('Host audit unavailable'),{hostFailure:this.hostFailure});
   if(this.stopped||Date.now()>=this.deadline)throw new Error('Reference deadline reached');
   const {route,body}=fixedRequest(this.binding,payload),id='reference-request-'+crypto.randomUUID();
   const ctl=new AbortController();this.active.add(ctl);

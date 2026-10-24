@@ -1,4 +1,5 @@
-import {readLogSync} from '../host/log_store.mjs';
+import {readLogRecordsSync} from '../host/log_store.mjs';
+import {hostFailureDiagnostics} from '../host/model_gateway.mjs';
 import fs from 'node:fs';
 import {BENCHMARK_STREAM_POLICY} from '../host/stream_guard.mjs';
 import path from 'node:path';
@@ -20,10 +21,12 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
   if(budget.snapshot){
    summary.accounting=budget.snapshot();
    const audit=path.join(logs,'gateway-audit.jsonl');
-   const receipts=fs.existsSync(audit)?readLogSync(audit).toString('utf8').split('\n').filter(Boolean).map(JSON.parse):[];
+   const receipts=fs.existsSync(audit)?readLogRecordsSync(audit):[];
    summary.usage={...summarizeWireUsage(receipts),totalTokens:summary.accounting.confirmedTokens,accounting:'host gateway confirmed tokens; unknown requests reserved separately'};
   }
   summary.failureContract='request-failure-v2';summary.failure=summary.status==='completed'?null:gateway?.failure||null;
+  summary.hostFailure??=session?.failure||gateway?.hostFailure;
+  Object.assign(summary,hostFailureDiagnostics(summary,{failure:summary.failure}));
   summary.toolCalls=events.reduce((n,e)=>n+(e.type==='item.completed'&&e.item?.type==='mcp_tool_call'?1:e.type==='assistant'?e.message?.content?.filter(c=>c.type==='tool_use').length||0:0),0);
   const redact=runtime?.credentials.redact||String;
   fs.writeFileSync(path.join(logs,'runtime-summary.json'),redact(JSON.stringify(summary,null,2)));

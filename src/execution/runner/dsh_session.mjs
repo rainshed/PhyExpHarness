@@ -69,6 +69,9 @@ export class DshSession {
   }
 
   rejectPending(error) {
+    // Capture the trusted host failure before cancelling model/bridge requests.
+    // Their abort receipts describe cleanup, not the reason this Runner stopped.
+    if(error.hostFailure)this.failure??=error.hostFailure;
     for (const waiter of this.pending.values()) {
       clearTimeout(waiter.timer);
       waiter.reject(error);

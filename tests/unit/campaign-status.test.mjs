@@ -5,6 +5,10 @@ import {build} from 'esbuild';
 import {campaignStatus,metaFailureReason} from '../../packages/meta-workbench-studio/client/components/campaign-status.mjs';
 
 const blocked=()=>({id:'meta-old',state:'needs_attention',recovery:{reason:'recovery_exhausted',failure:{code:'model_transport_error',observed:{transport:{errorCode:'ETIMEDOUT'}}}}});
+test('storage failures remain the headline when model cancellation is secondary',()=>{
+ const c={state:'running',metaSessions:[{state:'needs_attention',summary:{failure:{code:'storage_write_error',secondaryCodes:['request_cancelled']}}}]};
+ assert.equal(campaignStatus(c).reason,'日志写入失败，请检查存储状态与文件权限');
+});
 test('active lifecycle does not hide a stopped Meta, including during closeout',()=>{
  for(const state of ['running','closing']){
   const status=campaignStatus({state,metaSessions:[blocked()]});

@@ -29,6 +29,7 @@ const budget=executionAccess(deadline);
 let gateway,session,credentials,provider,checkpoint,watchdog;let terminating=false;
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
+ if(session?.failure)summary.hostFailure??=session.failure;
  if(gateway)Object.assign(summary,['completed','error','cancelled'].includes(summary.status)?gateway.persistFinal(summary):gateway.diagnostics(summary));
  const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
  summary.toolCalls=events.filter(e=>e.type==='tool/call').length;

@@ -122,6 +122,11 @@ class NativeMetaTests(unittest.TestCase):
                 self.assertEqual(decision['state'],'needs_attention')
                 self.assertEqual(decision['reason'],'nonrecoverable')
         self.assertEqual(recovery(summary,5,100,1000,stopped=True)['state'],'needs_attention')
+        # Disk pressure can recover through the existing storage admission gate;
+        # a record/explicit output limit or write-permission error needs a remedy.
+        self.assertEqual(recovery({'failure':{'code':'storage_capacity'}},0,100,1000)['state'],'recovering')
+        for code in ['log_size_limit','log_record_size_limit','storage_write_error','request_cancelled']:
+            self.assertEqual(recovery({'failure':{'code':code}},0,100,1000)['reason'],'nonrecoverable')
         self.assertEqual(self.store.get('campaigns',self.c)['state'],'running')
     def test_native_research_registration_and_accounting_remain_scoped_after_host_replacement(self):
         runtime=self.service.stop_runtime

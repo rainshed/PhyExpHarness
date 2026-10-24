@@ -22,7 +22,8 @@ async function api(route,body){
 const unmetered=config.modelAccessPolicy==='control-only-v1';
 const budget=unmetered?modelAccess({deadline:config.deadline*1000,url:base+'/model-access/'+config.leaseId,token}):budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,url:base+'/accounting/'+config.leaseId,token,purpose:'meta'});
 function save(){
- if(gateway)Object.assign(summary,gateway.diagnostics(summary));summary.cursor=cursor;if(budget.snapshot)summary.accounting=budget.snapshot();
+ if(session?.failure)summary.hostFailure??=session.failure;
+ if(gateway)Object.assign(summary,['completed','error','interrupted'].includes(summary.status)?gateway.persistFinal(summary):gateway.diagnostics(summary));summary.cursor=cursor;if(budget.snapshot)summary.accounting=budget.snapshot();
  const redact=value=>credentials?credentials.redact(value):value;
  // Child events live in their native sessions; keep the main archive unambiguous.
  const events=session?.messages.filter(m=>m.method==='session.event'&&m.params.sessionId===nativeId).map(m=>m.params.event)||[];
@@ -65,7 +66,7 @@ try{
   await new Promise(resolve=>setTimeout(resolve,1000));
  }
  await session.shutdown();
-}catch(error){summary.status='error';summary.error=credentials?credentials.redact(String(error.stack||error)):String(error);summary.failure=gateway?.firstFailure;process.exitCode=1;}
+}catch(error){summary.status='error';summary.error=credentials?credentials.redact(String(error.stack||error)):String(error);summary.hostFailure??=error.hostFailure;process.exitCode=1;}
 finally{
  clearInterval(timer);clearTimeout(watchdog);summary.finishedAt=new Date().toISOString();save();
  await host?.dispose();await provider?.dispose();credentials?.dispose();save();

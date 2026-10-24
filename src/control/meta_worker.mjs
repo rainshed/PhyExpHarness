@@ -31,6 +31,7 @@ const budget=unmetered?modelAccess({deadline:config.deadline*1000,url:base+'/mod
  url:base+'/accounting/'+config.leaseId,token,purpose:'meta'});
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
+ if(session?.failure)summary.hostFailure??=session.failure;
  if(gateway)Object.assign(summary,['completed','error','interrupted'].includes(summary.status)?gateway.persistFinal(summary):gateway.diagnostics(summary));
  const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
  if(!unmetered)summary.usage=summarizeUsage(events);if(budget.snapshot)summary.accounting=budget.snapshot();summary.cursor=cursor;
