@@ -66,3 +66,12 @@ test('reading vocabulary translates known technical terms without inventing or t
  const text='失败仍然保留；nullable 是标识；H1 为 1/2，净收益未知。';
  assert.equal(readableText(text),text);assert.equal(readableText(null),null);
 });
+
+test('whole candidate variations are separate from fixed process experiment conditions',()=>{
+ const c=campaign();c.config.tasks=['a'];
+ for(const t of c.trials){t.comparisonContext={taskSourcesDigest:'s',taskImageIds:['main','qsim'],verifierImageId:'verifier',runContract:'harbor-process-v1',adapter:{digest:'adapter'},brokerImageId:'broker',resources:{cpus:2},solver:{model:'fixed'}};
+  t.effectiveConditions={timePolicy:'benchmark-time-v1',benchmarkTime:{solverTimeSeconds:1800},actualTimeSeconds:t.candidateId==='h0'?200:900};}
+ withTrials(c);assert.equal(comparison(c,'h1','h0').state,'same');
+ c.trials[1].comparisonContext.solver={model:'other'};assert.equal(comparison(c,'h1','h0').state,'different');
+ delete c.trials[1].comparisonContext.adapter;assert.notEqual(comparison(c,'h1','h0').state,'same');
+});

@@ -1,5 +1,7 @@
 # 执行插件开发参考
 
+新活动的完整工程入口是 [完整工程开发](process-harness.md)，资料 ID `guides/process-harness.md`。以下 DSH 教程对应默认模板的锁定版本；旧固定 Runner 的约束不能用于限制新工程。
+
 来源：DeepSeek Harness 官方教程与已安装包的说明、类型声明，以及本项目的执行插件约定。适用版本：`0.2.1-rc.2`，目标 profile：本项目隔离执行的 `sdk-minimal`。这是开发参考，不规定改进策略。
 
 | 资料 | 内容 | `sdk_read` 的 `id` |

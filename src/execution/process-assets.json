@@ -13,7 +13,7 @@
   "run.py": "templates/standalone/run.py",
   "requirements.txt": "templates/standalone/requirements.txt",
   "requirements.lock": "templates/standalone/requirements.lock",
-  "README.md": "templates/standalone/README.md",
+  "README.md": "templates/standalone/process-README.md",
   "src/execution/process/binding.py": "src/execution/process/binding.py",
   "src/execution/process/broker.mjs": "src/execution/process/broker.mjs",
   "src/execution/adapters/quantum_harbor/process_agent.py": "src/execution/adapters/quantum_harbor/process_agent.py"

@@ -163,7 +163,7 @@ def validate_config(config,model_config=None):
     if config['maxTrials'] is not None and config['concurrency']>config['maxTrials']:raise Refused('Concurrency exceeds Trial limit')
     if not config.get('tasks') or len(set(config['tasks']))!=len(config['tasks']) or any(t not in PUBLIC_TASKS for t in config['tasks']):
         raise Refused('Only registered public development tasks are available')
-    if config['maxTrials'] is not None and len(config['tasks'])>config['maxTrials']:raise Refused('Trial limit cannot cover the baseline task set')
+    if config.get('executionContract')!='harbor-process-v1' and config['maxTrials'] is not None and len(config['tasks'])>config['maxTrials']:raise Refused('Trial limit cannot cover the baseline task set')
     for role in ['solver','meta']:
         model=config.get(role,{})
         if not supported_model(model,model_config):

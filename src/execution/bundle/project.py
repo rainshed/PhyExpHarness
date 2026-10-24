@@ -132,7 +132,7 @@ def freeze_project(source_root, store, directory, recipe, cache, log, resources,
     recipe_bytes = canonical(recipe) + b'\n'
     identity = {'schemaVersion': 3, 'kind': VERSION, 'infrastructureVersion': CONTRACT,
                 'sources': source_ref, 'artifact': built_ref, 'adapter': adapter_ref, 'project': spec,
-                'buildReceipt': receipt, 'plugins': spec.get('plugins', []),
+                'buildReceipt': receipt, 'plugins': [{'name':p.get('name','component-'+str(i)), 'version':p.get('version','unversioned'), **p} for i,p in enumerate(spec.get('plugins', []))],
                 'framework': spec.get('framework'), 'profileDigest': digest(canonical(spec.get('profile'))),
                 'agentEntry': 'src.execution.adapters.quantum_harbor.process_agent:ProcessHarborAgent',
                 'recipeDigest': digest(recipe_bytes)}

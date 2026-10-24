@@ -49,7 +49,7 @@ class MaterialTests(unittest.TestCase):
         config=self.store.get('campaigns',self.c)['config']
         self.assertEqual(config['executionTimePolicy']['version'],'benchmark-time-v1')
         frozen=json.loads((self.service.data/'meta-compositions'/config['metaComposition']['id']/'manifest.json').read_text())
-        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v10')
+        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v11')
         self.assertEqual(config['stopPolicy'],'goal-or-budget-v1')
         self.assertNotIn('benchmark 原始配置',frozen['systemPrompt']['text'])
         self.assertNotIn('trial_conditions_accept',frozen['systemPrompt']['text'])

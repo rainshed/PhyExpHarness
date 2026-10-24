@@ -206,14 +206,15 @@ def asset_path(root, relative):
 def read_plugins(root, relative):
     """Read the virtual plugin tree without creating a candidate checkout."""
     bundle = resolve(root)
-    prefix = 'plugins/' if relative in ('', '.') else 'plugins/' + safe_relative(relative).as_posix()
+    base = 'candidate/' if bundle.manifest.get('schemaVersion')==3 else 'plugins/'
+    prefix = base if relative in ('', '.') else base + safe_relative(relative).as_posix()
     if prefix in bundle.assets:
         file = bundle.asset(prefix)
-        if file.stat().st_size > 2_000_000:
+        if bundle.manifest.get('schemaVersion')!=3 and file.stat().st_size > 2_000_000:
             raise ValueError('Plugin file too large')
         return {'path': relative, 'content': file.read_text()}
     prefix = prefix.rstrip('/') + '/'
-    files = [p[len('plugins/'):] for p in bundle.assets if p.startswith(prefix)]
+    files = [p[len(base):] for p in bundle.assets if p.startswith(prefix)]
     if not files:
         raise ValueError('Frozen plugin path unavailable')
     return {'path': relative, 'files': files}

@@ -3,9 +3,12 @@ import {date,duration} from './common';
 import {trialStage,trialTiming,waitingReason,activityProgress} from './trial-status.mjs';
 
 export function TrialStatus({trial:t,campaign:c={}}:any) {
+ const execution=t.execution||t.summary?.execution,official=t.officialResult||t.summary?.officialResult,evidence=t.evidenceStatus||t.summary?.evidenceStatus;
+ const executionLabels:any={completed:'正常结束',nonzero_exit:'异常退出',timed_out:'达到任务时限',cancelled:'已取消',user_stop:'用户停止',error:'执行失败',unknown:'状态未确认'};
  const stage=trialStage(t),timing=trialTiming(t,c),reason=waitingReason(t,c);
  return <div className="mh-trial-status"><strong className={'mh-phase '+stage.key}>{c.historical?'当时 · ':''}{stage.label}</strong>
  <div className="mh-trial-time">{t.taskAssessment?.category==='not_started'?'未启动，无执行耗时':timing.seconds==null?(stage.key==='queued'?'排队起点未记录':'耗时未完整记录'):`${timing.label} ${duration(timing.seconds)}`}{timing.start!=null&&<small>{stage.key==='queued'?'本轮受理于 ':'启动于 '}{date(timing.start)}</small>}</div>
+ {official&&<p>官方评分：{official.status==='available'?String(t.score??t.summary?.officialReward):'尚无可信评分'}；执行：{executionLabels[execution?.status]||execution?.status||'状态未确认'}{execution?.exitCode!=null?'（退出码 '+execution.exitCode+'）':''}；证据：{evidence?.status==='complete'?'完整':'部分缺失'}</p>}
  {reason&&<p className="mh-wait-reason">{c.historical?'当时等待原因：':'等待原因：'}{reason}</p>}</div>;
 }
 export function SnapshotNotice({campaign:c,recordedAt}:any) {

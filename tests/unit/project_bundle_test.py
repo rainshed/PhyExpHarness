@@ -64,3 +64,19 @@ class ProjectTests(unittest.TestCase):
         frozen = self.frozen(); artifact = resolve(frozen['path']).asset('candidate.tar')
         artifact.chmod(0o644); artifact.write_bytes(b'changed')
         with self.assertRaises(ValueError): resolve(frozen['path'])
+
+    def test_export_is_self_contained_and_reports_whole_project_changes(self):
+        from src.exporting.validate import relocate
+        from src.execution.bundle.manifest import read_plugins
+        from src.reporting.tables import plugin_changes
+        a=self.frozen();record=export_project(a['path'],self.root/'exports')
+        self.assertEqual(record['exporter']['format'],'harness-project-v3')
+        import shutil
+        shutil.rmtree(self.root/'objects');shutil.rmtree(self.source)
+        proof=relocate(record,self.root/'relocated')
+        self.assertEqual(proof['bundleId'],a['id'])
+        self.assertEqual(proof['modelCalls'],0)
+        self.assertIn('harness.json',read_plugins(record['path'],'.')['files'])
+        old={'bundleId':'a','plugins':[], 'executionContract':'harbor-process-v1','project':{'framework':'a'},'candidateSources':'a'}
+        new={**old,'bundleId':'b','project':{'framework':'b'},'candidateSources':'b'}
+        self.assertEqual([x['kind'] for x in plugin_changes(old,new)],['project','sources'])

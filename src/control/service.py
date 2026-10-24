@@ -144,11 +144,13 @@ class ControlService:
             config=dict(config)
             original=json.loads(replay['payload']) if replay else {}
             if not replay:
+                config['executionContract']='harbor-process-v1'
                 if config.get('modelAccessPolicy',MODEL_ACCESS_POLICY)!=MODEL_ACCESS_POLICY:raise Refused('New activities require control-only model access')
                 check_config(config)
                 config['modelAccessPolicy']=MODEL_ACCESS_POLICY
             elif original.get('modelAccessPolicy'):
                 config['modelAccessPolicy']=original['modelAccessPolicy']
+                if original.get('executionContract'):config['executionContract']=original['executionContract']
             if not replay:
                 if config.get('resourcePolicy',planning.POLICY)!=planning.POLICY:
                     raise Refused('New activities require benchmark resource planning')
@@ -261,6 +263,8 @@ class ControlService:
         baseline=candidates[0] if candidates else {}
         if not baseline or not (Path(baseline['bundlePath'])/'bundle.json').is_file():return None
         resolved=resolve_bundle(baseline['bundlePath'])
+        if resolved.manifest.get('schemaVersion')==3:
+            return {'version':'harbor-process-v1','strategyOwner':'candidate','modelChannel':'HTTP/SSE; fixed Solver and original deadline; no semantic guard or automatic retry','resources':self.store.get('campaigns',campaign)['config']['executionResources']}
         policy=resolved.assets.get('src/execution/host/stream-policy.json')
         result=json.loads(policy.read_text()) if policy else None
         if result and benchmark_time(self.store.get('campaigns',campaign)['config']):
@@ -430,7 +434,8 @@ class ControlService:
             failure=summary.get('failure'),scoringStatus=summary.get('scoringStatus','completed' if summary.get('officialReward') is not None else 'unknown'),
             usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),
             stopReason=summary.get('stopReason') if summary.get('resultCollection') else trial.get('stopReason') or summary.get('stopReason'),summary=summary,
-            resultCollection=summary.get('resultCollection'))
+            resultCollection=summary.get('resultCollection'),
+            **{k:summary[k] for k in ('execution','officialResult','evidenceStatus','comparison') if k in summary})
         provenance_path=output/'provenance.json'
         if provenance_path.exists():
             provenance=json.loads(provenance_path.read_text())
@@ -439,6 +444,11 @@ class ControlService:
                 images.extend(sorted(line.split(' ',1)[1] for line in file.read_text().splitlines() if ' ' in line))
             changes['comparisonContext']={'taskSourcesDigest':hashlib.sha256(encoded(provenance.get('quantumHarbor',{}).get('sourceHashes')).encode()).hexdigest(),
                 'runnerImageId':provenance.get('runnerImageId'),'taskImageIds':images}
+            if summary.get('resultContract')=='official-result-v3':
+                selected=verify(self.store.get('candidates',trial['candidateId'])['bundlePath'])
+                changes['comparisonContext'].update(runContract=provenance.get('runContract'),adapter=selected['adapter'],
+                    brokerImageId=provenance.get('brokerImageId'),resources=provenance.get('processResources'),
+                    solver={k:provenance.get('recipe',{}).get(k) for k in ('provider','model','reasoningEffort','maxTokens','providerConfig')})
             if trial.get('effectiveConditions'):
                 changes['comparisonContext']['executionConditions']={k:trial['effectiveConditions'].get(k) for k in ('trialTimeSeconds','actualTimeSeconds','frozenTrialCeilingSeconds')}
                 if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
@@ -549,7 +559,7 @@ class ControlService:
                         try:self._reconcile_trial(trial)
                         except Exception as error:self.store.trial_update(trial['id'],lastCollectionError=str(error))
                 c=self.store.status(id);cfg=c['config'];now=time.time()
-                if c['state']=='running' and not self.store.list('batches',id) and (not planning.enabled(cfg) or c.get('resourcePlan')):
+                if cfg.get('executionContract')!='harbor-process-v1' and c['state']=='running' and not self.store.list('batches',id) and (not planning.enabled(cfg) or c.get('resourcePlan')):
                     h0=next((x for x in self.store.list('candidates',id) if not x['plugins'] and x['check']['status']=='passed'),None)
                     if h0:
                         try:self.store.submit(id,h0['id'],cfg['tasks'],1,'system-baseline')

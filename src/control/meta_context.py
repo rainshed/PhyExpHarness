@@ -85,5 +85,5 @@ def startup_context(service, campaign):
                           'kinds': ['activity', 'task', 'sdk', 'version', 'plugin', 'experiment', 'evidence', 'analysis', 'guide'],
                           'entryPoints': ['activity:current', 'guide:interface', 'guide:reporting'],
                           'source': '仅当前活动允许材料；目录和全文均可按需查询'},
-            'workspace': {'source': '平台执行边界', 'paths': '插件工作区相对路径', 'execution': '隔离检查 Runner'},
+            'workspace': {'source': '平台执行边界', 'paths': '完整工程位于 /work/plugins' if config.get('executionContract')=='harbor-process-v1' else '插件工作区相对路径', 'execution': '隔离构建；任务 main 内执行' if config.get('executionContract')=='harbor-process-v1' else '隔离检查 Runner'},
             'resumption': {'newSession': True, 'history': '历史分析从 materials 查询'}}

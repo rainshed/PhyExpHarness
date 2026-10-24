@@ -83,6 +83,12 @@ def plugin_changes(previous, current):
     if before != after:
         changes.append({'kind': 'reordered', 'label': '调整共有插件加载顺序：' + ' → '.join(before) + ' ⇒ ' + ' → '.join(after),
                         'pluginKeys': [plugin_key(new[name]) for name in after]})
+    if current.get('executionContract')=='harbor-process-v1' or previous.get('executionContract')=='harbor-process-v1':
+        diffs=config_changes(previous.get('project'),current.get('project'))
+        if diffs:changes.append({'kind':'project','label':'调整完整工程清单与策略配置','pluginKeys':[],'configChanges':diffs})
+        if previous.get('candidateSources')!=current.get('candidateSources'):
+            changes.append({'kind':'sources','label':'候选工程源码已变化','pluginKeys':[],
+                'before':previous.get('candidateSources'),'after':current.get('candidateSources')})
     if not changes:
         same = previous['bundleId'] == current['bundleId']
         changes.append({'kind': 'unchanged' if same else 'other', 'label': '无变化，复测同一执行版本' if same else '插件无变化；其他冻结执行内容不同', 'pluginKeys': []})
@@ -129,7 +135,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         parent = c.get('parentId')
         version_rows.append({'id': c['id'], 'label': labels[c['id']], 'description': c.get('description', ''),
             'displayName': labels[c['id']]+' · '+(c.get('displayName') or ('原始基线' if not members else '、'.join(plugin_rows[m['pluginId']]['displayName'] for m in members)+'版')),
-            'bundleId': c['bundleId'], 'parentId': parent, 'parentLabel': labels.get(parent), 'plugins': members,
+            'bundleId': c['bundleId'], 'project':c.get('project'), 'executionContract':c.get('executionContract'), 'parentId': parent, 'parentLabel': labels.get(parent), 'plugins': members,
             'final': c['id'] == campaign.get('finalCandidateId'), 'retained': c['id'] == campaign.get('retainedCandidateId'),
             'assemblyStatus': c.get('check', {}).get('status', 'unknown'),
             'taskEvaluation':outcome_summary([t for t in trials if t['candidateId']==c['id'] and (not batch_id or t['batchId'] in {b['id'] for b in batches})],campaign.get('config',{}).get('tasks'),campaign.get('config'))})
@@ -140,7 +146,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         previous_candidate = lookup.get(previous['candidateId']) if previous else None
         changes = plugin_changes(previous_candidate, selected) if previous else [
             {'kind': 'initial', 'label': '首轮，无上一轮比较对象', 'pluginKeys': []}]
-        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings']}
+        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings', 'execution', 'officialResult', 'evidenceStatus', 'comparison']}
                    for t in trials if t['batchId'] == b['id']]
         round_rows.append({'id': b['id'], 'round': b['round'], 'candidateId': b['candidateId'],
             'versionName': names.get(b['candidateId'],'版本缺失'), 'testSettings':b.get('testSettings'),

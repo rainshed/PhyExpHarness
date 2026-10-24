@@ -145,6 +145,7 @@ class ProcessHarborAgent(BaseAgent):
                     except asyncio.TimeoutError: process.kill();await process.wait()
                 self.save('runtime-summary.json',runtime)
                 # Candidate diagnostics are optional, and cannot veto verification.
+                (self.logs/'candidate-output').mkdir(exist_ok=True)
                 copied=await docker('cp',self.main+':/tmp/phyexp-output/.',str(self.logs/'candidate-output'),check=False)
                 events=self.logs/'candidate-output/events.json'
                 if events.is_file(): (self.logs/'events.json').write_bytes(events.read_bytes())

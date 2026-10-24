@@ -155,7 +155,10 @@ class MetaAPI:
             a,b=[resolve_bundle(self._candidate(campaign,args[k])['bundlePath']) for k in ['left','right']]
             keys=sorted(set(a.manifest['files'])|set(b.manifest['files']))
             return {'left':args['left'],'right':args['right'],'files':[{'path':k,'before':a.manifest['files'].get(k),'after':b.manifest['files'].get(k)} for k in keys if a.manifest['files'].get(k)!=b.manifest['files'].get(k)],
-                'beforePlugins':a.manifest.get('plugins',[]),'afterPlugins':b.manifest.get('plugins',[])}
+                'beforePlugins':a.manifest.get('plugins',[]),'afterPlugins':b.manifest.get('plugins',[]),
+                'beforeProject':a.manifest.get('project'),'afterProject':b.manifest.get('project'),
+                'beforePlatform':{k:a.manifest.get(k) for k in ('infrastructureVersion','adapter')},
+                'afterPlatform':{k:b.manifest.get(k) for k in ('infrastructureVersion','adapter')}}
         if op=='batch_status':
             batch=self.store.get('batches',args['batchId'])
             if batch['campaignId']!=campaign:raise Refused('Batch unavailable')

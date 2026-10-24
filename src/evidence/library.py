@@ -77,7 +77,7 @@ class EvidenceLibrary:
         """
         root=Path(trial['output']).resolve();files={}
         for pattern in ['summary.json','*.log','failure*.json','harbor/*/phyexp/*.json',
-                        'harbor/*/phyexp/*.jsonl','harbor/*/phyexp/*.log','harbor/*/phyexp/*.segments/**/*',
+                        'harbor/*/phyexp/*.jsonl','harbor/*/phyexp/candidate.stdout','harbor/*/phyexp/candidate.stderr','harbor/*/phyexp/candidate-output/**/*','harbor/*/phyexp/*.log','harbor/*/phyexp/*.segments/**/*',
                         'harbor/*/verifier/*.txt','harbor/*/verifier/*.log',
                         'harbor/*/verifier/artifacts/**/*','harbor/*/agent/*.txt','harbor/*/result.json']:
             for file in root.glob(pattern):

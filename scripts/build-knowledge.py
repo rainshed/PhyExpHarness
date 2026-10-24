@@ -14,7 +14,7 @@ SOURCES={
  'cordis':'@deepseek-ai/cordis/src/context.ts',
 }
 API={'agent/request-error':'agent-runtime','ctx.systemPrompt.context':'system-prompt','ctx.systemPrompt.section':'system-prompt','ctx.tools.register':'tools','tools/pre-execute':'tools','tools/post-execute':'tools','tools/result':'tools','LlmAdapter':'llm','ctx.llm.registerAdapter':'llm','ctx.llm.stream':'llm'}
-GUIDES=('README.md','plugin-design.md','tools.md','subagents.md','request-recovery.md','resource-planning.md')
+GUIDES=('README.md','process-harness.md','plugin-design.md','tools.md','subagents.md','request-recovery.md','resource-planning.md')
 def build(destination):
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     docs={}

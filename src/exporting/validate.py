@@ -14,6 +14,20 @@ def relocate(record,destination):
         z.extractall(destination)
     project=destination/'harness';bundle=verify(project)
     if bundle['id']!=record['bundleId']:raise ValueError('Export identity mismatch')
+    if bundle.get('schemaVersion')==3:
+        # Standard-library verification imports only the relocated trusted adapter.
+        # Candidate dependencies are already inside the frozen build artifact.
+        import sys, os
+        environment={k:v for k,v in os.environ.items() if k not in ('PYTHONPATH','PYTHONHOME')}
+        result=subprocess.run([sys.executable,str(project/'run.py'),'--verify'],cwd=destination,env=environment,
+            capture_output=True,text=True,check=True,timeout=60)
+        verified=json.loads(result.stdout)
+        if verified['bundleId']!=bundle['id']:raise ValueError('Relocated adapter identity differs')
+        proof={'status':'passed','exportId':record['id'],'bundleId':bundle['id'],'archiveSha256':record['archiveSha256'],
+            'relocationValidation':'passed','validationScope':'relocated adapter and frozen artifact integrity',
+            'realValidation':'not_run','modelCalls':0,'originalRepositoryMounted':False}
+        file=destination/'validation.json';file.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n')
+        return {**proof,'evidence':str(file)}
     with (destination/'installation.log').open('w') as log:
         subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=project,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
         subprocess.run(['node','install-runner.mjs'],cwd=project,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=300)

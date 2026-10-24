@@ -2,6 +2,10 @@
 
 本目录只提交资料源文件与技术样例。`reference/` 为本地生成目录：在仓库根目录执行 `npm ci` 后运行 `npm run build:knowledge`（完整构建为 `npm run build`）。生成所需的 SDK 依赖由根锁文件固定；生成器记录来源、版本与摘要，不读取活动数据库或实验结果。
 
+新活动使用 **harbor-process-v1 完整工程**，首先阅读 [完整工程开发](guides/process-harness.md)。Meta 可以修改框架、依赖、profile、工具、会话和恢复；此资料包是默认模板所用 DSH 的接口参考，不是平台准入白名单。
+
+下面的固定扩展面说明只适用于旧 v1/v2 活动；历史活动按冻结版本读取：
+
 目标：DeepSeek Harness 0.2.1-rc.2，sdk-minimal，隔离执行扩展面 v2。`reference/manifest.json` 给出来源、版本、内容摘要和 profile 指纹；不与开发机上的 UI 服务等同。
 
 按需教程见[插件开发索引](guides/README.md)，可用 `sdk_read` 读取 `guides/README.md`；包括插件设计、完整工具示例和子代理参考。
