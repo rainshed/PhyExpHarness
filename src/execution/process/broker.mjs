@@ -37,7 +37,8 @@ export function fixedRequest(binding, url, body) {
 export async function serve({binding,token,deadline,requestBytes,port=0,host='127.0.0.1',audit,fetchImpl=fetch}) {
  if(!Number.isFinite(deadline)||!Number.isSafeInteger(requestBytes)||requestBytes<1)throw new Error('Explicit deadline and request capacity required');
  const active=new Set();let revoked=false;
- const record=row=>{if(audit)fs.appendFileSync(audit,JSON.stringify({time:new Date().toISOString(),...row})+'\n');};
+ const record=row=>{if(audit){try{fs.appendFileSync(audit,JSON.stringify({time:new Date().toISOString(),...row})+'\n');}
+  catch(error){throw Object.assign(new Error('Model channel audit failed: '+(error.code||error.name)),{status:507,code:error.code});}}};
  const server=http.createServer(async(req,res)=>{
   const id=crypto.randomUUID(),ctl=new AbortController();active.add(ctl);
   res.on('close',()=>{if(!res.writableEnded)ctl.abort();});
@@ -72,7 +73,9 @@ export async function serve({binding,token,deadline,requestBytes,port=0,host='12
    }
    res.end();record({type:'end',id});
   }catch(error){
-   record({type:'error',id,code:error.code||error.name,message:error.message});
+   ctl.abort();
+   try{record({type:'error',id,code:error.code||error.name,message:error.message});}
+   catch{process.stderr.write(JSON.stringify({stage:'model-channel-audit',code:error.code,message:error.message})+'\n');}
    if(!res.headersSent){res.writeHead(error.status||502,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:error.message}}));}
    else res.destroy(error);
   }finally{active.delete(ctl);}

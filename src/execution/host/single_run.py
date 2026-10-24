@@ -76,7 +76,9 @@ def cleanup(output):
             subprocess.run(['docker', 'rm', '-f', identity[name]], capture_output=True)
         subprocess.run(['docker', 'network', 'rm', identity['network']], capture_output=True)
     # Recover the small crash window between internal-network creation and identity-file persistence.
-    owned=subprocess.run(['docker','network','ls','-q','--filter','label=phyexp.launch='+Path(output).name],capture_output=True,text=True)
+    provenance=Path(output)/'provenance.json'
+    owner=json.loads(provenance.read_text()).get('launchId',Path(output).name) if provenance.exists() else Path(output).name
+    owned=subprocess.run(['docker','network','ls','-q','--filter','label=phyexp.launch='+owner],capture_output=True,text=True)
     for network in owned.stdout.split():
         details=subprocess.run(['docker','network','inspect',network],capture_output=True,text=True)
         if details.returncode==0:
@@ -111,7 +113,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         stopped['reason'] = 'user_stop'
     previous = signal.signal(signal.SIGTERM, stop)
     provenance = {'schemaVersion':1, 'startedAt':now(), 'bundleId':bundle['id'], 'bundleRoot':str(bundle_root),
-        'recipe':recipe, 'deadline':deadline, 'task':task_name, **({'softTokenLimit':soft_token_limit} if os.environ.get('PHYEXP_ACCOUNTING_URL') else {'modelAccessPolicy':'control-only-v1'}),
+        'recipe':recipe, 'deadline':deadline, 'task':task_name,
+        **({'launchId':os.environ.get('PHYEXP_LAUNCH_ID') or 'standalone-'+hashlib.sha256(str(output).encode()).hexdigest()} if process_contract else {}), **({'softTokenLimit':soft_token_limit} if os.environ.get('PHYEXP_ACCOUNTING_URL') else {'modelAccessPolicy':'control-only-v1'}),
         **({'benchmarkTime':timing} if benchmark else {'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS}),
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
     if os.environ.get('PHYEXP_REFERENCE_SPEC'):
@@ -157,7 +160,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         env = dict(provider_environment(), PYTHONPATH=str(runtime_root), PHYEXP_PYTHON=sys.executable, PHYEXP_RUN_TOKEN_LIMIT=str(soft_token_limit or ''))
         # Disallow a parent checkout from winning module resolution.
         env['PYTHONNOUSERSITE'] = '1'
-        if process_contract: env['PHYEXP_LAUNCH_ID'] = os.environ.get('PHYEXP_LAUNCH_ID',output.name)
+        if process_contract: env['PHYEXP_LAUNCH_ID'] = provenance['launchId']
         env['PHYEXP_RUNNER_IMAGE_ID'] = image
         harbor = shutil.which('harbor')
         if not harbor:
