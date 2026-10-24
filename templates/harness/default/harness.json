@@ -1,0 +1,51 @@
+{
+  "runContract": "harbor-process-v1",
+  "framework": {
+    "package": "@deepseek-ai/dsh-sdk-minimal",
+    "version": "0.2.1-rc.2"
+  },
+  "profile": "profile.yml",
+  "entrypoint": [
+    "runtime/node",
+    "/opt/harness/run.mjs"
+  ],
+  "plugins": [],
+  "build": {
+    "image": "node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f",
+    "argv": [
+      "/bin/sh",
+      "-c",
+      "mkdir -p runtime && cp \"$(command -v node)\" runtime/node && npm ci --no-audit --no-fund"
+    ],
+    "locks": [
+      "package-lock.json"
+    ]
+  },
+  "runtimeConfig": {
+    "contextWindow": 200000,
+    "maxTokens": 8192,
+    "sessions": 1,
+    "plugins": [],
+    "patches": [],
+    "recovery": {
+      "version": "solver-request-recovery-v2",
+      "retryDelaysSeconds": [
+        2,
+        5,
+        20,
+        30,
+        60
+      ],
+      "strategies": [
+        "transient-recovery",
+        "response-recovery",
+        "tool-argument-recovery"
+      ],
+      "contentRetryDelaysSeconds": [
+        0,
+        1
+      ],
+      "maxChainRetries": 5
+    }
+  }
+}

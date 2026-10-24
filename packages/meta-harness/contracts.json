@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v8",
+  "version": "meta-tools-v9",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -123,16 +123,31 @@
           "idempotencyKey": {
             "type": "string",
             "description": "Stable identity for this write. Reuse the same key and arguments after an unknown outcome; reconcile campaign_status requests before creating another write."
+          },
+          "projectPath": {
+            "type": "string",
+            "description": "Complete Harness project directory under /work/plugins, containing harness.json. Entry, dependencies, profile and strategies are candidate-owned."
           }
         },
         "required": [
-          "plugins",
           "idempotencyKey"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "projectPath"
+            ]
+          },
+          {
+            "required": [
+              "plugins"
+            ]
+          }
+        ]
       },
       "write": true,
-      "description": "Check plugin assembly in an isolated Solver environment; does not create a candidate or Trial."
+      "description": "Build and check a complete Harness project. projectPath uses the same operation as legacy plugin selection. Build failures return files. Does not launch a Trial."
     },
     "candidate_freeze": {
       "plugin": "experiments",
@@ -194,18 +209,32 @@
               "additionalProperties": false
             },
             "maxItems": 100
+          },
+          "projectPath": {
+            "type": "string",
+            "description": "Complete Harness project directory under /work/plugins, containing harness.json. Entry, dependencies, profile and strategies are candidate-owned."
           }
         },
         "required": [
-          "plugins",
           "description",
-          "idempotencyKey",
-          "researchRefs"
+          "idempotencyKey"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "projectPath"
+            ]
+          },
+          {
+            "required": [
+              "plugins"
+            ]
+          }
+        ]
       },
       "write": true,
-      "description": "Check and freeze an execution plugin combination from paths relative to /work/plugins. Link exact researchRefs for development/adoption reasons; use the version-matched plugin-manifest SDK document for plugin metadata."
+      "description": "Build and freeze a complete Harness project. projectPath uses the same operation as legacy plugin selection. Build failures return files. Does not launch a Trial."
     },
     "candidate_list": {
       "plugin": "experiments",

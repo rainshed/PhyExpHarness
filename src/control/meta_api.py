@@ -29,7 +29,7 @@ class MetaAPI:
         self.service=service;self.store=service.store;self.files=FileViews(service)
         self.contract=CONTRACTS['meta-tools-v2'];self.lock=threading.RLock();self.receipts=Receipts(self)
     def call(self,campaign,operation,args):
-        if version(self.service,campaign) not in ('meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8'):return self._dispatch(campaign,operation,args)
+        if version(self.service,campaign) not in ('meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9'):return self._dispatch(campaign,operation,args)
         from .meta_tool_boundary import ToolBoundary
         from .meta_receipts import receipt
         boundary=ToolBoundary(self)
@@ -52,7 +52,7 @@ class MetaAPI:
             validate(args,spec['input'])
             from .meta_receipts import public
             return public(self.service.references.call(campaign,operation,args))
-        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8')
+        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9')
         spec=CONTRACTS[protocol].get(operation)
         if not spec:raise Refused('Unknown Meta v2 operation')
         # The review grant is attached by the outside host, never part of the model schema.
@@ -174,8 +174,8 @@ class MetaAPI:
             return {'evaluation':evaluation(trials,tasks,candidates,c['config']),'attempts':trials,'evidenceIndex':'/evidence/index.json'}
         if op=='candidate_check':
             if c['state']!='running' or c['explorationClosed']:raise Refused('Search writes closed')
-            plugins=[{**p,'path':p['path'].removeprefix('/work/plugins/')} for p in args['plugins']]
-            return service._operation(campaign,'candidate_check',args,lambda:service.build_candidate(campaign,plugins,'Development assembly check',check_only=True))
+            plugins=[{**p,'path':p['path'].removeprefix('/work/plugins/')} for p in args.get('plugins',[])]
+            return service._operation(campaign,'candidate_check',args,lambda:service.build_candidate(campaign,plugins,'Development assembly check',check_only=True,project_path=args.get('projectPath')))
         if op=='report_get_facts':
             facts=service.reports.facts(campaign,args.get('batchId'));id=hashlib.sha256(encoded(facts).encode()).hexdigest()
             atomic_json(service.data/'campaigns'/campaign/'report-facts'/(id+'.json'),{'facts':facts,'batchId':args.get('batchId')})
@@ -213,7 +213,7 @@ class MetaAPI:
             revision=len(self.store.list('selection_decisions',campaign))
             if revision!=args['expectedSelectionRevision']:raise Conflict('Selection revision changed')
         if op=='candidate_freeze':
-            args={**args,'plugins':[{**p,'path':p['path'].removeprefix('/work/plugins/')} for p in args['plugins']]}
+            if 'plugins' in args:args={**args,'plugins':[{**p,'path':p['path'].removeprefix('/work/plugins/')} for p in args['plugins']]}
         return service.meta_call(campaign,op,args)
     def _report(self,campaign,row):
         if row['campaignId']!=campaign:raise Refused('Report unavailable')

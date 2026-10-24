@@ -105,7 +105,8 @@ class ControlService:
         path=self.data/'knowledge-packs'/id
         if not path.exists() and id==self.knowledge.manifest['id']:path=self.knowledge.path
         if not path.exists():raise Refused('Version-matched knowledge pack unavailable')
-        pack=KnowledgePack(path,(target or {}).get('dshVersion','0.2.1-rc.2'),(target or {}).get('profileDigest'))
+        pack=KnowledgePack(path,(target or {}).get('dshVersion','0.2.1-rc.2'),
+            None if (target or {}).get('schemaVersion')==3 else (target or {}).get('profileDigest'))
         if pack.manifest['id']!=id:raise Refused('Knowledge pack identity mismatch')
         return pack
     def _operation(self,campaign,kind,payload,fn):
@@ -178,9 +179,11 @@ class ControlService:
             reference_defaults=self.references.freeze(config) if not replay else {}
             time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark agent phase; startup and verification are separate.'},
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
-            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,'stopPolicy':GOAL_POLICY}) if not replay else None
+            runtime_defaults={'executionContract':'harbor-process-v1',
+                'executionResources':json.loads((self.source/'schemas/execution/process-resources.json').read_text())} if not replay else {}
+            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':GOAL_POLICY}) if not replay else None
             campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':GOAL_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
-                **time_defaults,
+                **time_defaults,**runtime_defaults,
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
         id=campaign['id'];self.workspace(id)
@@ -263,9 +266,14 @@ class ControlService:
         if result and benchmark_time(self.store.get('campaigns',campaign)['config']):
             result.update(version='benchmark-stream-v1',requestTimeoutMs=None,streamIdleTimeoutMs=None)
         return result
-    def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False,research_refs=None):
+    def build_candidate(self,campaign,selections,description,parent=None,display_name=None,check_only=False,research_refs=None,project_path=None):
         self.store.writable(campaign)
         c=self.store.get('campaigns',campaign)
+        if c['config'].get('executionContract')=='harbor-process-v1':
+            if selections:raise Refused('Submit the complete candidate projectPath; plugin composition belongs in harness.json')
+            from .process_candidates import build_candidate
+            return build_candidate(self,campaign,project_path,description,parent,display_name,check_only,research_refs)
+        if project_path is not None:raise Refused('This activity retains its legacy execution contract; create a new activity for complete Harness projects')
         recipe=json.loads((self.source/'recipes/h0-sol.json').read_text())
         recipe.update(c['config']['solver']);recipe['modules']=[]
         if 'reasoningEffort' not in c['config']['solver']:recipe.pop('reasoningEffort',None)
@@ -676,9 +684,9 @@ class ControlService:
                 if prior:
                     if prior['payload']!=args:raise Refused('Freeze idempotency key conflicts with prior input')
                     return {'operationId':prior['id'],'state':prior['state'],'result':prior.get('result'),'error':prior.get('error')}
-                return self._operation(campaign,'freeze',args,lambda:self.build_candidate(campaign,args['plugins'],args['description'],args.get('parent'),args.get('displayName'),research_refs=args.get('researchRefs')))
+                return self._operation(campaign,'freeze',args,lambda:self.build_candidate(campaign,args.get('plugins',[]),args['description'],args.get('parent'),args.get('displayName'),research_refs=args.get('researchRefs'),project_path=args.get('projectPath')))
         if operation=='batch_submit':
-            if planning.enabled(c['config']) and not self.store.list('batches',campaign):
+            if planning.enabled(c['config']) and c['config'].get('executionContract')!='harbor-process-v1' and not self.store.list('batches',campaign):
                 if args['tasks']!=c['config']['tasks'] or args['repeats']!=1 or self.store.get('candidates',args['candidateId'])['plugins']:
                     raise Refused('First batch must cover the H0 baseline once on all selected tasks')
             return self.store.submit(campaign,args['candidateId'],args['tasks'],args['repeats'],args['idempotencyKey'],args.get('execution'))
