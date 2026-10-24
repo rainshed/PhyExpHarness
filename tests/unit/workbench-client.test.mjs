@@ -54,6 +54,39 @@ test('late detail reads cannot overwrite newer results or reopen a closed panel'
  assert.deepEqual(await c,{current:false});
 });
 
+test('a stalled preview times out even when transport ignores abort, and can be retried',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const resource=new LatestRequest(),stalled=deferred();let signal;
+ const pending=resource.run(s=>{signal=s;return stalled.promise},{timeoutMs:120000,timeoutMessage:'核对超时'});
+ const rejected=assert.rejects(pending,/核对超时/);
+ t.mock.timers.tick(120000);await rejected;assert.equal(signal.aborted,true);
+ assert.deepEqual(await resource.run(async()=> 'fresh'),{current:true,value:'fresh'});
+ stalled.resolve('obsolete');
+ const cancelled=resource.run(()=>new Promise(()=>{}));resource.cancel();
+ assert.deepEqual(await cancelled,{current:false},'closing a dialog settles a stalled read');
+});
+
+test('preview completion cancels its deadline without affecting a later read',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const resource=new LatestRequest();let signal;
+ assert.deepEqual(await resource.run(s=>{signal=s;return 'ready'},{timeoutMs:100}),{current:true,value:'ready'});
+ t.mock.timers.tick(100);assert.equal(signal.aborted,false);
+});
+
+test('deletion dialog can pause background polling and resume with a fresh snapshot',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});
+ const updates=[],calls=[];
+ const sub=watchCampaign({interval:2000,onData:v=>updates.push(v),onError:assert.fail,request:async route=>{
+  calls.push(route);return route==='/models'?{schemaVersion:2,models:[]}:[];
+ }});
+ try{
+  await sub.refresh();sub.setPaused(true);const count=calls.length;
+  t.mock.timers.tick(10000);await Promise.resolve();assert.equal(calls.length,count);
+  sub.setPaused(false);await sub.refresh();assert.equal(updates.length,2);
+  assert.equal(calls.length,count+2);assert.ok(calls.every(route=>['/campaigns','/models'].includes(route)));
+ }finally{sub.dispose()}
+});
+
 test('poll cancellation drops pending reads, events resume by cursor, and no command is sent',async()=>{
  const calls=[],updates=[],gate=deferred();let block=false;
  const request=async(route,body,signal)=>{

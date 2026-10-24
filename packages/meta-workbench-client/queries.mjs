@@ -3,7 +3,7 @@ import {readModelCatalog} from './model-catalog.mjs';
 
 // A subscription owns only reads. Disposing never sends a backend command.
 export function watchCampaign({id='',request=api,onData,onError,interval=2000}){
- const controller=new AbortController();let live=true,pending=null,cursor=0,events=[],catalogRevision;
+ const controller=new AbortController();let live=true,paused=false,pending=null,cursor=0,events=[],catalogRevision;
  const refresh=()=>{
   if(!live)return Promise.resolve();if(pending)return pending;
   pending=(async()=>{
@@ -28,8 +28,8 @@ export function watchCampaign({id='',request=api,onData,onError,interval=2000}){
    finally{pending=null;}
   })();return pending;
  };
- const timer=setInterval(refresh,interval);refresh();
- return {refresh,dispose(){live=false;controller.abort();clearInterval(timer);}};
+ const timer=setInterval(()=>{if(!paused)refresh()},interval);refresh();
+ return {refresh,setPaused(value){if(paused===value)return;paused=value;if(!paused)refresh()},dispose(){live=false;controller.abort();clearInterval(timer);}};
 }
 
 export const readResearch=(campaign,offset=0,signal,pluginKey='',relation='')=>api(`/campaigns/${encodeURIComponent(campaign)}/research?offset=${offset}&limit=20${pluginKey?'&pluginKey='+encodeURIComponent(pluginKey):''}${relation?'&relation='+encodeURIComponent(relation):''}`,undefined,signal);

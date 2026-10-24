@@ -15,10 +15,15 @@ export const api=createRequest();
 export class LatestRequest {
  generation=0; controller=null;
  cancel(){this.generation++;this.controller?.abort();this.controller=null;}
- async run(read){
+ async run(read,{timeoutMs=0,timeoutMessage='读取超时，请重试。'}={}){
   this.cancel();const generation=this.generation,controller=new AbortController();this.controller=controller;
-  try{const value=await read(controller.signal);return generation===this.generation?{current:true,value}:{current:false};}
+  let timer,onAbort;
+  const cancelled=new Promise((resolve,reject)=>{
+   onAbort=()=>reject(controller.signal.reason);controller.signal.addEventListener('abort',onAbort,{once:true});
+   if(timeoutMs>0)timer=setTimeout(()=>controller.abort(new Error(timeoutMessage)),timeoutMs);
+  });
+  try{const value=await Promise.race([read(controller.signal),cancelled]);return generation===this.generation?{current:true,value}:{current:false};}
   catch(error){if(generation!==this.generation)return {current:false};throw error;}
-  finally{if(this.controller===controller)this.controller=null;}
+  finally{clearTimeout(timer);controller.signal.removeEventListener('abort',onAbort);if(this.controller===controller)this.controller=null;}
  }
 }

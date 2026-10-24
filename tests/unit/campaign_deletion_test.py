@@ -155,6 +155,31 @@ class CampaignDeletionTests(unittest.TestCase):
         self.assertFalse(Path(a['path']).exists())
         self.assertFalse(any((self.data/'objects/sha256').iterdir()))
 
+    def test_remaining_reference_check_ignores_unrelated_bodies_but_preserves_shared_history(self):
+        other=self.store.create(self.config,'many-other-evidence')['id']
+        own=self.service.evidence.add(self.c,None,'trace','shared history',{})
+        shared=self.service.evidence.add(other,None,'trace','shared history',{})
+        unrelated=[self.service.evidence.add(other,None,'trace',f'unrelated {i}',{}) for i in range(100)]
+        with self.store.connection() as db:
+            inventory=Inventory(self.service,self.c,db)
+            with patch.object(inventory,'checked',wraps=inventory.checked) as checked:
+                plan=inventory.build()
+            paths={str(call.args[0]) for call in checked.call_args_list}
+        self.assertEqual(plan['blockers'],[])
+        self.assertTrue(all(row['path'] not in paths for row in unrelated))
+        self.request();self.finish()
+        self.assertEqual(Path(shared['path']).read_text(),'shared history')
+        self.assertTrue(all(Path(row['path']).exists() for row in unrelated))
+
+    def test_unrelated_evidence_symlinks_still_block_unsafe_inventory(self):
+        other=self.store.create(self.config,'linked-evidence')['id']
+        own=self.service.evidence.add(self.c,None,'trace','owned history',{})
+        row=self.service.evidence.add(other,None,'trace','unrelated history',{})
+        path=Path(row['path']);path.unlink();path.symlink_to(own['path'])
+        preview=self.service.deletions.preview(self.c)
+        self.assertTrue(any('符号链接' in item['message'] for item in preview['blockers']))
+        self.assertTrue(Path(own['path']).exists())
+
     def test_v3_shared_sources_artifact_and_build_cache_survive_until_last_activity(self):
         other=self.store.create(self.config,'v3-other')['id']
         legacy=self.store.create(self.config,'v2-other')['id']

@@ -18,7 +18,7 @@ export function DeletionDialog({w}:any){
   const previous=document.activeElement as HTMLElement,root=host.current;
   root?.querySelector<HTMLElement>('button')?.focus();
   const key=(e:KeyboardEvent)=>{
-   if(e.key==='Escape'&&!busy.current){e.preventDefault();w.setDeleteOpen(false)}
+   if(e.key==='Escape'&&!busy.current){e.preventDefault();w.closeDeletion()}
    if(e.key==='Tab'){
     const items=Array.from(root?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href]')||[]),first=items[0],last=items.at(-1);
     if(!root?.contains(document.activeElement)||e.shiftKey&&document.activeElement===first){e.preventDefault();(e.shiftKey?last:first)?.focus()}
@@ -31,9 +31,9 @@ export function DeletionDialog({w}:any){
  if(!w.deleteOpen)return null;
  const {value:preview,loading,error}=w.deletion,counts=preview?.counts||{},blockers=preview?.blockers||[];
  return <div className="mh-overlay"><section ref={host} className="mh-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-delete-title">
-  <div className="mh-title"><h2 id="campaign-delete-title">永久删除活动</h2><button disabled={!!w.busy} onClick={()=>w.setDeleteOpen(false)}>取消</button></div>
+  <div className="mh-title"><h2 id="campaign-delete-title">永久删除活动</h2><button disabled={!!w.busy} onClick={w.closeDeletion}>取消</button></div>
   <p><strong>{preview?.name||w.c?.config.name||w.selected}</strong></p>
-  {loading?<p role="status">正在核对删除范围与引用…</p>:error?<p className="mh-alert" role="alert">{error}</p>:preview&&<>
+  {loading?<><p role="status">正在核对删除范围与引用…</p><p>历史较多时需要一些时间。核对最多等待两分钟，期间可以取消；此时尚未提交删除。</p></>:error?<p className="mh-alert" role="alert">{error}</p>:preview&&<>
    <p>将删除 {(counts.trials||0)+(counts.reference_runs||0)} 次实验、{counts.candidates||0} 个候选、{counts.reports||0} 份报告修订、{counts.exports||0} 份导出，以及全部会话、轨迹、用量和研究记录。</p>
    <p>此操作无法撤销。其他活动仍在使用的共享内容会保留。已经另行下载或复制的文件不随之删除。</p>
    {blockers.length>0&&<div className="mh-alert" role="alert"><p>以下依赖尚未处理，不能删除：</p><ul>{blockers.map((item:any,i:number)=><li key={i}>{item.message}</li>)}</ul></div>}

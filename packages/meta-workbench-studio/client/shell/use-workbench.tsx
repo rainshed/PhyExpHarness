@@ -7,7 +7,8 @@ export function useWorkbench(){
  const [session]=useState(()=>{try{return {store:createDraftStore(localStorage,'studio',defaults,{legacy:true}),error:''}}catch(e:any){return {store:null,error:'无法读取或保存活动草稿：'+e.message}}});
  const [selected,setSelected]=useState(()=>session.store?.read().selected||'');
  const [config,setConfig]=useState<any>(()=>({...(session.store?.read().config||defaults),trialTimeSeconds:null}));
- const data=useCampaignData(selected),c=data.campaign;
+ const [deleteOpen,setDeleteOpen]=useState(false);
+ const data=useCampaignData(selected,deleteOpen),c=data.campaign;
  const [readingTarget,setReadingTarget]=useState('');
  const [readingPages,setReadingPages]=useState<any>({}),[pluginReturn,setPluginReturn]=useState(false);
  const returnLocation=useRef<any>(null),restoreComparison=useRef(false);
@@ -17,7 +18,7 @@ export function useWorkbench(){
  const [limits,setLimits]=useState<any>(null),[renaming,setRenaming]=useState<any>(null);
  const [formError,setFormError]=useState(''),[limitsError,setLimitsError]=useState(''),[navigation,setNavigation]=useState(0);
  const report=useResource(selected),detail=useResource(selected);
- const deletion=useResource(selected),[deleteOpen,setDeleteOpen]=useState(false);
+ const deletion=useResource(selected);
  const contentRef=useRef<HTMLElement>(null),formRef=useRef<HTMLElement>(null),formErrorRef=useRef<HTMLDivElement>(null),heroRef=useRef<HTMLElement>(null),detailTrigger=useRef<HTMLElement|null>(null);
  const mounted=useRef(true),actionLock=useRef(false);
  const commands=createCommands({store:session.store});
@@ -65,7 +66,9 @@ export function useWorkbench(){
   await commands.control(c,action,changes);
   if(mounted.current)setNotice('操作已受理，以下状态来自后台。');
  });
- const openDeletion=()=>{setDeleteOpen(true);setError('');deletion.load(signal=>commands.deletion(selected,signal))};
+ const openDeletion=()=>{setDeleteOpen(true);setError('');deletion.load(signal=>commands.deletion(selected,signal),{
+  timeoutMs:120000,timeoutMessage:'核对删除范围超时，可能是网络连接中断或后台繁忙。尚未提交删除，请重新核对。'})};
+ const closeDeletion=()=>{deletion.clear();setDeleteOpen(false)};
  const deleteCampaign=(retry=false)=>act(retry?'retry-delete':'delete',async()=>{
   await commands.deleteCampaign(selected,deletion.value,{retry});
   if(mounted.current){setDeleteOpen(false);report.clear();detail.clear();setNotice('删除已受理，后台会先停止所属工作，再清理全部历史。')}
@@ -112,6 +115,6 @@ export function useWorkbench(){
   evidence,setEvidence:(value:any)=>detail.setValue(value?{kind:'evidence',data:value}:null),source,setSource:(value:any)=>detail.setValue(value?{kind:'source',data:value}:null),
   limits,setLimits,notice,setNotice,models:data.models,modelCatalogNote:data.note,settingsOpen,setSettingsOpen,refreshModels:data.refreshModels,renaming,setRenaming,
   formError,setFormError,limitsError,setLimitsError,setNavigation,contentRef,formRef,formErrorRef,heroRef,detailTrigger,focus,navigate,refresh:data.refresh,
-  deleteOpen,setDeleteOpen,deletion,openDeletion,deleteCampaign,
+  deleteOpen,setDeleteOpen,deletion,openDeletion,closeDeletion,deleteCampaign,
   readingTarget,readingPages:readingPages[selected]||{},saveReadingPage,openPlugin,backToComparison,compareVersions,pluginReturn,act,command,readReport,createCampaign,saveLimits,closeDetails,readEvidence,readSource,latestReports,finalReport};
 }

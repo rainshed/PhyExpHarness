@@ -163,7 +163,7 @@ class Inventory:
         self.bundle_paths[root] = paths
         return paths
 
-    def shared_for(self, campaign, *, views=True):
+    def shared_for(self, campaign, *, views=True, evidence_targets=None):
         paths, bundle_roots = set(), set()
         for row in self.rows['candidates']:
             if row['campaignId'] == campaign:
@@ -205,8 +205,25 @@ class Inventory:
                         paths.add(self.data / 'meta-objects/sha256' / sha)
                 elif raw.get('version') != 'meta-composition-v1':
                     raise Refused('未知 Meta 组合格式：' + str(root))
+        evidence_prefix=str(self.checked(self.data/'evidence'))+'/'
+        artifact_prefix=str(self.data/'artifacts/sha256')+'/'
         for row in self.rows['evidence']:
             if row['campaignId'] == campaign:
+                # The common layouts have one immutable body per path. When
+                # checking remaining references, unrelated bodies cannot retain
+                # a deletion target. Avoid constructing/validating tens of
+                # thousands of unrelated Paths for every small activity.
+                # Nonstandard paths still take the full validation below.
+                raw_path=row['path']
+                canonical_name=f"{artifact_prefix}{row['sha256'][:2]}/{row['sha256']}"
+                leaf=raw_path.removeprefix(evidence_prefix)
+                standard=(raw_path==canonical_name and re.fullmatch('[0-9a-f]{64}',row['sha256']) or raw_path.startswith(evidence_prefix)
+                          and leaf not in ('','.','..') and '/' not in leaf)
+                if evidence_targets is not None and standard and raw_path not in evidence_targets:
+                    try:info=os.lstat(raw_path)
+                    except FileNotFoundError:continue
+                    if stat.S_ISLNK(info.st_mode):raise Refused('清理路径经过符号链接：' + raw_path)
+                    continue
                 path=self.checked(row['path'])
                 canonical=self.data/'artifacts/sha256'/row['sha256'][:2]/row['sha256']
                 if path==canonical:paths.add(path)
@@ -237,7 +254,8 @@ class Inventory:
     def retained(self, targets):
         keep=set()
         others=[c['id'] for c in self.rows['campaigns'] if c['id']!=self.campaign]
-        for campaign in others:keep.update(self.shared_for(campaign,views=False)[0])
+        evidence_targets={str(p) for p in targets}
+        for campaign in others:keep.update(self.shared_for(campaign,views=False,evidence_targets=evidence_targets)[0])
         # Most bodies are private to the deleted activity. Count its links once
         # and search other file views only for bodies with additional links.
         # Unknown extra links remain in the plan and still fail the final purge.

@@ -3,7 +3,7 @@ import {watchCampaign,readResearch} from './queries.mjs';
 import {LatestRequest,api} from './transport.mjs';
 import {readModelCatalog} from './model-catalog.mjs';
 
-export function useCampaignData(selected:string){
+export function useCampaignData(selected:string,paused=false){
  const [data,setData]=useState<any>({list:[],campaign:null,events:[],models:[],note:'',catalogRevision:undefined,selectionMissing:false});
  const [connected,setConnected]=useState(false),[error,setError]=useState('');
  const current=useRef<any>(null),catalogRequest=useRef(new LatestRequest());
@@ -20,6 +20,7 @@ export function useCampaignData(selected:string){
   current.current=subscription;
   return()=>{subscription.dispose();current.current=null;catalogRequest.current.cancel()};
  },[selected]);
+ useEffect(()=>{current.current?.setPaused(paused)},[selected,paused]);
  const refresh=()=>current.current?.refresh();
  const refreshModels=async()=>{
   const result=await catalogRequest.current.run((signal:AbortSignal)=>api('/models',undefined,signal));
@@ -35,9 +36,9 @@ export function useResource(scope:string){
  const request=useRef(new LatestRequest());
  const clear=()=>{request.current.cancel();setValue(null);setLoading(false);setError('')};
  useEffect(()=>{clear();return()=>request.current.cancel()},[scope]);
- const load=async(read:(signal:AbortSignal)=>Promise<any>,{retain=false}={})=>{
+ const load=async(read:(signal:AbortSignal)=>Promise<any>,{retain=false,timeoutMs=0,timeoutMessage=undefined}:{retain?:boolean,timeoutMs?:number,timeoutMessage?:string}={})=>{
   if(!retain)setValue(null);setLoading(true);setError('');
-  try{const result=await request.current.run(read);if(result.current){setValue(result.value);setLoading(false)}return result;}
+  try{const result=await request.current.run(read,{timeoutMs,timeoutMessage});if(result.current){setValue(result.value);setLoading(false)}return result;}
   catch(e:any){setError(e.message);setLoading(false);return {current:true,error:e};}
  };
  return {value,setValue,loading,error,load,clear};
