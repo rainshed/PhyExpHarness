@@ -73,6 +73,10 @@
           },
           "version": {
             "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional project-relative source file/directory for reading and content identity. A directory's plugin.json supplies displayName, functionSummary, mechanism and categories. Missing or invalid descriptions are shown as unavailable and do not impose execution capabilities."
           }
         },
         "additionalProperties": true

@@ -4,6 +4,16 @@
 
 `harness.json` 声明 `runContract: "harbor-process-v1"`、`entrypoint`（argv 数组，首项为产物相对路径）、`build.image`、`build.argv`、`build.locks`（工程内锁文件路径）。可附 framework、profile、plugins 展示信息和任意 runtimeConfig。候选自带语言运行时，例如模板将 Node 复制到 `runtime/node`；可调用任务已提供的语言，但必须在同类环境自行验证。平台不要求固定包名、工具名、依赖版本或 capability 枚举。
 
+## 插件用途、机制与源码定位
+
+在 `harness.json.plugins` 中声明每个插件的 `name`、`version`、工程相对 `path` 和组合 `config`，例如 `{"name":"deadline-context","version":"1.0.0","path":"plugins/deadline-context","config":{}}`。`path` 可指向源码目录或单个文件；目录下的 `plugin.json` 提供同名同版本的说明和相对目录的 `entry`。新插件应写清中文 `displayName`、`functionSummary`、`mechanism` 和多选 `categories`，含义见 [插件设计](plugin-design.md)。单文件插件或没有 `plugin.json` 时，可直接在工程的插件声明中提供这些阅读字段；目录清单的同名字段优先。
+
+平台只静态读取已冻结的声明和源码，不加载插件。用途、分类和机制缺失会明确显示待补充，声明损坏或路径不可用会显示原因；这些信息不授予能力，也不作为执行策略白名单。插件目录下冻结文件的相对路径、内容和已记录的执行模式决定插件内容摘要；组合配置、加载顺序、工程共享依赖分别保留。没有源码位置时只能识别该候选内的声明，不能据名称和版本号认定源码相同。共享依赖仍须结合完整工程差异判断。
+
+已有候选可从原冻结源码恢复阅读信息，不需重新冻结或复跑；说明是设计行为，效果仍由实验观察和证据说明。
+
+## 构建与运行
+
 构建在隔离容器 `/candidate` 内进行，允许真实依赖安装与安装脚本；没有宿主路径挂载、容器控制 socket、真实模型凭据、控制数据库或 verifier 输入。构建镜像解析为不可变 ID，源码、锁、命令、资源和产物摘要被记录。内部符号链接可展开；外部路径、特殊设备和逃逸链接不接受。容量和超时来自活动资源配置，不应以压缩代码规避。构建产物完整保存，不在正式任务中重新安装。
 
 统一流程：

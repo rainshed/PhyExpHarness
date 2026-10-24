@@ -4,10 +4,10 @@ Descriptions describe intended capabilities, never evidence of effectiveness.
 Round comparisons use acceptance order, independently of candidate ancestry.
 """
 import re
-import hashlib
 import json
 from pathlib import Path
 from src.evidence.outcomes import outcome_summary
+from src.execution.bundle.plugin_reading import plugin_key, candidate_view
 
 PLUGIN_CATEGORIES = {'prompt-context', 'tools', 'tool-results', 'execution-control', 'other'}
 
@@ -20,11 +20,6 @@ def plugin_categories(manifest, note):
 
 def stable(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-
-
-def plugin_key(plugin):
-    identity = [plugin['name'], plugin['version'], plugin.get('digest')]
-    return 'plugin-' + hashlib.sha256(stable(identity).encode()).hexdigest()
 
 
 def read_annotations(data):
@@ -56,6 +51,7 @@ def config_changes(before, after, path='$'):
 def plugin_changes(previous, current):
     if current is None or previous is None:
         return [{'kind': 'unavailable', 'label': '版本记录缺失，无法比较', 'pluginKeys': []}]
+    previous, current = candidate_view(previous), candidate_view(current)
     old = {p['name']: p for p in previous['plugins']}
     new = {p['name']: p for p in current['plugins']}
     changes = []
@@ -97,7 +93,7 @@ def plugin_changes(previous, current):
 
 def build_tables(candidates, batches, trials, campaign=None, annotations=None, batch_id=None):
     campaign, annotations = campaign or {}, annotations or {}
-    candidates = sorted(candidates, key=lambda c: (c.get('createdAt', 0), c['id']))
+    candidates = sorted((candidate_view(c) for c in candidates), key=lambda c: (c.get('createdAt', 0), c['id']))
     batches = sorted(batches, key=lambda b: b['round'])
     batch_candidates={b['id']:b['candidateId'] for b in batches}
     trials=[{**t,'candidateId':t.get('candidateId',batch_candidates.get(t.get('batchId')))} for t in trials]
@@ -120,16 +116,18 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
             key = plugin_key(p); manifest = p.get('manifest', {})
             note = annotations.get(key, {})
             summary = note.get('functionSummary') or manifest.get('functionSummary') or manifest.get('purpose') or '功能说明尚未提供'
-            source = note.get('source') or {'kind': 'manifest', 'label': '冻结插件清单声明；不代表效果已验证'}
+            source = note.get('source') or p.get('descriptionSource') or {'kind': 'manifest', 'label': '冻结插件清单声明；不代表效果已验证'}
             if key not in plugin_rows:
                 plugin_rows[key] = {'id': key, 'name': p['name'], 'version': p['version'], 'digest': p.get('digest'),
                     'candidateId': c['id'], 'entry': p.get('entry'),
-                    'displayName': note.get('displayName') or manifest.get('displayName') or p['name'],
+                    'displayName': note.get('displayName') or manifest.get('displayName') or p.get('displayName') or p['name'],
                     'categories': plugin_categories(manifest, note),
-                    'categorySource': (source if 'categories' in note else {'kind': 'manifest', 'label': '冻结插件清单分类'}) if plugin_categories(manifest, note) else None,
+                    'categorySource': (source if 'categories' in note else p.get('descriptionSource') or {'kind': 'manifest', 'label': '冻结插件清单分类'}) if plugin_categories(manifest, note) else None,
                     'functionSummary': summary, 'mechanism': note.get('mechanism') or manifest.get('mechanism') or
                         ('声明接口：' + '、'.join(map(str, manifest.get('intervenes', []))) if manifest.get('intervenes') else '实现方式尚未说明'),
-                    'descriptionSource': source, 'declaration': manifest, 'usedBy': []}
+                    'descriptionSource': source, 'declaration': manifest, 'usedBy': [],
+                    'readingStatus':p.get('readingStatus','available'), 'readingError':p.get('readingError'),
+                    'identityScope':p.get('identityScope','plugin-files')}
             plugin_rows[key]['usedBy'].append(c['id'])
             members.append({'pluginId': key, 'order': order, 'config': p.get('config', {}), 'entry': p.get('entry')})
         parent = c.get('parentId')

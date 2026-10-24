@@ -206,4 +206,6 @@ def freeze_project(source_root, store, directory, recipe, cache, log, resources,
     destination = _publish(store, identity['id'], {'bundle.json': canonical(identity) + b'\n',
         'recipe.json': recipe_bytes}, on_publish, 'bundle')
     resolved = resolve(destination)
-    return {'id': identity['id'], 'path': str(destination), 'plugins': identity['plugins'], 'manifest': resolved.manifest}
+    from .plugin_reading import project_plugins
+    plugins = project_plugins(destination, identity['id'])
+    return {'id': identity['id'], 'path': str(destination), 'plugins': plugins, 'manifest': resolved.manifest}

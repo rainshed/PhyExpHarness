@@ -152,10 +152,12 @@ class MetaAPI:
                 result.update(self.files.publish(campaign,'sdk:'+pack.manifest['id']+':'+args['id'],pack._text(args['id']),kind='sdk',source=result['source'],version=pack.manifest['dshVersion']))
             return result
         if op=='candidate_diff':
-            a,b=[resolve_bundle(self._candidate(campaign,args[k])['bundlePath']) for k in ['left','right']]
+            from src.execution.bundle.plugin_reading import candidate_plugins
+            candidates=[self._candidate(campaign,args[k]) for k in ['left','right']]
+            a,b=[resolve_bundle(row['bundlePath']) for row in candidates]
             keys=sorted(set(a.manifest['files'])|set(b.manifest['files']))
             return {'left':args['left'],'right':args['right'],'files':[{'path':k,'before':a.manifest['files'].get(k),'after':b.manifest['files'].get(k)} for k in keys if a.manifest['files'].get(k)!=b.manifest['files'].get(k)],
-                'beforePlugins':a.manifest.get('plugins',[]),'afterPlugins':b.manifest.get('plugins',[]),
+                'beforePlugins':candidate_plugins(candidates[0]),'afterPlugins':candidate_plugins(candidates[1]),
                 'beforeProject':a.manifest.get('project'),'afterProject':b.manifest.get('project'),
                 'beforePlatform':{k:a.manifest.get(k) for k in ('infrastructureVersion','adapter')},
                 'afterPlatform':{k:b.manifest.get(k) for k in ('infrastructureVersion','adapter')}}

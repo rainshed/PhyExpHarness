@@ -8,8 +8,35 @@ from jsonschema import Draft202012Validator,ValidationError
 from .store import Refused,Conflict,identity,encoded
 from src.reporting.tables import plugin_key,build_tables,read_annotations
 from src.evidence.library import EvidenceLibrary
+from src.execution.bundle.plugin_reading import candidate_plugins, resolve_reference
 
 SCHEMA=json.loads((Path(__file__).resolve().parents[2]/'packages/meta-harness/research.schema.json').read_text())
+
+def reading_keys(candidates):
+    matches={}
+    for c in candidates:
+        for p in candidate_plugins(c):
+            current=plugin_key(p)
+            for alias in {current,p.get('storedPluginKey',current)}:
+                matches.setdefault((c['id'],alias),set()).add(current)
+    return {key:next(iter(values)) for key,values in matches.items() if len(values)==1}
+
+
+def reading_reference(ref,keys):
+    current=keys.get((ref.get('candidateId'),ref.get('pluginKey')))
+    return {**ref,'pluginKey':current,'storedPluginKey':ref['pluginKey']} if current and current!=ref['pluginKey'] else ref
+
+
+def reading_record(row,keys):
+    row=copy.deepcopy(row);record=row['record']
+    if 'plugins' in record:record['plugins']=[reading_reference(p,keys) for p in record['plugins']]
+    for observation in record.get('observations',[]):observation['plugin']=reading_reference(observation['plugin'],keys)
+    return row
+
+
+def reading_links(links,keys):
+    return [{**r,'plugins':[reading_reference({**p,'candidateId':r['candidateId']},keys) for p in r['plugins']]} for r in links]
+
 
 class Research:
     def __init__(self,store,data):self.store=store;self.data=Path(data);self.evidence=EvidenceLibrary(store,data)
@@ -30,7 +57,7 @@ class Research:
         self.resolve(db,campaign,record.get('relatedRecords',[]))
         for p in record.get('plugins',[])+[o['plugin'] for o in record.get('observations',[])]:
             candidate=self.store._get(db,'candidates',p['candidateId'])
-            if candidate['campaignId']!=campaign or p['pluginKey'] not in {plugin_key(x) for x in candidate['plugins']}:raise Refused('Exact frozen plugin identity required')
+            if candidate['campaignId']!=campaign or resolve_reference(candidate,p['pluginKey']) is None:raise Refused('Exact frozen plugin identity required')
         for o in record.get('observations',[]):
             t=self.store._get(db,self.store.run_table(o['trialId']),o['trialId'])
             if t['campaignId']!=campaign or t['candidateId']!=o['plugin']['candidateId']:raise Refused('Observation must reference an actual use of this plugin')
@@ -65,21 +92,24 @@ class Research:
             key=hashlib.sha256(encoded([campaign,candidate['id'],row['id']]).encode()).hexdigest()
             if any(r['id']==key for r in self.store._list(db,'research_links',campaign)):continue
             self.store._save(db,'research_links',{'id':key,'campaignId':campaign,'candidateId':candidate['id'],
-                'bundleId':candidate['bundleId'],'plugins':[{'pluginKey':plugin_key(p),'name':p['name'],'version':p['version'],'digest':p.get('digest')} for p in candidate['plugins']],
+                'bundleId':candidate['bundleId'],'plugins':[{'pluginKey':plugin_key(p),'name':p['name'],'version':p['version'],'digest':p.get('digest')} for p in candidate_plugins(candidate)],
                 'recordId':row['recordId'],'recordRevision':row['revision'],'relationship':'development-or-adoption','recordedAt':self.store.clock()})
     def detail(self,campaign,recordId,revision):
         with self.store.connection() as db:row=self.resolve(db,campaign,[{'recordId':recordId,'revision':revision}])[0]
+        keys=reading_keys(self.store.list('candidates',campaign));row=reading_record(row,keys)
         anchors=row['record'].get('anchors',[])+[a for o in row['record'].get('observations',[]) for a in o['anchors']]
         return {**row,'revisions':[{k:r[k] for k in ['revision','recordedAt','author']} for r in self.store.list('research_records',campaign) if r['recordId']==recordId],'excerpts':[self.evidence.excerpt(campaign,a) for a in anchors],
-            'candidateLinks':[r for r in self.store.list('research_links',campaign) if r['recordId']==recordId and r['recordRevision']==revision]}
+            'candidateLinks':reading_links([r for r in self.store.list('research_links',campaign) if r['recordId']==recordId and r['recordRevision']==revision],keys)}
     def overview(self,campaign,offset=0,limit=20,pluginKey=None,relation=None):
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=50:raise Refused('Invalid research page')
         if relation not in (None,'','plugin','unlinked'):raise Refused('Invalid research relation')
         with self.store.connection() as db:
             c=self.store._get(db,'campaigns',campaign);all_rows=self.store._list(db,'research_records',campaign)
+            keys=reading_keys(self.store._list(db,'candidates',campaign))
+            all_rows=[reading_record(r,keys) for r in all_rows]
             latest={r['recordId']:r for r in sorted(all_rows,key=lambda r:r['revision'])}
             rows=sorted(latest.values(),key=lambda r:r['recordedAt'],reverse=True)
-            links=self.store._list(db,'research_links',campaign)
+            links=reading_links(self.store._list(db,'research_links',campaign),keys)
             def brief(row):
                 record=row['record']
                 linked=[r for r in links if r['recordId']==row['recordId']]

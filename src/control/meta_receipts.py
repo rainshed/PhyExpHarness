@@ -11,6 +11,7 @@ from .meta_contracts import ANALYSIS,CONTRACTS,ROOT,analysis_for,version
 from src.evidence.files import atomic_json
 from src.evidence.objects import enabled
 from src.evidence.snapshots import Snapshots
+from src.execution.bundle.plugin_reading import candidate_view
 
 RECEIPT_SCHEMA=json.loads((ROOT/'receipt.schema.json').read_text())
 TOOLS={'campaign_status','candidate_list','evidence_list','sdk_read','results_compare','candidate_retain','report_save'}
@@ -122,6 +123,7 @@ class Receipts:
                 assets.setdefault(row['candidateId'],[]).append(file)
         trials=self.store.list('trials',campaign)
         for row in self.store.list('candidates',campaign):
+            row=candidate_view(row)
             checks=dict(row.get('check',{}));files=assets.get(row['id'],[])
             logs=Path(checks.get('evidence',''))
             allowed=self.service.data/'campaigns'/campaign/'checks'

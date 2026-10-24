@@ -8,6 +8,7 @@ from src.control.operations import workspace_path
 from src.control.meta_context import activity_state
 from src.execution.bundle.manifest import verify,resolve
 from src.reporting.tables import plugin_changes
+from src.execution.bundle.plugin_reading import candidate_plugins
 
 KINDS = ('activity', 'task', 'sdk', 'version', 'plugin', 'experiment', 'evidence', 'analysis', 'guide')
 GUIDES = {
@@ -104,7 +105,7 @@ class Materials:
         return encoded({'source': '冻结执行组合', 'candidateId': candidate['id'],
                         'bundleId': manifest['id'], 'parentId': candidate.get('parentId'),
                         'changesFromParent':plugin_changes(parent,candidate) if parent else None,
-                        'description': candidate.get('description'), 'recipe': recipe, 'plugins': manifest['plugins'],
+                        'description': candidate.get('description'), 'recipe': recipe, 'plugins': candidate_plugins(candidate),
                         **({k:manifest[k] for k in ('project','sources','artifact','adapter','buildReceipt','infrastructureVersion')} if manifest.get('schemaVersion')==3 else {})})
 
     def _plugin(self, candidate, relative):

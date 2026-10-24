@@ -10,6 +10,8 @@ DeepSeek Harness 通过插件组合工具、模型服务、上下文和 agent �
 
 ## 为人提供用途和机制说明
 
+完整工程在 `harness.json.plugins` 声明插件的 `name/version/path/config`，说明放在对应目录的 `plugin.json`；具体路径与兼容规则见 [完整工程开发](process-harness.md#插件用途机制与源码定位)。工作台从冻结源码读取说明，不会根据插件名字推测分类或机制。
+
 清单的 `functionSummary` 回答“做什么”，`mechanism` 回答“怎么做”：用几句中文讲明输入或触发条件、实际动作、输出和关键限制。比如“将固定建议加入系统提示，提醒 Solver 用脚本生成和检查数组；是否遵循由 Solver 决定，本插件不自动处理数组”。不要仅写 `systemPrompt.section` 等接口名，不把建议描述成程序强制保证。
 
 `categories` 是可多选的阅读分类：`prompt-context`、`tools`、`tool-results`、`execution-control`、`other`，中文依次为提示与上下文、工具能力、工具结果处理、执行控制与恢复、其他扩展。兼具工具和提示的插件可同时选前两类。不另作行为分类，不凭阅读分类推导权限。实验效果仍由研究观察及证据说明。

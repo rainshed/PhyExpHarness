@@ -3,28 +3,16 @@ import subprocess
 import sys
 from pathlib import Path
 from .store import Refused
-from .operations import workspace_path
-from src.execution.bundle.manifest import verify, resolve
-from src.reporting.tables import plugin_key
+from src.execution.bundle.manifest import verify
+from src.execution.bundle.plugin_reading import source_view
 
 
 def plugin_source(service,candidate_id,plugin_id,file=None):
     candidate=service.store.get('candidates',candidate_id)
-    plugin=next((p for p in candidate['plugins'] if plugin_key(p)==plugin_id),None)
-    if not plugin:raise Refused('Plugin is not a member of this execution version')
     bundle=Path(candidate['bundlePath']).resolve()
     if not bundle.is_relative_to((service.data/'objects/sha256').resolve()):raise Refused('Frozen object outside data directory')
-    resolved=resolve(bundle);manifest=resolved.manifest;root=resolved.plugin_roots[plugin['name']]
-    prefix='plugins/'+plugin['name']+'/'
-    files=[p[len(prefix):] for p in manifest['files'] if p.startswith(prefix)]
-    result={'candidateId':candidate_id,'pluginId':plugin_id,'directory':str(root),'files':files,'readOnly':True}
-    if file is not None:
-        if file not in files:raise Refused('File is not in the frozen plugin manifest')
-        target=workspace_path(root,file)
-        if target.stat().st_size>2_000_000:raise Refused('Source file is too large for preview; open its folder')
-        try:result.update(file=file,content=target.read_text())
-        except UnicodeDecodeError:result.update(file=file,content='二进制资产，请打开文件夹查看。')
-    return result
+    try:return source_view(candidate,plugin_id,file)
+    except (OSError,ValueError,KeyError,TypeError) as error:raise Refused('冻结插件源码不可用：'+str(error)) from error
 
 
 def open_folder(path):
