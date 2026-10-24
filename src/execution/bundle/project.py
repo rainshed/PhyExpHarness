@@ -5,6 +5,8 @@ import json
 import os
 import re
 import shutil
+import select
+import time
 import subprocess
 import tarfile
 import tempfile
@@ -17,17 +19,28 @@ CONTRACT = 'harbor-process-v1'
 IGNORED = {'.git', 'node_modules', '__pycache__', '.venv', '.DS_Store'}
 
 
+class SourceFiles(dict):
+    """Source bytes and executable modes are one frozen build input."""
+    def __init__(self):super().__init__();self.modes={}
+
+
 def snapshot(directory):
-    root = Path(directory).resolve()
-    contents = {}
-    for file in sorted(root.rglob('*')):
-        relative = file.relative_to(root)
-        if any(p in IGNORED for p in relative.parts): continue
-        if file.is_symlink() and (not file.exists() or not file.resolve().is_relative_to(root)):
-            raise ValueError('Project link escapes its source: ' + str(relative))
-        if file.is_file():
-            contents[relative.as_posix()] = file.read_bytes()
-    if any((root / name).read_bytes() != value for name, value in contents.items()):
+    root = Path(directory).resolve();contents = SourceFiles()
+    def visit(directory, ancestors):
+        resolved=directory.resolve()
+        if not resolved.is_relative_to(root): raise ValueError('Project link escapes its source: '+str(directory.relative_to(root)))
+        if resolved in ancestors:raise ValueError('Project directory link cycle: '+str(directory.relative_to(root)))
+        for file in sorted(directory.iterdir()):
+            if file.name in IGNORED:continue
+            relative=file.relative_to(root).as_posix()
+            if file.is_symlink() and (not file.exists() or not file.resolve().is_relative_to(root)):
+                raise ValueError('Project link escapes its source: '+relative)
+            if file.is_dir():visit(file,ancestors|{resolved})
+            elif file.is_file():
+                contents[relative]=file.read_bytes();contents.modes[relative]=0o755 if file.stat().st_mode&0o111 else 0o644
+            else:raise ValueError('Unsupported source filesystem object: '+relative)
+    visit(root,set())
+    if any((root / name).read_bytes() != value or (0o755 if (root/name).stat().st_mode&0o111 else 0o644)!=contents.modes[name] for name,value in contents.items()):
         raise ValueError('Project changed while snapshotting')
     if 'harness.json' not in contents: raise ValueError('Missing harness.json')
     spec = json.loads(contents['harness.json'])
@@ -42,7 +55,7 @@ def snapshot(directory):
     if any(not isinstance(x, str) or '\0' in x for x in build['argv']): raise ValueError('Invalid build argv')
     if not isinstance(build.get('image'), str) or not build['image']: raise ValueError('Missing build image')
     locks = build.get('locks', [])
-    if not locks or any(str(safe_relative(p)) not in contents for p in locks):
+    if not isinstance(locks,list) or any(str(safe_relative(p)) not in contents for p in locks):
         raise ValueError('Explicit dependency locks are required')
     # No schema for strategy configuration, plugin capabilities, names or tool roster.
     return contents, spec
@@ -52,7 +65,7 @@ def source_tar(contents, prefix=''):
     out = io.BytesIO()
     with tarfile.open(fileobj=out, mode='w') as archive:
         for name, data in sorted(contents.items()):
-            info = tarfile.TarInfo(prefix + name); info.size = len(data); info.mode = 0o644
+            info = tarfile.TarInfo(prefix + name); info.size = len(data); info.mode = getattr(contents,'modes',{}).get(name,0o644)
             archive.addfile(info, io.BytesIO(data))
     return out.getvalue()
 
@@ -82,7 +95,7 @@ def build(contents, spec, cache, log, resources):
     image = subprocess.check_output(['docker', 'image', 'inspect', spec['build']['image'], '--format', '{{.Id}}'], text=True).strip()
     if not re.fullmatch('sha256:[0-9a-f]{64}', image): raise ValueError('Build image must resolve to an immutable image')
     inputs = {'sources': {k: digest(v) for k, v in contents.items()}, 'image': image,
-              'build': spec['build'], 'resources': resources}
+              'build': spec['build'], 'resources': resources, 'sourceModes':getattr(contents,'modes',{})}
     key = digest(canonical(inputs)); record = cache / (key + '.json'); artifact = cache / (key + '.tar')
     with (cache / (key + '.lock')).open('a') as mutex:
         fcntl.flock(mutex, fcntl.LOCK_EX)
@@ -107,9 +120,26 @@ def build(contents, spec, cache, log, resources):
                                check=True, timeout=resources['timeoutSeconds'])
                 code = int(subprocess.check_output(['docker', 'inspect', name, '--format', '{{.State.ExitCode}}'], text=True))
                 if code: raise RuntimeError('Candidate build exited ' + str(code))
-                with (stage / 'artifact.tar').open('wb') as output:
-                    subprocess.run(['docker', 'cp', name + ':/candidate/.', '-'], stdout=output, stderr=log, check=True,
-                                   timeout=resources['timeoutSeconds'])
+                # Bound bytes while receiving, before any oversized artifact can
+                # consume the host disk. A stalled engine also has a local timeout.
+                with (stage/'artifact.tar').open('wb') as output:
+                    copied=subprocess.Popen(['docker','cp',name+':/candidate/.','-'],stdout=subprocess.PIPE,stderr=log)
+                    received=0;expires=time.monotonic()+resources['timeoutSeconds']
+                    try:
+                        while True:
+                            remaining=expires-time.monotonic()
+                            if remaining<=0:raise TimeoutError('Build artifact transfer timed out')
+                            ready,_,_=select.select([copied.stdout],[],[],remaining)
+                            if not ready:raise TimeoutError('Build artifact transfer timed out')
+                            chunk=os.read(copied.stdout.fileno(),65536)
+                            if not chunk:break
+                            received+=len(chunk)
+                            if received>resources['artifactBytes']:raise ValueError('Build artifact exceeds declared capacity')
+                            output.write(chunk)
+                        if copied.wait(timeout=max(.001,expires-time.monotonic())):raise RuntimeError('Build artifact transfer failed')
+                    finally:
+                        if copied.poll() is None:copied.kill();copied.wait()
+                        copied.stdout.close()
                 validate_artifact(stage / 'artifact.tar', spec['entrypoint'], resources['artifactBytes'])
                 (stage / 'artifact.tar').replace(artifact)
                 receipt = {'inputs': inputs, 'artifactSha256': digest(artifact.read_bytes()), 'status': 'passed', 'checkKind': 'isolated-build-and-entrypoint'}

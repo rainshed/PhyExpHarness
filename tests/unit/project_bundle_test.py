@@ -80,3 +80,12 @@ class ProjectTests(unittest.TestCase):
         old={'bundleId':'a','plugins':[], 'executionContract':'harbor-process-v1','project':{'framework':'a'},'candidateSources':'a'}
         new={**old,'bundleId':'b','project':{'framework':'b'},'candidateSources':'b'}
         self.assertEqual([x['kind'] for x in plugin_changes(old,new)],['project','sources'])
+
+    def test_directory_links_executable_modes_and_dependency_free_project(self):
+        directory=self.source/'implementation';directory.mkdir();entry=directory/'tool.sh';entry.write_text('#!/bin/sh\nexit 0\n');entry.chmod(0o755)
+        (self.source/'alias').symlink_to('implementation',target_is_directory=True)
+        self.spec['build']['locks']=[];(self.source/'harness.json').write_text(json.dumps(self.spec))
+        files,_=snapshot(self.source);self.assertEqual(files['alias/tool.sh'],files['implementation/tool.sh'])
+        with tarfile.open(fileobj=io.BytesIO(source_tar(files))) as archive:self.assertEqual(archive.getmember('alias/tool.sh').mode,0o755)
+        (directory/'cycle').symlink_to('..',target_is_directory=True)
+        with self.assertRaisesRegex(ValueError,'cycle'):snapshot(self.source)
