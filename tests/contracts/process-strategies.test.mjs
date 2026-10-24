@@ -105,3 +105,36 @@ for(const cycle of [false,true])test('native dependency diagnostics identify '+(
  // diagnostics must expose the actual dependency; the platform adds no gate.
  assert.match(result.stderr,/fixtureB/);if(cycle)assert.match(result.stderr,/fixtureA/);
 });
+
+test('candidate supplies its own MCP session recovery and result presentation',async()=>{
+ let generation=1,initializations=0,successful=0;
+ const mcp=http.createServer(async(req,res)=>{
+  let raw='';for await(const bytes of req)raw+=bytes;const message=JSON.parse(raw);
+  if(message.method==='initialize'){
+   initializations++;res.writeHead(200,{'content-type':'application/json','mcp-session-id':String(generation)});
+   res.end(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}}));return;
+  }
+  if(req.headers['mcp-session-id']!==String(generation)){res.writeHead(404).end();return;}
+  if(message.id===undefined){res.writeHead(202).end();return;}
+  assert.equal(message.method,'tools/call');assert.equal(message.params.name,'echo');successful++;
+  res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{content:[{type:'text',text:message.params.arguments.value}]}}));
+ });
+ await new Promise(resolve=>mcp.listen(0,'127.0.0.1',resolve));
+ try{
+  const result=await run((spec,project)=>{
+   spec.runtimeConfig.recovery=null;spec.runtimeConfig.plugins=[{id:'own-mcp',name:'./mcp.mjs'}];
+   fs.writeFileSync(path.join(project,'mcp.mjs'),`import {defineTool} from '@deepseek-ai/dsh-tools';
+export const name='candidate-mcp';export const inject=['tools'];
+export function apply(ctx){let session,seq=0;
+ const send=async(method,params)=>fetch(${JSON.stringify('http://127.0.0.1:'+mcp.address().port)},{method:'POST',headers:{'content-type':'application/json',...(session?{'mcp-session-id':session}:{})},body:JSON.stringify({jsonrpc:'2.0',id:++seq,method,params})});
+ const connect=async()=>{const r=await send('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'candidate',version:'1'}});await r.json();session=r.headers.get('mcp-session-id');};
+ ctx.tools.register(defineTool({name:'candidate_echo',description:'Read-only task echo',parameters:{value:{type:'string',required:true}},output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:'Candidate presentation: '+value}]},async execute(args){if(!session)await connect();let r=await send('tools/call',{name:'echo',arguments:args});if(r.status===404){await connect();r=await send('tools/call',{name:'echo',arguments:args});}if(!r.ok)throw Error('Task endpoint '+r.status);return (await r.json()).result.content[0].text;}}));}
+`);
+  },(body,n)=>{
+   if(n===1)return {calls:[{name:'candidate_echo',args:{value:'first'}}]};
+   if(n===2){assert.ok(body.messages.some(m=>m.role==='tool'&&JSON.stringify(m).includes('Candidate presentation: first')));generation++;return {calls:[{name:'candidate_echo',args:{value:'after reconnect'}}]};}
+   assert.ok(body.messages.some(m=>m.role==='tool'&&JSON.stringify(m).includes('after reconnect')));return {text:'done'};
+  });
+  assert.equal(result.code,0,result.stderr);assert.equal(initializations,2);assert.equal(successful,2);
+ }finally{mcp.closeAllConnections();await new Promise(resolve=>mcp.close(resolve));}
+});
