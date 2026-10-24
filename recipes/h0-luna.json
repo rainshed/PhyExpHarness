@@ -1,5 +1,5 @@
 {
-  "id": "h0-luna-v2",
+  "id": "h0-luna-v3",
   "dshVersion": "0.2.1-rc.2",
   "profile": "sdk-minimal",
   "provider": "openai-codex",
@@ -9,16 +9,26 @@
   "maxOutputChars": 16000,
   "shell": "harbor-main-fresh-bash",
   "modules": [],
-  "notes": "H0 uses the native minimal agent loop and compaction. Authentication, container tool transport, and bounded model-request recovery are fixed infrastructure. Connection failures, interrupted streams, and service overload retry the failed model step or compaction after 2, 5, 20, 30, 60 seconds within the original deadline and budget. Completed tools are not replayed. Each bash call starts in /app; files persist, shell state does not. Host filesystem tools are disabled. No task-solving hints, reminders, whole-trial retries, or submission repair.",
+  "notes": "H0 uses the native minimal agent loop and compaction. Fixed recovery composition: one coordinator, transient request retry, invalid output retry, and complete tool-argument error feedback. Transport waits are 2, 5, 20, 30, 60 seconds; content recovery allows two additional attempts (0, 1 seconds); each recovery chain allows at most five additional attempts in total. All recovery uses the original deadline, preserves completed tools, and retains stream protection. Strategies and configuration are frozen for baseline and candidates. Each bash call starts in /app; files persist, shell state does not. Host filesystem tools are disabled. No task-solving hints, whole-trial retries, or submission repair.",
   "requestRecovery": {
-    "version": "solver-request-recovery-v1",
+    "version": "solver-request-recovery-v2",
     "retryDelaysSeconds": [
       2,
       5,
       20,
       30,
       60
-    ]
+    ],
+    "strategies": [
+      "transient-recovery",
+      "response-recovery",
+      "tool-argument-recovery"
+    ],
+    "contentRetryDelaysSeconds": [
+      0,
+      1
+    ],
+    "maxChainRetries": 5
   },
   "timePolicy": "benchmark-time-v1"
 }

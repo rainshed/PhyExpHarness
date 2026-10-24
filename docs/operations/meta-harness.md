@@ -187,7 +187,7 @@ Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid
 
 H0 使用 `sdk-minimal` 原生循环和上下文压缩，默认配方为 [gpt-6-sol / medium](../../recipes/h0-sol.json)。任务原文与公开环境信息交给 Solver，不追加科学算法提示、答案修复或失败后追问。[Luna 配方](../../recipes/h0-luna.json)与对应计划保留供显式选择。
 
-模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与官方未评分记录；新 H0 v2 内置模型请求恢复，连接失败、断线、响应不完整及明确服务过载时按 2、5、20、30、60 秒重试；不重跑整个 Trial。派生任务完成分按活动绑定规则计算。架构边界见[实现方案](../design/meta-harness-implementation.md)。
+模型凭据与审计留在固定宿主，生成插件在无外网 Runner 中运行。Harbor `main` 中的每条 bash 命令从 `/app` 的新 shell 开始：文件保留，shell 变量与当前目录不保留。qsim 通过原生 MCP 工具提供实验能力，评分由官方 verifier 产生。平台保留失败与官方未评分记录；新 H0 v3 内置统一异常恢复组合，覆盖连接重试、异常响应重新生成及完整工具参数错误反馈；不重跑整个 Trial。派生任务完成分按活动绑定规则计算。架构边界见[实现方案](../design/meta-harness-implementation.md)。
 
 ## 创建和运行
 
@@ -522,11 +522,15 @@ Meta 普通回合结束不会结束活动；无在途实验/构建时，后台�
 
 ### 请求恢复诊断
 
-新 H0 v2 的 `requestRecovery.version=solver-request-recovery-v1` 是固定执行基础设施：连接失败、断线、缺少结束回执及明确服务过载后，依次等待 **2、5、20、30、60 秒**，最多重试五次（包含首次共六次请求）。普通循环只重试当前模型步骤，保留已完成工具结果；原生上下文压缩单独恢复当前摘要请求，失败的部分摘要不会写入有效上下文。成功后下一个步骤重新从 2 秒开始。提供方给出的有效 Retry-After 大于本档等待时采用更长等待；剩余墙钟不足则停止。鉴权、参数、预算、用户取消及其他终止保护不自动恢复。提供方适配器继续保持零次通用重试，避免与基线叠加。新 Meta 自身采用下述独立技术恢复策略；旧失败文件继续兼容读取。
+当前 H0 v3 绑定 `requestRecovery.version=solver-request-recovery-v2`，固定加载协调插件和三个策略：传输恢复、异常响应恢复、完整工具参数错误反馈。连接/响应不完整/明确过载仍依次等待 **2、5、20、30、60 秒**；内容恢复共享 **两次**机会，等待 **0、1 秒**；同一恢复链合计最多追加 **五次**请求。Retry-After 更长时遵从服务端等待，原截止不足则停止。
 
-重试的计划、开始与停止原因保存在会话 `plugin:phyexp-request-recovery/*` 事件，计数通过原生会话投影重建；网关审计逐次保留请求、失败、结算与恢复关联，未知用量不清零。运行摘要 `failureContract=request-failure-v2` 的 `failure` 是最终失败，`requestRecovery` 是请求失败历史。
+流中非法 JSON、持续空白和体积超限仍立即中止当前请求，丢弃失败部分后重新生成。完整且有成功终止回执的调用若参数不合法，工具不执行，错误结果反馈给模型。反馈后的新步骤仍沿用原恢复链，不能无限获得次数；只有该链的完整有效响应结束恢复链。以前完成的工具不重放，压缩失败部分不写入摘要，普通辅助调用不会清零主循环状态。鉴权、模型不匹配、宿主错误、取消及截止不属于这套内容恢复。
 
-恢复配方与代码均进入冻结身份和独立导出。缺少 `requestRecovery` 的历史配方仍不启用内置恢复，旧 Bundle 不热修改；新比较应重新准备同一基础设施的 H0 与候选。模型保护、预算和用户停止仍由宿主执行，五档等待最多合计 117 秒（不含请求耗时及服务端要求的更长等待），不会增加原时长或额度。详见[修改计划与验收](../plans/model-request-recovery.md)及[插件恢复接口](../../knowledge/plugin-sdk/guides/request-recovery.md)。
+旧 H0 v2 / `solver-request-recovery-v1` 继续仅做五档传输恢复，缺少配置的配方继续不启用内置恢复。提供方适配器的通用重试仍为零。新组合不会热升级旧 Bundle、已有活动或正在运行的后台，需重新冻结同基础设施的基线与候选后生效。
+
+会话 `plugin:phyexp-request-recovery/*` 保存策略、动作、类别次数、合计次数、链 ID、请求 ID 和停止原因，`phyexpRecoveryV2` 投影可重建状态。bootstrap 回执的 `recoveryComposition` 给出实际加载策略。网关审计与 `requestRecovery.failures` 保存 `recoveryChainId`、`parentRequestId` 和 `recoveredBy`；`failureContract=request-failure-v2` 的 `failure` 只描述最终终止请求。错误反馈会改变上下文，v2 依靠宿主校验后的请求关联，不靠内容相同猜测恢复。
+
+源码、配置和全部恢复资产参与冻结及独立导出。设计和边界见[恢复组合](../design/execution-recovery.md)，实施验收见[专项计划](../plans/model-request-recovery.md)，插件接口见[SDK 指南](../../knowledge/plugin-sdk/guides/request-recovery.md)。当前验证使用合成故障和原生隔离 Runner，不代表已证明真实模型异常率或通过率改善。
 
 
 ## 工作台中的等待状态与历史记录

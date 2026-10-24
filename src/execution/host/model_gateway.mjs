@@ -13,6 +13,8 @@ import {classifyModelFailure,RECOVERABLE_REQUEST_FAILURES} from './model_failure
 import {ADMISSION_CODES} from './budget.mjs';
 import {ACCESS_CODES} from './model_access.mjs';
 import {TransportDiagnostics} from './transport_diagnostics.mjs';
+import {validateJsonSchemaValue} from '@deepseek-ai/dsh-tools';
+import {recoveryPolicy,hasStrategy,OUTPUT_FAILURES} from '../recovery/policy.mjs';
 const contextOverflow=failure=>failure?.observed?.providerCode==='CONTEXT_WINDOW_EXCEEDED';
 
 // Host storage failures remain authoritative after provider cancellation and
@@ -39,11 +41,15 @@ function nextOrAbort(iterator,signal){
  });
 }
 export class ModelGateway {
- constructor({model,adapter,deadline,audit,reserve=async()=>{},settle=async()=>{},policy=DEFAULT_STREAM_POLICY,redact=String}){
+ constructor({model,adapter,deadline,audit,reserve=async()=>{},settle=async()=>{},policy=DEFAULT_STREAM_POLICY,requestRecovery=null,redact=String}){
   this.model=Object.freeze({...model});this.adapter=adapter;this.deadline=deadline;this.audit=audit;
   this.reserve=reserve;this.settle=settle;this.policy=Object.freeze({...DEFAULT_STREAM_POLICY,...policy});
+  this.recovery=recoveryPolicy(requestRecovery);this.recoveryV2=this.recovery?.version==='solver-request-recovery-v2';
+  this.recoveryCounts=new Map();
   this.active=new Map();this.requests=new Map();this.firstFailure=null;this.terminalFailure=null;this.stopped=false;this.redact=redact;
  }
+ recoverableOutput(failure){return OUTPUT_FAILURES.has(failure.code)&&(hasStrategy(this.recovery,'response-recovery')||
+  hasStrategy(this.recovery,'tool-argument-recovery')&&failure.observed?.phase==='tool-feedback');}
  record(event){try{appendLog(this.audit,this.redact(JSON.stringify({time:new Date().toISOString(),...event}))+'\n');}
   catch(error){if(error.hostFailure)this.hostFailure??=error.hostFailure;throw error;}}
  fail(failure){
@@ -53,7 +59,7 @@ export class ModelGateway {
   if(request){request.failure=failure;request.failedAt=Date.now();}
   // Native overflow recovery must be able to send its compaction request. This
   // does not add a retry loop or relax fixed-route, budget or deadline checks.
-  if(!RECOVERABLE_REQUEST_FAILURES.has(failure.code)&&!contextOverflow(failure)&&!this.terminalFailure){this.terminalFailure=failure;
+  if(!RECOVERABLE_REQUEST_FAILURES.has(failure.code)&&!this.recoverableOutput(failure)&&!contextOverflow(failure)&&!this.terminalFailure){this.terminalFailure=failure;
    const file=path.join(path.dirname(this.audit),'failure.json');fs.writeFileSync(file+'.tmp',this.redact(JSON.stringify(failure,null,2))+'\n');fs.renameSync(file+'.tmp',file);
   }
  }
@@ -68,7 +74,7 @@ export class ModelGateway {
   failure=withTransport(failure);
   return hostFailureDiagnostics({hostFailure:hostFailure||this.hostFailure},{failureContract:'request-failure-v2',failure:status==='completed'?null:failure,
    requestRecovery:{failedRequests:failures.length,recoveredRequests:failures.filter(r=>r.recoveredBy).length,
-    failures:failures.map(r=>({...withTransport(r.failure),...(r.recoveredBy?{recoveredBy:r.recoveredBy}:{})}))}});
+    failures:failures.map(r=>({...withTransport(r.failure),...(this.recoveryV2?{recoveryChainId:r.chainId,parentRequestId:r.parentRequestId}:{}),...(r.recoveredBy?{recoveredBy:r.recoveredBy}:{})}))}});
  }
  persistFinal(summary){
   const value=this.diagnostics(summary);const file=path.join(path.dirname(this.audit),'failure.json');
@@ -76,6 +82,8 @@ export class ModelGateway {
   return value;
  }
  async *stream(request,signal){
+  // Recovery references are host-validated control data, never provider input.
+  const {phyexpRecovery:recoveryRef,phyexpRecoveryScope:recoveryScope,...providerRequest}=request;request=providerRequest;
   if(this.hostFailure)throw Object.assign(new Error('Host audit unavailable'),{hostFailure:this.hostFailure});
   // Native compaction omits reasoningEffort. Use the operator's fixed value,
   // rather than rejecting the SDK's summary call or falling back at the provider.
@@ -88,6 +96,24 @@ export class ModelGateway {
   if(this.stopped)throw new Error('Gateway cancelled');
   if(signal?.aborted)throw new Error('Model call cancelled');
   if(Date.now()>=this.deadline)throw new Error('Run deadline reached');
+  let parent;
+  if(recoveryRef){
+   parent=this.requests.get(recoveryRef.parentRequestId);
+   if(!this.recoveryV2||!parent?.failure||parent.recoveredBy||parent.chainId!==recoveryRef.chainId||
+    parent.sessionId!==request.sessionId||(parent.purpose==='compaction')!==(request.purpose==='compaction'))throw new Error('Invalid recovery parent');
+   // Independent admission cap: another listener cannot multiply a claimed
+   // recovery chain even if it returns retry before the coordinator sees it.
+   if(!contextOverflow(parent.failure)){
+    const counts=this.recoveryCounts.get(parent.chainId)||{total:0,content:0,transport:0};
+    const category=OUTPUT_FAILURES.has(parent.failure.code)?'content':'transport';
+    const limit=category==='content'?this.recovery.contentRetryDelaysSeconds.length:this.recovery.retryDelaysSeconds.length;
+    if(counts.total>=this.recovery.maxChainRetries||counts[category]>=limit){
+     this.record({type:'recovery_stopped',requestId:parent.id,recoveryChainId:parent.chainId,reason:'host_recovery_limit',counts});
+     throw Object.assign(new Error('Model recovery limit reached'),{gatewayFailure:{code:'RECOVERY_STOPPED',message:'Model recovery limit reached',requestId:parent.id}});
+    }
+    this.recoveryCounts.set(parent.chainId,{...counts,total:counts.total+1,[category]:counts[category]+1});
+   }
+  }
   const id=crypto.randomUUID(),controller=new AbortController();
   const combined=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
   this.active.set(id,controller);
@@ -105,7 +131,8 @@ export class ModelGateway {
    this.active.delete(id);throw error;
   }finally{clearTimeout(admissionTimer);}
   const {signal:ignoredSignal,...contents}=request;
-  const state={id,sessionId:request.sessionId,purpose:request.purpose,startedAt:Date.now(),key:crypto.createHash('sha256').update(JSON.stringify(contents)).digest('hex')};
+  const state={id,sessionId:request.sessionId,purpose:request.purpose,chainId:parent?.chainId||id,parentRequestId:parent?.id,
+   startedAt:Date.now(),key:crypto.createHash('sha256').update(JSON.stringify(contents)).digest('hex'),toolIssues:[]};
   const transport=new TransportDiagnostics({configuredTransport:this.adapter?.transport,redact:this.redact,
    record:event=>this.record({type:'transport',id,...event})});
   state.transport=transport;
@@ -114,6 +141,8 @@ export class ModelGateway {
   this.active.set(id,controller);let usage=null,finish=null,timeout,idle,iterator,observedFinish=false;
   const failure=(code,observed={})=>{if(state.failure)return state.failure;const f={...guard.fault(code,Date.now(),{...observed,transport:transport.snapshot()}),requestId:id,
    termination:code==='request_cancelled'?'cancelled':code.startsWith('model_')?'provider':'protection'};this.fail(f);return f;};
+  const outputFailure=()=>({code:'MODEL_OUTPUT_INVALID',message:'Model returned invalid tool arguments or output',
+   outputCode:state.failure.code,requestId:id,recoveryChainId:state.chainId});
   const cancel=code=>{if(!controller.signal.aborted){failure(code);controller.abort(code);}};
   const consume=chunk=>{if(chunk.type==='usage')usage=chunk.usage;if(chunk.type==='finish'){finish=chunk.reason;observedFinish=true;}};
   const drain=async pending=>{let open=true;
@@ -121,7 +150,7 @@ export class ModelGateway {
     consume(late.value);this.record({type:'chunk',id,chunk:late.value,afterCancellation:true});if(observedFinish)break;
    }})().catch(()=>{}),this.policy.cleanupGraceMs);}finally{open=false;}
   };
-  this.record({type:'request',id,request,streamPolicy:this.policy});
+  this.record({type:'request',id,request,streamPolicy:this.policy,...(this.recoveryV2?{recoveryChainId:state.chainId,parentRequestId:state.parentRequestId}:{})});
   const requestLimit=this.policy.requestTimeoutMs??Infinity;
   timeout=setTimeout(()=>cancel(this.deadline<=guard.startedAt+requestLimit?'trial_deadline':'request_timeout'),Math.max(1,Math.min(this.deadline-Date.now(),requestLimit)));
   if(this.policy.streamIdleTimeoutMs!=null)idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
@@ -142,31 +171,47 @@ export class ModelGateway {
     if(result.done)break;
     const chunk=result.value;consume(chunk);this.record({type:'chunk',id,chunk});
     clearTimeout(idle);if(this.policy.streamIdleTimeoutMs!=null)idle=setTimeout(()=>cancel('stream_idle_timeout'),this.policy.streamIdleTimeoutMs);
-    const fault=guard.accept(chunk);
+    let fault=guard.accept(chunk);
+    if(!fault&&this.recoveryV2&&chunk.type==='block-end'&&chunk.block?.type==='tool-call'){
+     const schema=request.tools?.find(t=>t.name===chunk.block.name)?.parameters;
+     if(schema&&validateJsonSchemaValue(schema,JSON.parse(chunk.block.arguments)).length)
+      fault=guard.fault('tool_argument_schema_error',Date.now(),{phase:'tool-call-end',callId:chunk.block.id});
+    }
     for(const warning of guard.warnings.splice(0))this.record({type:'warning',id,...warning});
+    if(fault?.observed?.phase==='tool-call-end'&&chunk.block?.id&&recoveryScope==='step'&&request.purpose!=='compaction'&&hasStrategy(this.recovery,'tool-argument-recovery')){
+     state.toolIssues.push({callId:chunk.block.id,code:fault.code,
+      message:'Invalid tool arguments: provide a complete JSON object matching the declared tool schema. The tool was not executed.'});
+     fault=null; // Still require a successful terminal receipt before accepting this call for error feedback.
+    }
     if(fault){this.fail({...fault,requestId:id});controller.abort(fault.code);
      // Wait briefly for a trustworthy late terminal receipt; never execute truncated arguments.
      await drain(Promise.resolve().then(()=>transport.run(()=>iterator.next())));
      throw new Error(fault.code);
     }
     if(chunk.type==='finish'&&finish?.kind==='max-tokens')failure('model_output_limit');
+    if(chunk.type==='finish'&&finish?.kind==='aborted')failure('request_cancelled');
     if(chunk.type==='finish'&&finish?.kind==='error'){
      transport.adapterFailure(finish.failure);
      const normalized=classifyModelFailure(finish.failure,transport.failureFacts());failure(normalized.code,normalized.observed);
      state.providerCode=normalized.failure.code;
-     finish={...finish,failure:{...normalized.failure,requestId:id}};
+     finish={...finish,failure:{...normalized.failure,requestId:id,...(this.recoveryV2?{recoveryChainId:state.chainId}:{})}};
      yield {...chunk,reason:finish};
     }else yield chunk;
    }
    if(!finish){failure('model_stream_incomplete');throw new Error('Model stream ended without terminal finish');}
+   if(this.recoveryV2&&finish.kind!=='error'&&finish.kind!=='aborted'&&!state.failure){
+    if(state.toolIssues.length){failure(state.toolIssues[0].code,{phase:'tool-feedback',callIds:state.toolIssues.map(i=>i.callId)});state.providerCode='MODEL_OUTPUT_INVALID';}
+    yield {type:'phyexp-request-outcome',requestId:id,...(state.toolIssues.length?{failure:outputFailure(),issues:state.toolIssues}:{})};
+   }
   }catch(error){
    transport.error('adapter_error',error);
    this.record({type:'adapter_error',id,error:{name:error?.name,code:error?.code,message:String(error?.message||error)}});
    const normalized=classifyModelFailure(error,transport.failureFacts());
    if(!state.failure)failure(combined.aborted?'request_cancelled':normalized.code,normalized.observed);
-   state.providerCode=state.failure.code==='model_stream_incomplete'?'TRANSPORT':normalized.failure.code;
+   state.providerCode=this.recoverableOutput(state.failure)?'MODEL_OUTPUT_INVALID':state.failure.code==='model_stream_incomplete'?'TRANSPORT':normalized.failure.code;
    // Carry safe structured facts through the process bridge; arbitrary stack text stays local.
-   error.gatewayFailure={...normalized.failure,code:RECOVERABLE_REQUEST_FAILURES.has(state.failure.code)||contextOverflow(state.failure)?state.providerCode:state.failure.code,requestId:id};
+   error.gatewayFailure=this.recoverableOutput(state.failure)?outputFailure():{...normalized.failure,code:RECOVERABLE_REQUEST_FAILURES.has(state.failure.code)||contextOverflow(state.failure)?state.providerCode:state.failure.code,requestId:id,
+    ...(this.recoveryV2?{recoveryChainId:state.chainId}:{})};
    throw error;
   }finally{
    clearTimeout(timeout);clearTimeout(idle);controller.abort('Request finished');
@@ -183,7 +228,8 @@ export class ModelGateway {
     state.completedAt=Date.now();
     for(const prior of this.requests.values()){
      const compacted=contextOverflow(prior.failure)&&state.purpose!=='compaction'&&prior.sessionId===state.sessionId&&[...this.requests.values()].some(r=>r.sessionId===state.sessionId&&r.purpose==='compaction'&&r.completedAt>=prior.failedAt&&r.completedAt<=state.startedAt);
-     if(prior.failure&&!prior.recoveredBy&&(prior.key===state.key||compacted)&&prior.failedAt<=state.startedAt){
+     const linked=parent&&prior.chainId===state.chainId&&prior.sessionId===state.sessionId;
+     if(prior.failure&&!prior.recoveredBy&&(linked||(!this.recoveryV2&&prior.key===state.key)||compacted)&&prior.failedAt<=state.startedAt){
       prior.recoveredBy=id;this.record({type:'request_recovered',id:prior.id,recoveredBy:id});
      }
     }

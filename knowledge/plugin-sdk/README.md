@@ -14,7 +14,7 @@
 
 冻结时传入包含 `plugin.json` 的目录路径。清单 `dependencies` 表示本次组合中其他插件的名称和顺序；Cordis 服务依赖写在源码的 `inject` 中，例如 `inject = ['systemPrompt']`，不要将服务名放进清单的插件依赖。`capabilities` 使用清单 schema 中的已有枚举，`observes` / `intervenes` 用来说明接触的事件、工具或上下文。声明是装配审查信息，外部 Runner、网关和工具隔离执行真实权限边界；不能因声明为空就认为任意源码无副作用。
 
-额外模型调用可读取 Runner 的 `PHYEXP_FIXED_MODEL`（JSON：provider/model/reasoningEffort/maxTokens），并通过 `ctx.llm.stream` 使用同一固定设置。每次调用都会独立计量；普通直接调用由插件处理恢复。新 H0 v2 对原生模型步骤及上下文压缩内置 2、5、20、30、60 秒的连接/过载恢复，历史缺少配置的配方保持零次内置恢复。`agent/request-error` 原生接口及恢复链边界见 `guides/request-recovery.md`；不开放网关或记账权限。插件清单 schema 的资料 ID 为 `plugin-manifest`。可选 `packageDependencies` 只能引用执行锁中已装配的准确版本；不可假定开发宿主上的库也存在。
+额外模型调用可读取 Runner 的 `PHYEXP_FIXED_MODEL`（JSON：provider/model/reasoningEffort/maxTokens），并通过 `ctx.llm.stream` 使用同一固定设置。每次调用都会独立计量；普通直接调用由插件处理恢复。新 H0 v3 对原生模型步骤及压缩装配固定恢复组合：传输五档等待，异常响应与工具参数反馈共享两次内容恢复，同链合计最多追加五次请求。历史 v1 保持传输恢复，缺少配置保持零次内置恢复。`agent/request-error` 原生接口及恢复链边界见 `guides/request-recovery.md`；不开放网关或记账权限。插件清单 schema 的资料 ID 为 `plugin-manifest`。可选 `packageDependencies` 只能引用执行锁中已装配的准确版本；不可假定开发宿主上的库也存在。
 
 批次与冻结操作立即返回 ID；完成通知由后台持久推送。等待时可以结束当前回复，后续通知会继续同一会话，无需反复查询状态。报告应引用工具返回的稳定 evidence ID，区分观察、解释、反证与尚未验证之处。
 

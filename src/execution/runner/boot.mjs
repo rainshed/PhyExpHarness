@@ -23,5 +23,5 @@ for(const plugin of patches.flatMap(p=>p.insert||[])){
  if(!entries.some(e=>e.id===plugin.id&&e.state===2))throw new Error('Required plugin failed to load: '+plugin.id);
 }
 const schemas=ctx.tools.schemas();
-for await(const _ of requestHost('receipt',{kind:'bootstrap',entries,tools:schemas.map(t=>t.name).sort(),schemas})){}
+for await(const _ of requestHost('receipt',{kind:'bootstrap',entries,tools:schemas.map(t=>t.name).sort(),schemas,...(ctx.phyexpRecovery?{recoveryComposition:ctx.phyexpRecovery.describe()}:{})})){}
 ready=true;for(const fn of listeners)fn();listeners.clear();

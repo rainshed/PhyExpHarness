@@ -17,6 +17,7 @@ MESSAGES = {
     'accounting_lease_expired': '平台请求凭证已到期或被撤销',
     'accounting_auth_failed': '平台请求凭证验证失败',
     'accounting_protocol_error': '平台准入接口返回异常',
+    'tool_argument_schema_error': '工具调用参数不符合工具声明的结构',
     'invalid_tool_arguments': '工具调用参数格式异常，无法构成合法 JSON',
     'stream_whitespace': '工具调用参数持续输出空白，触发异常流保护',
     'stream_repetition': '工具调用参数持续重复，触发异常流保护',
@@ -57,7 +58,7 @@ MESSAGES = {
 
 def failure_attribution(code):
     """Observed layer only; output symptoms do not prove a model-weight defect."""
-    if code in {'invalid_tool_arguments','stream_whitespace','stream_repetition','response_size_limit',
+    if code in {'tool_argument_schema_error','invalid_tool_arguments','stream_whitespace','stream_repetition','response_size_limit',
                 'tool_argument_size_limit','model_output_limit','user_stop_invalid_tool_argument_stream'}:
         return {'category':'model_output','categoryLabel':'模型输出链路',
                 'causeNote':'输出格式、内容或大小触发保护；模型与适配器的具体责任仍需原始证据确认。'}
@@ -100,7 +101,7 @@ def public_failure(value):
               'message': MESSAGES[code], 'source': value.get('source', 'execution-artifacts'),**failure_attribution(code)}
     if code == 'model_response_error' and (value.get('observed') or {}).get('providerCode') == 'CONTEXT_WINDOW_EXCEEDED':
         result['message'] = '模型适配器判定上下文容量超限，请检查上下文压缩'
-    for key in ['requestId', 'detectedAt', 'policyVersion', 'termination', 'evidence', 'observed', 'limits', 'secondaryCodes']:
+    for key in ['requestId', 'detectedAt', 'policyVersion', 'recoveryChainId', 'parentRequestId', 'termination', 'evidence', 'observed', 'limits', 'secondaryCodes']:
         if key in value: result[key] = value[key]
     return result
 

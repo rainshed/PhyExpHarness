@@ -38,6 +38,7 @@
 | 开发推进、验证与验收规则 | [开发任务书](docs/plans/meta-harness-development.md) |
 | 安装、构建、运行、恢复与已知限制 | [运行说明](docs/operations/meta-harness.md) |
 | 模型流保护、失败诊断与离线回放 | [运行说明](docs/operations/meta-harness.md#模型请求保护与故障诊断) |
+| 执行 Harness 恢复协调、策略组合与错误反馈 | [完整设计](docs/design/execution-recovery.md) |
 | 模型请求恢复与故障零分增量 | [专项计划](docs/plans/model-request-recovery.md) |
 | 已结束未评分尝试计失败与历史计分兼容 | [任务完成规则 v4](docs/design/task-completion-v4.md) |
 | 移除用量账本、统计与 token 预算 | [当前方案](docs/design/model-access-without-accounting.md) |

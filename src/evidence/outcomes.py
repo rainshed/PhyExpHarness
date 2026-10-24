@@ -27,7 +27,7 @@ def description_for(config=None):
     if rule == END_TO_END_RULE:return END_TO_END_DESCRIPTION
     return (DESCRIPTION+' 预算准入不足单列为截断；平台账本和凭证故障单列为外部故障，均不计入任务成功率。') if rule==RESOURCE_RULE else DESCRIPTION if rule==RULE else LEGACY_DESCRIPTION
 
-OUTPUT_FAILURES = {'invalid_tool_arguments', 'stream_whitespace', 'stream_repetition',
+OUTPUT_FAILURES = {'invalid_tool_arguments', 'tool_argument_schema_error', 'stream_whitespace', 'stream_repetition',
                    'response_size_limit', 'tool_argument_size_limit', 'model_output_limit',
                    'user_stop_invalid_tool_argument_stream'}
 EXTERNAL_FAILURES = {'model_service_overloaded', 'model_transport_error', 'model_response_error', 'model_stream_incomplete',

@@ -1,16 +1,10 @@
 import {z} from 'zod';
 import {LlmError} from '@deepseek-ai/dsh-llm';
 import {appendPluginRecord} from '@deepseek-ai/dsh-session';
+export {recoveryPolicy} from '../recovery/policy.mjs';
 
 const recordPrefix='plugin:phyexp-request-recovery/';
 const projectionKey='phyexpRequestRecovery';
-export function recoveryPolicy(value){
- if(value==null)return null; // Old frozen recipes and Meta keep their own policy.
- if(value.version!=='solver-request-recovery-v1'||!Array.isArray(value.retryDelaysSeconds)||
-  value.retryDelaysSeconds.length!==5||value.retryDelaysSeconds.some(n=>!Number.isFinite(n)||n<=0||n>3600))
-  throw new Error('Invalid Solver request recovery policy');
- return Object.freeze({...value,retryDelaysSeconds:Object.freeze([...value.retryDelaysSeconds])});
-}
 export function retryPlan(policy,previous,failure,deadline,now=Date.now()){
  if(!policy||!recoverableFailure(failure))return {stop:'ineligible'};
  if(previous>=policy.retryDelaysSeconds.length)return {stop:'exhausted'};

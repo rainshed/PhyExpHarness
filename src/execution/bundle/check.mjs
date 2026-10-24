@@ -15,7 +15,7 @@ const modelInfo={provider:recipe.provider,id:entry.id,name:entry.name??entry.id,
  context:{contextWindow:entry.contextWindow??272000},
  ...(entry.reasoningEfforts?{reasoning:{efforts:Object.keys(entry.reasoningEfforts).map(id=>({id,name:id}))}}:{})};
 let receipt;let calls=0;
-const gateway=new ModelGateway({model:recipe,deadline:Date.now()+20000,audit:path.join(logs,'check-gateway.jsonl'),adapter:{async *stream(){
+const gateway=new ModelGateway({requestRecovery:recipe.requestRecovery,model:recipe,deadline:Date.now()+20000,audit:path.join(logs,'check-gateway.jsonl'),adapter:{async *stream(){
  calls++;yield {type:'block-start',index:0,blockType:'text'};yield {type:'block-end',index:0,block:{type:'text',text:'Technical assembly check.'}};
  yield {type:'usage',usage:{inputTokens:1,outputTokens:1,totalTokens:2}};yield {type:'finish',reason:{kind:'stop'}};
 }}});

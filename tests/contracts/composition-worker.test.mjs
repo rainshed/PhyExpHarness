@@ -65,6 +65,8 @@ test('stored composition worker recovers an HTTP overload and loads immutable pl
   assert.equal(receipt.compositionId,bundle.id);
   assert.equal(receipt.framework.version,recipe.dshVersion);
   assert.equal(receipt.plugins[0].config.prefix,'frozen:');
+  assert.equal(receipt.recoveryComposition.version,'solver-request-recovery-v2');
+  assert.deepEqual(receipt.recoveryComposition.strategies,recipe.requestRecovery.strategies);
   const summary=JSON.parse(fs.readFileSync(path.join(logs,'runtime-summary.json')));
   assert.equal(summary.status,'completed');assert.equal(summary.toolCalls,1);assert.equal(requests,3);
   assert.equal(summary.requestRecovery.recoveredRequests,1);assert.equal(summary.failure,null);
@@ -72,7 +74,7 @@ test('stored composition worker recovers an HTTP overload and loads immutable pl
   assert.deepEqual(events.filter(e=>e.type==='plugin:phyexp-request-recovery/scheduled').map(e=>e.data.delayMs),[2000]);
   const config=JSON.parse(fs.readFileSync(path.join(logs,'runner-config/runner.json')));
   assert.deepEqual(config.requestRecovery,recipe.requestRecovery);
-  assert.equal(summary.usage.totalTokens,24);
+  assert.equal(summary.usage,undefined); // New recipes do not recreate the removed usage ledger.
  }finally{
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   console.log('Composition worker evidence: '+dir);

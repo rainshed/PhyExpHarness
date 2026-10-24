@@ -8,7 +8,13 @@
     "src/execution/runner/assets/sdk-minimal.yml",
     "src/execution/adapters/quantum_harbor/container_tool.mjs",
     "src/execution/adapters/quantum_harbor/worker.mjs",
-    "src/execution/adapters/quantum_harbor/agent.py"
+    "src/execution/adapters/quantum_harbor/agent.py",
+    "src/execution/recovery/composition.mjs",
+    "src/execution/recovery/core.mjs",
+    "src/execution/recovery/policy.mjs",
+    "src/execution/recovery/response.mjs",
+    "src/execution/recovery/tool_arguments.mjs",
+    "src/execution/recovery/transient.mjs"
   ],
   "generatedPlugins": "Only manifest-declared entry/assets under the frozen plugins directory; loaded inside network-none Runner",
   "externalInputs": [
@@ -38,7 +44,13 @@
           "src/execution/runner/request_recovery.mjs",
           "src/execution/runner/dsh_session.mjs",
           "src/execution/runner/assets/sdk-minimal.yml",
-          "src/execution/runner/Dockerfile"
+          "src/execution/runner/Dockerfile",
+          "src/execution/recovery/composition.mjs",
+          "src/execution/recovery/core.mjs",
+          "src/execution/recovery/policy.mjs",
+          "src/execution/recovery/response.mjs",
+          "src/execution/recovery/tool_arguments.mjs",
+          "src/execution/recovery/transient.mjs"
         ]
       },
       {

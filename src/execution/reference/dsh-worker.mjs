@@ -27,6 +27,7 @@ const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.jso
 const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,toolCalls:0};
 const budget=executionAccess(deadline);
 let gateway,session,credentials,provider,checkpoint,watchdog;let terminating=false;
+let bootstrapReady;const bootstrap=new Promise(resolve=>{bootstrapReady=resolve;});
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
  if(session?.failure)summary.hostFailure??=session.failure;
@@ -43,7 +44,7 @@ try{
  if(reference){({credentials,provider}=await referenceProvider(reference));}
  else{credentials=createProviderCredentials(recipe,{minimumValidityMs:Math.max(120000,deadline-Date.now()+120000)});
  provider=await providerRuntime({model:recipe,credentialFile:credentials.credentialFile});}
- gateway=new ModelGateway({...(benchmark?{policy:BENCHMARK_STREAM_POLICY}:{}),model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
+ gateway=new ModelGateway({requestRecovery:recipe.requestRecovery,...(benchmark?{policy:BENCHMARK_STREAM_POLICY}:{}),model:recipe,adapter:provider,deadline,audit:path.join(logs,'gateway-audit.jsonl'),reserve:budget.reserve,settle:budget.settle,redact:credentials.redact});
  const plugins=bundle.plugins.map(p=>({id:p.name,name:'/opt/phyexp/'+p.entry,config:p.config}));
  session=isolatedSession({executionRoot:standard?path.resolve(import.meta.dirname,'..'):resolved.executionRoot,logs,gateway,image:process.env.PHYEXP_RUNNER_IMAGE_ID||bundle.runnerImage,
   config:{standardReference:standard,disableLocalTools:!standard,fixedModel:Object.fromEntries(['provider','model','reasoningEffort','maxTokens'].map(k=>[k,recipe[k]])),modelInfo:provider.info,mcpConnections:connections,
@@ -54,7 +55,7 @@ try{
   async *handler(op,payload,signal){
    if(op==='mcp')yield* forwardMcp(connections,payload,signal);
    else if(op==='tool')yield await callContainer(socketPath,payload.command,signal,benchmark?deadline:null);
-   else if(op==='receipt'){fs.writeFileSync(path.join(logs,payload.kind==='bootstrap'?'bootstrap-receipt.json':'tool-ready.json'),JSON.stringify(payload));yield {ok:true};}
+   else if(op==='receipt'){fs.writeFileSync(path.join(logs,payload.kind==='bootstrap'?'bootstrap-receipt.json':'tool-ready.json'),JSON.stringify(payload));if(payload.kind==='bootstrap')bootstrapReady(payload);yield {ok:true};}
    else throw new Error('Capability denied');
   }});
  process.once('SIGTERM',stop);process.once('SIGINT',stop);
@@ -70,7 +71,9 @@ try{
   +(standard?'Native tools operate in the isolated Harness workspace. Use task_bash for all task files and final submissions in /app. ':'')+'The '+(standard?'task_bash':'bash')+' tool runs inside the task container, starting in /app on each call. Files persist between calls; shell state does not.\n'
   +'Configured MCP endpoints (reachable from Python client scripts inside the container):\n'+JSON.stringify(environment.mcpServers)+'\n';
  fs.writeFileSync(path.join(logs,'prompt.txt'),prompt);
- fs.writeFileSync(path.join(logs,'load-receipt.json'),JSON.stringify({bundleId:bundle.id,compositionId:bundle.compositionId,framework:bundle.framework,worker:import.meta.url,agent:bundle.agentEntry,plugins:bundle.plugins,filesVerified:Object.keys(bundle.files).length},null,2));
+ const {recoveryComposition}=await Promise.race([bootstrap,session.exited.then(()=>{throw new Error('Runner exited before bootstrap receipt');})]);
+ if(recipe.requestRecovery?.version==='solver-request-recovery-v2'&&(recoveryComposition?.version!==recipe.requestRecovery.version||JSON.stringify(recoveryComposition.strategies)!==JSON.stringify(recipe.requestRecovery.strategies)))throw new Error('Recovery composition differs from frozen recipe');
+ fs.writeFileSync(path.join(logs,'load-receipt.json'),JSON.stringify({recoveryComposition,bundleId:bundle.id,compositionId:bundle.compositionId,framework:bundle.framework,worker:import.meta.url,agent:bundle.agentEntry,plugins:bundle.plugins,filesVerified:Object.keys(bundle.files).length},null,2));
  // Enforce base inventory and declared additions on every call, including calls made by plugins.
  const stream=gateway.stream.bind(gateway);
  gateway.stream=async function*(request,signal){

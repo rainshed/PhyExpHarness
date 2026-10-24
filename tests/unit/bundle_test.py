@@ -135,6 +135,16 @@ class BundleTests(unittest.TestCase):
         exported=Path(export_project(current['path'],self.base/'recovery-export')['path'])
         self.assertEqual(json.loads((exported/'recipe.json').read_text())['requestRecovery']['retryDelaysSeconds'],[2,5,20,30,60])
         self.assertTrue((exported/'src/execution/runner/request_recovery.mjs').is_file())
+        recovery=json.loads((exported/'recipe.json').read_text())['requestRecovery']
+        self.assertEqual(recovery['version'],'solver-request-recovery-v2')
+        self.assertEqual(recovery['contentRetryDelaysSeconds'],[0,1])
+        self.assertEqual(recovery['maxChainRetries'],5)
+        for module in ['policy','core','composition','transient','response','tool_arguments']:
+            self.assertTrue((exported/f'src/execution/recovery/{module}.mjs').is_file())
+        original=json.loads(json.dumps(self.recipe['requestRecovery']))
+        self.recipe['requestRecovery']['strategies'].remove('tool-argument-recovery')
+        self.assertNotEqual(current['id'],self.freeze()['id'])
+        self.recipe['requestRecovery']=original
         del self.recipe['requestRecovery']
         old=self.freeze()
         self.assertNotEqual(current['id'],old['id'])

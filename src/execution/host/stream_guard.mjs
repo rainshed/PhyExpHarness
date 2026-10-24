@@ -77,7 +77,7 @@ export class StreamGuard {
    else if(text){t.white+=Buffer.byteLength(text);t.whiteSince??=time;}
    if(t.white>=this.policy.whitespaceMinBytes&&time-t.whiteSince>=this.policy.whitespaceMinMs)
     return this.fault('stream_whitespace',time,{consecutiveWhitespaceBytes:t.white,whitespaceDurationMs:time-t.whiteSince});
-   try{t.parser.push(text);}catch{return this.fault('invalid_tool_arguments',time,{toolArgumentBytes:t.bytes});}
+   try{t.parser.push(text);}catch{return this.fault('invalid_tool_arguments',time,{toolArgumentBytes:t.bytes,phase:'argument-delta'});}
    t.tail=(t.tail+text).slice(-this.policy.repetitionWarningBytes);
    if(!t.warned&&t.tail.length===this.policy.repetitionWarningBytes){
     for(let period=1;period<=64;period++)if(t.tail.slice(period)===t.tail.slice(0,-period)){
@@ -87,14 +87,16 @@ export class StreamGuard {
   }
   if(chunk.type==='block-end'&&chunk.block?.type==='tool-call'){
    const t=this.tools.get(chunk.index);
+   const n=Buffer.byteLength(chunk.block.arguments||'');
+   this.bytes+=Math.max(0,n-(t?.bytes||0));
+   if(n>this.policy.maxToolArgumentBytes)return this.fault('tool_argument_size_limit',time,{toolArgumentBytes:n});
+   if(this.bytes>this.policy.maxResponseBytes)return this.fault('response_size_limit',time);
    try{
     // Validate exact delivered arguments too; native adapters may normalize the end block.
     const value=JSON.parse(chunk.block.arguments);
-    if(!value||Array.isArray(value)||typeof value!=='object'||(t&&!t.parser.complete()))throw new Error();
-    if(!t){const n=Buffer.byteLength(chunk.block.arguments);this.bytes+=n;
-     if(n>this.policy.maxToolArgumentBytes)return this.fault('tool_argument_size_limit',time,{toolArgumentBytes:n});
-     if(this.bytes>this.policy.maxResponseBytes)return this.fault('response_size_limit',time);}
-   }catch{return this.fault('invalid_tool_arguments',time);}
+    if(!value||Array.isArray(value)||typeof value!=='object')throw new Error();
+   }catch{return this.fault('invalid_tool_arguments',time,{phase:'tool-call-end',callId:chunk.block.id});}
+   if(t&&!t.parser.complete())return this.fault('invalid_tool_arguments',time,{phase:'stream-mismatch'});
   }
   return null;
  }

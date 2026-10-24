@@ -10,7 +10,7 @@ export function apply(ctx){let calls=0;
  ctx.tools.register(defineTool({name:'count_once',description:'Count an irreversible fixture action.',parameters:{},output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},async execute(){return 'action-count-'+(++calls);}}));
 
 }`;
-const policy=JSON.parse(fs.readFileSync('recipes/h0-sol.json')).requestRecovery;
+const policy={version:'solver-request-recovery-v1',retryDelaysSeconds:[2,5,20,30,60]};
 test('new baseline recovers failed steps, preserves completed tools, and resets its delay per step',{timeout:45000},async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-native-recovery-'));const plugins=path.join(dir,'plugins');fs.mkdirSync(plugins);fs.writeFileSync(path.join(plugins,'fixture.mjs'),plugin);
  let calls=0;const settled=[];const reserves=[];

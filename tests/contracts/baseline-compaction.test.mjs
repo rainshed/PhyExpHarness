@@ -10,7 +10,8 @@ test('new baseline recovers native compaction without leaking a partial summary'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-native-compaction-'));
  const model={provider:'openai-codex',model:'gpt-6-astra',reasoningEffort:'medium',maxTokens:8192};
  const requests=[],reserves=[],settlements=[];let summaries=0;
- const gateway=new ModelGateway({model,deadline:Date.now()+40000,audit:path.join(dir,'gateway.jsonl'),
+ const requestRecovery=JSON.parse(fs.readFileSync('recipes/h0-sol.json')).requestRecovery;
+ const gateway=new ModelGateway({requestRecovery,model,deadline:Date.now()+40000,audit:path.join(dir,'gateway.jsonl'),
   reserve:async(id,request)=>reserves.push({id,sessionId:request.sessionId}),settle:async(id,result)=>settlements.push({id,result}),
   adapter:{async *stream(request){
    requests.push(request);assert.equal(request.reasoningEffort,model.reasoningEffort);assert.equal(request.maxTokens,model.maxTokens);
@@ -25,7 +26,7 @@ test('new baseline recovers native compaction without leaking a partial summary'
   }}});
  const session=isolatedSession({executionRoot:'src/execution',logs:dir,gateway,
   image:process.env.PHYEXP_COMPACTION_TEST_IMAGE||'phyexp-runner:0.2.1-rc.2',
-  config:{requestRecovery:JSON.parse(fs.readFileSync('recipes/h0-sol.json')).requestRecovery,recoveryDeadline:gateway.deadline,disableLocalTools:true,fixedModel:model,modelInfo:{provider:model.provider,id:model.model,name:model.model,
+  config:{requestRecovery,recoveryDeadline:gateway.deadline,disableLocalTools:true,fixedModel:model,modelInfo:{provider:model.provider,id:model.model,name:model.model,
    context:{contextWindow:150000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}}},async *handler(op){assert.equal(op,'receipt');yield {ok:true};}});
  try{
   await session.request('initialize',{...model,cwd:'/tmp/work'});

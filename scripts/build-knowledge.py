@@ -35,6 +35,7 @@ def build(destination):
     version=json.loads((ROOT/'node_modules/@deepseek-ai/dsh/package.json').read_text())['version']
     profile={'dshVersion':version,'profile':'sdk-minimal','extensionVersion':2,'tools':['bash','mcp__qsim__*'],'isolated':True}
     profile['assets']={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in ['src/execution/runner/assets/sdk-minimal.yml','src/execution/runner/boot.mjs','src/execution/runner/isolated.mjs','src/execution/runner/gateway_plugin.mjs','src/execution/runner/request_recovery.mjs','src/execution/adapters/quantum_harbor/container_tool.mjs']}
+    profile['assets'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/'src/execution/recovery').glob('*.mjs'))})
     fingerprint=hashlib.sha256(json.dumps(profile,sort_keys=True).encode()).hexdigest()
     manifest={'schemaVersion':1,'dshVersion':version,'profile':profile,'profileDigest':fingerprint,'documents':docs,'api':API,'verification':'declarations; native behavior checked separately in M0 contracts'}
     manifest['id']=hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()
