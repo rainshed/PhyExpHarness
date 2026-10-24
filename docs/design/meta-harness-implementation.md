@@ -1,8 +1,20 @@
 # Meta-Harness 实现方案
 
-2026-10-24 执行边界重构目标：由 Meta 拥有完整候选 Harness 的入口、依赖、工具、上下文与恢复策略，平台收窄为必要运行监督和官方评测接入。全链路审计、限制取舍及目标架构见[职责设计](execution-harness-boundary.md)，迁移和验收见[实施计划](../plans/execution-harness-refactor.md)。方案尚未实施；下文固定 SDK/profile、工具集合和恢复策略等条款描述既有实现，不作为新链路的长期约束，旧冻结活动继续保留原语义。
+## 当前执行契约：harbor-process-v1
 
-当前模型调用采用[无用量记账的控制检查](model-access-without-accounting.md)：新活动绑定 `control-only-v1`、`meta-tools-v8`、`meta-system-v10`。旧文中的 token 预留、结算、对账与消耗汇总仅保留历史兼容职责；新链路保留权限、时间、次数、并发及存储控制。
+`src/control/process_candidates.py` 复用 candidate_check/freeze；Meta 提交 `projectPath`，无需 researchRefs、框架白名单或预装依赖许可。`src/execution/bundle/project.py` 在无宿主挂载、无运行凭据、无容器 socket 的临时环境构建；依赖安装脚本可运行，构建取消和容量由外部监督执行。源码、文件模式、锁、工具链镜像、产物和可信适配器均有摘要。
+
+`ProcessHarborAgent` 将产物部署到 Harbor main 的 `/opt/harness`，在 `/app` 启动入口。模型 HTTP/SSE 通道位于独立受信容器；只固定已约定模型字段、短期凭据和期限，保存原始请求/响应，透传工具集合、原生 compact 与合法扩展字段。没有逐请求控制数据库准入、自动生成重试或内容错误永久锁定。WebSocket 明确不支持。
+
+默认 DSH 工程位于 `templates/harness/default`。模型适配、profile、恢复、工具、会话及上下文都属于候选。候选可以换框架、增加依赖、更换 MCP 客户端、删除恢复组件；平台不需要知道其算法目的。声明文件中的 plugins 只是可读材料，不是第二套平台装配器；实际依赖由候选框架或入口解析。
+
+`official.py` 独立核验 Harbor 官方产物，并输出 execution / officialResult / evidenceStatus / comparison。非零退出与超时使用 Harbor 原生异常，因此可以继续官方评分；环境失败与用户取消不伪装成功，官方缺失分数保留 null。重读通过同一收集器形成新投影，不再按新 bug 名称增加分支；旧缺陷补读分支只服务旧链路。
+
+check 的范围是隔离构建、产物完整性及入口存在性，不执行模型，也不承诺能在所有任务环境启动。需要任务端点的工程无法用无任务启动证明；实际启动、取消、工具执行及评分由正式 Trial 和独立契约验收覆盖。检查回执明确标注 `isolated-build-and-entrypoint`，不能当成科学成功。
+
+2026-10-24 执行边界重构目标：由 Meta 拥有完整候选 Harness 的入口、依赖、工具、上下文与恢复策略，平台收窄为必要运行监督和官方评测接入。全链路审计、限制取舍及目标架构见[职责设计](execution-harness-boundary.md)，迁移和验收见[实施计划](../plans/execution-harness-refactor.md)。新活动已使用 `harbor-process-v1`；下文固定 SDK/profile、工具集合和宿主恢复策略等条款仅描述历史 v1/v2 链路，旧冻结活动继续保留原语义。
+
+当前模型调用采用[无用量记账的控制检查](model-access-without-accounting.md)：新活动绑定 `control-only-v1`、`meta-tools-v9`、`meta-system-v11`。旧文中的 token 预留、结算、对账与消耗汇总仅保留历史兼容职责；新链路保留权限、时间、次数、并发及存储控制。
 
 日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量与可选参考实验插件已实施，参考接入支持范围见专项设计第 13 节 · 需求基线：[meta-harness.md v0.15](../requirements/meta-harness.md)
 

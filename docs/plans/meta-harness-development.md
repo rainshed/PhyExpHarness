@@ -1,6 +1,6 @@
 # Meta-Harness AI 开发任务书
 
-2026-10-24 执行链路重构计划见[执行 Harness 与 Quantum Harbor 链路重构](execution-harness-refactor.md)，职责与限制清单见[设计](../design/execution-harness-boundary.md)。该计划以完整候选工程、可替换执行策略和原生评测接入取代旧固定执行策略边界；当前只完成方案，实施仍按当次用户授权推进，不因文档新增自动改动运行或启动真实实验。
+2026-10-24 执行链路重构计划见[执行 Harness 与 Quantum Harbor 链路重构](execution-harness-refactor.md)，职责与限制清单见[设计](../design/execution-harness-boundary.md)。该计划以完整候选工程、可替换执行策略和原生评测接入取代旧固定执行策略边界；本轮已获完整实施与验收授权；每个独立增量验证后本地提交，验收结果与全部失败记录存于 `reports/development/meta-harness/execution-v3/`。
 
 2026-10-24 增量：按[移除用量账本方案](../design/model-access-without-accounting.md)取消新活动的 token 预留、结算、统计和预算控制；保留运行管理与历史兼容。此前里程碑中的记账验收是历史要求，新行为以该方案为准。
 

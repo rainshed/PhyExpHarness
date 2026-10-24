@@ -1,5 +1,7 @@
 # Meta 通用 Agent 与完整证据访问设计
 
+2026-10-24 执行工程增量已接入：meta-tools-v9 的 candidate_check/freeze 接收 `projectPath`；新系统模板引导 Meta 自主编辑整个工程。materials 提供完整源码、harness.json、隔离构建回执和日志，SDK 包含 process-harness 指南；实际安装框架及版本由候选锁决定。模型/执行错误、官方评分及证据缺口分开可读，无需先写报告或填写固定研究模板才能测试。旧工具版本的 schema 和冻结材料继续按原绑定读取。
+
 日期：2026-10-21 · 状态：核心实现已落地；第 13 节七工具修改方案待实施，完整故障矩阵继续验收 · 框架核对基线：DeepSeek Harness 0.2.1-rc.2
 
 Meta 应当是具备通用工作能力的 DeepSeek Harness Agent，通过业务插件承担执行 Harness 的研究与改进。模型可以自行查看材料、编写脚本、运行检查、委派分析和继续调查；平台提供可访问的完整证据、持久工作区及可靠的活动监督。

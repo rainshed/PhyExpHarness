@@ -1,6 +1,6 @@
 # Meta-Harness 需求文档
 
-2026-10-24 目标边界更新：Meta 的研究对象扩展为完整执行 Harness 组合，执行策略、框架/profile、启动入口及依赖由候选版本拥有；平台仅保留用户与 benchmark 的外部约束、运行监督、官方评测及证据职责。具体保留/移除清单见[职责设计](../design/execution-harness-boundary.md)，交付与验收见[实施计划](../plans/execution-harness-refactor.md)。本增量为待实施目标，不改变当前运行、旧冻结对象或既有计分规则；与本目标冲突的固定执行策略条款仅适用于旧链路。
+2026-10-24 目标边界更新：Meta 的研究对象扩展为完整执行 Harness 组合，执行策略、框架/profile、启动入口及依赖由候选版本拥有；平台仅保留用户与 benchmark 的外部约束、运行监督、官方评测及证据职责。具体保留/移除清单见[职责设计](../design/execution-harness-boundary.md)，交付与验收见[实施计划](../plans/execution-harness-refactor.md)。新活动默认使用 `harbor-process-v1`、`harness-composition-v3`、`meta-tools-v9` 和 `meta-system-v11`；在途活动、旧冻结对象及既有计分规则保持原绑定；与本目标冲突的固定执行策略条款仅适用于旧链路。
 
 当前用量范围：新活动已移除 token 账本、消耗统计及 token 总量限制，按时间、轮次、实验次数和并发执行。原始轨迹与历史记录保留。具体边界见[移除方案](../design/model-access-without-accounting.md)。下文历史版本中涉及 token 预算的要求仅适用于旧冻结活动。
 

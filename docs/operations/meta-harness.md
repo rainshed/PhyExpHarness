@@ -1,5 +1,23 @@
 # Meta-Harness 运行与恢复
 
+## 完整执行工程（新活动默认）
+
+新活动默认冻结 `harness-composition-v3`，运行契约为 `harbor-process-v1`，Meta 工具/系统模板为 v9/v11。升级后重建工作台并在维护窗口重启后台；已运行活动继续使用原冻结实现，不热替换适配器、模型或任务。旧 v1/v2 仍可读取、执行与导出，不能把新旧链路的成绩当作同条件对照。
+
+Meta 在 `/work/plugins/h0` 获得普通完整基线，可复制到其他目录，修改入口、框架、profile、依赖及恢复。对工程调用 candidate_check / candidate_freeze 的 `projectPath`，然后使用原 batch_submit / batch_status / evidence / results_compare / export_create。不需要先覆盖全部 H0 任务、提交研究引用或申请某种执行算法。check 只表示隔离构建及入口存在性通过，正式启动与评分以 Trial 为准。
+
+外部容量来自 `schemas/execution/process-resources.json`，冻结到活动和配方：构建默认 2 CPU、4 GiB、256 PID、600 秒、产物 1 GiB；模型代理默认 1 CPU、512 MiB、64 PID、单请求解压后 64 MiB。它们不是 token 预算或执行策略。任务 main/qsim 使用 benchmark 与宿主兼容层资源，并记录实际 HostConfig。Rootless 单 UID 目前仅验证五个公开数据提交任务，不能据此声称支持需要其他 UID、特殊服务或自定义环境的任务。
+
+构建联网取得精确依赖并允许运行安装脚本；候选执行时 main 只连接任务 qsim 和专属模型通道。真实凭据不进候选。通道支持原生 Responses（含 compact）、Chat Completions、Anthropic HTTP/SSE，支持常用压缩请求，暂不支持 WebSocket。不同工具清单、辅助会话与内部重试共用通道，无额外许可。
+
+停止由独立监督收回本次 main、qsim、模型代理及网络；候选子进程使用 main 的私有 PID 空间。控制数据库暂时不可用不会阻断每个模型请求。已经送达监督端的停止会终止在途请求；未送达时不能报告停止完成，原 benchmark 截止仍由本地通道执行。源码更新不得改变在途 Trial 身份。
+
+结果 `execution` / `officialResult` / `evidenceStatus` / `comparison` 分别保存。非零退出不阻止已产生的官方分数；诊断附件损坏不抹掉可信官方分数；官方文件损坏或归属错误则不报告可信得分。重复收集不重跑模型。导出使用包内 README 和 run.py；Python 按 requirements.lock 安装，模型与 Quantum-Harbor 是显式外部配置，不需要原仓库或活动数据。
+
+完整契约的 Meta 镜像需包含当前原生依赖与历史工具测试依赖，可用 `python3 tests/contracts/prepare-meta-image.py --output /absolute/fixture-images` 准备，令 `PHYEXP_META_TEST_IMAGE` 指向返回的不可变镜像。参考 CLI 测试需将 `PHYEXP_REFERENCE_IMAGES` 指向已有准备回执；不会使用真实模型。先 `npm run build`，再运行完整契约，避免把未构建 UI 或旧 Solver 镜像当作 Meta 环境。
+
+验收入口与证据范围见[重构计划](../plans/execution-harness-refactor.md)。实际运行记录保留在本地 `reports/development/meta-harness/execution-v3/`；测试夹具的官方 0 分用于验证接入，不能计入真实模型策略比较。
+
 当前新活动已移除用量账本、消耗统计及 token 预算。重建工作台并在维护更新后台后新建活动生效；已运行进程和旧冻结活动保持原协议，历史记录不清理。范围与兼容边界见[移除方案](../design/model-access-without-accounting.md)。
 
 本文说明平台的安装、构建、运行与恢复；产品目标见 [README](../../README.md)。

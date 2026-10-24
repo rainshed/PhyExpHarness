@@ -1,5 +1,7 @@
 # 执行 Harness 异常恢复组合
 
+版本边界：本文的 H0 v3 是旧配方版本名，不能与 `harness-composition-v3` 文件格式混淆。`harbor-process-v1` 默认工程已把协调器与策略移入 `templates/harness/default/recovery/`，并把流保护移入候选 `host/`；Meta 可编辑、替换或完全不装配。这里的错误分类、重试次数和延迟是默认组件行为，均不是平台许可规则。新模型通道不重试、不维护 terminalFailure、不按 JSON/空白内容停止 Trial。
+
 日期：2026-10-24。适用：H0 v3、`solver-request-recovery-v2` 及其新冻结组合。旧 H0 v2 的 v1 传输恢复及无配置配方保持原策略。
 
 ## 1. 目标与边界

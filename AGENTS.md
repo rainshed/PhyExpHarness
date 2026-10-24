@@ -25,6 +25,7 @@
 |---|---|
 | 固定 Solver、插件组合优化与可理解的进化 | [项目设计哲学](docs/design/design-philosophy.md) |
 | 项目目标与产品要求 | [README](README.md)、[需求文档](docs/requirements/meta-harness.md) |
+| 完整执行工程、Meta 策略所有权与官方评分重构 | [职责设计](docs/design/execution-harness-boundary.md)、[验收计划](docs/plans/execution-harness-refactor.md) |
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
 | Meta 执行策略自主权、全链路限制取舍与 Harbor 接入重构 | [职责设计](docs/design/execution-harness-boundary.md)、[实施计划](docs/plans/execution-harness-refactor.md) |
 | 长活动存储共享、快照、压缩与容量保护 | [存储管理设计](docs/design/storage-management.md) |
