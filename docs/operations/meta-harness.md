@@ -756,3 +756,11 @@ python3 tests/smoke/references/run.py --execute-real-models \
 接口仅接受用户凭证：`GET /campaigns/{id}/deletion` 返回预检查或当前任务；首次 `POST` 提交 `{expectedRevision, idempotencyKey}`，失败后以新键及 `retry: true` 重试。活动修订变化会拒绝旧预检查，重新核对后再确认。完成后只保留活动 ID 和旧创建请求摘要等防重标记，不保留历史正文。
 
 源码更新后运行 `npm run build`，在无在途任务的维护窗口更新后台及工作台；数据库启动时自动创建版本 6 的删除任务与文件归属表。没有对现有活动执行自动删除。隔离验收入口：`python -m unittest tests.unit.campaign_deletion_test`、`python tests/smoke/campaign_deletion.py`（需要本地 Runner 镜像及 Docker）；浏览器夹具为 `tests/fixtures/deletion_workbench.py --data-dir <空的测试目录> --port <端口>`。这些检查均不调用真实模型，完整实现与边界见[删除设计](../design/campaign-deletion.md)。
+
+### 控制数据库并发与报告发布
+
+控制数据库继续使用 SQLite WAL。Meta 调用的身份核验与审查状态查询不再申请写锁；实际写操作仍在各自事务中核验权限与状态。报告正文先在受管目录生成，短写事务内重查请求身份和修订，再原子替换文件并提交记录。并发修订有冲突时按原规则拒绝，重复请求返回原报告；中途失败不登记未完成报告，崩溃遗留文件归所属活动清理。启动时数据库版本 7 增加报告范围及请求身份索引，不修改旧报告正文。
+
+写锁最多等待 30 秒，仅在 `BEGIN IMMEDIATE` 尚未成功时退避重试，不重放事务正文、构建或模型调用。锁等待或事务耗时达到 1 秒，以及 SQLite 错误，会向后台日志写出 `control_transaction`：含事务 ID、调用位置/操作、进程/线程、等待和持锁时间、尝试次数、结果及 SQLite 错误码，不记录 SQL 参数、模型正文或凭据。可据此定位慢写入；不能仅凭一次忙错误断定是并发上限导致。
+
+离线回归入口：`python3 -m unittest tests.unit.database_concurrency_test`。覆盖 15 路并发候选登记、状态查询、含较大事实快照的报告保存与重复请求，以及渲染阻塞、文件发布失败、修订冲突、事务回滚和只读调用不等待写锁；不代表真实模型长活动的稳定性验收。

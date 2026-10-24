@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -15,9 +16,10 @@ from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for, description_for
 from . import resource_planning as planning
 from .model_access import control_only, check_config, TOKEN_FIELDS
+from .database import begin_write, diagnostic
 from src.execution.host.task_time import benchmark_time
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
@@ -189,6 +191,8 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
             db.execute('CREATE TABLE IF NOT EXISTS deletions(campaign TEXT PRIMARY KEY,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS deleted_create_keys(digest TEXT PRIMARY KEY)')
+            db.execute("CREATE INDEX IF NOT EXISTS reports_scope ON reports(campaign,json_extract(data,'$.batchId'),json_extract(data,'$.kind'))")
+            db.execute("CREATE INDEX IF NOT EXISTS reports_request ON reports(campaign,json_extract(data,'$.metaRequest.requestId'))")
     @contextlib.contextmanager
     def read_snapshot(self):
         if not hasattr(self, '_read_local'): self._read_local=threading.local()
@@ -203,18 +207,26 @@ class Store:
             self._read_local.db=None;db.rollback();db.close()
 
     @contextlib.contextmanager
-    def connection(self,write=False):
+    def connection(self,write=False,*,operation=None):
         active=getattr(getattr(self,'_read_local',None),'db',None)
         if active is not None:
             if write:raise RuntimeError('Writes are not allowed inside a query snapshot')
             yield active
             return
         db=sqlite3.connect(self.path,timeout=30);db.row_factory=sqlite3.Row
+        caller=sys._getframe(2)
+        operation=operation or f'{Path(caller.f_code.co_filename).name}:{caller.f_code.co_name}:{caller.f_lineno}'
+        started=time.monotonic();acquired=None;attempts=0;error=None;transaction=uuid.uuid4().hex
         try:
-            if write:db.execute('BEGIN IMMEDIATE')
+            if write:attempts=begin_write(db)
+            acquired=time.monotonic()
             yield db;db.commit()
-        except BaseException:db.rollback();raise
-        finally:db.close()
+        except BaseException as exc:
+            error=exc;db.rollback();raise
+        finally:
+            db.close()
+            diagnostic(transaction=transaction,operation=operation,write=write,started=started,
+                       acquired=acquired,attempts=attempts,error=error)
     def _get(self,db,table,id):
         if table not in TABLES:raise ValueError('Unknown table')
         row=db.execute(f'SELECT data FROM {table} WHERE id=?',(id,)).fetchone()

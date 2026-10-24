@@ -3,6 +3,9 @@ from src.control.model_access import control_only
 import hashlib
 import copy
 import json
+import os
+import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from src.control.store import Refused,identity,encoded,comparison_issues,retention_rule_description
@@ -133,24 +136,51 @@ class Reports:
         self.store.track_artifact(record['campaignId'],self.root/record['id'],'report')
         record['reading']=project(record,self.root.parent)
         record['presentationVersion']=PRESENTATION_VERSION
-        with self.store.connection(True) as db:
-            self.store.writable(record['campaignId'],db)
-            if record.get('metaRequest'):
-                request=record['metaRequest']
-                previous=next((r for r in self.store._list(db,'reports',record['campaignId']) if r.get('metaRequest',{}).get('requestId')==request['requestId']),None)
-                if previous:
-                    if previous['metaRequest']['payload']!=request['payload']:raise Refused('Report request payload changed')
-                    return previous
-            prior=[r for r in self.store._list(db,'reports',record['campaignId']) if r['batchId']==record['batchId'] and r['kind']==record['kind']]
-            if expected_revision is not None and expected_revision!=len(prior):raise Refused('Report revision changed')
-            record['analysisRevision']=len(prior)+1;record['previousReportId']=prior[-1]['id'] if prior else None
-            directory=self.root/record['id'];directory.mkdir(parents=True)
-            record['markdownPath']=str(directory/'report.md')
-            (directory/'report.md').write_text(render(record))
-            (directory/'report.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
-            result=self.store._save(db,'reports',record)
-            self.store._event(db,record['campaignId'],'report_saved',reportId=record['id'],reportKind=record['kind'])
-            return result
+        directory=self.root/record['id'];directory.mkdir(parents=True)
+        pending=Path(tempfile.mkdtemp(prefix='.publishing-',dir=directory))
+        try:
+            while True:
+                with self.store.connection() as db:
+                    previous=self._replay(db,record)
+                    if previous:return previous
+                    head=self._head(db,record)
+                if expected_revision is not None and expected_revision!=head[0]:raise Refused('Report revision changed')
+                result={**record,'analysisRevision':head[0]+1,'previousReportId':head[1],
+                        'markdownPath':str(directory/'report.md'),'schemaVersion':1,'revision':record.get('revision',0)+1}
+                # Render, serialize and write all bodies before taking the writer lock.
+                body=encoded(result)
+                (pending/'report.md').write_text(render(result))
+                (pending/'report.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+                with self.store.connection(True,operation='report.publish') as db:
+                    self.store.writable(record['campaignId'],db)
+                    previous=self._replay(db,record)
+                    if previous:return previous
+                    if self._head(db,record)!=head:
+                        if expected_revision is not None:raise Refused('Report revision changed')
+                        continue
+                    db.execute('INSERT INTO reports VALUES(?,?,?)',(result['id'],result['campaignId'],body))
+                    # Only atomic renames remain under the lock. Readers see the DB
+                    # row after both files exist. A crash leaves a tracked orphan,
+                    # never a committed row pointing at unfinished files.
+                    for name in ('report.md','report.json'):os.replace(pending/name,directory/name)
+                    self.store._event(db,record['campaignId'],'report_saved',reportId=record['id'],reportKind=record['kind'])
+                return result
+        finally:shutil.rmtree(pending,ignore_errors=True)
+
+    def _head(self,db,record):
+        rows=db.execute("SELECT id FROM reports WHERE campaign=? AND json_extract(data,'$.batchId') IS ? AND json_extract(data,'$.kind')=? ORDER BY rowid",
+                        (record['campaignId'],record['batchId'],record['kind'])).fetchall()
+        return len(rows),rows[-1]['id'] if rows else None
+
+    def _replay(self,db,record):
+        request=record.get('metaRequest')
+        if not request:return None
+        row=db.execute("SELECT data FROM reports WHERE campaign=? AND json_extract(data,'$.metaRequest.requestId')=?",
+                       (record['campaignId'],request['requestId'])).fetchone()
+        if row:
+            previous=json.loads(row['data'])
+            if previous['metaRequest']['payload']!=request['payload']:raise Refused('Report request payload changed')
+            return previous
 
 def render(report):
     return render_reading(report)

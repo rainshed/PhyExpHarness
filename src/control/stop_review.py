@@ -93,7 +93,7 @@ class StopRuntime:
     def __init__(self,service):self.service=service;self.store=service.store
     def dispatch(self,session_id,action,data):
         store=self.store
-        with store.connection(True) as db:
+        with store.connection(action not in ('call','review_status'),operation='meta_runtime.'+action) as db:
             session=store._get(db,'meta_sessions',session_id);campaign=session['campaignId'];c=store._get(db,'campaigns',campaign)
             if c['config'].get('stopPolicy') not in CONTROLLED_POLICIES or session['state'] not in ['starting','running','waiting']:raise Refused('Active composed Meta session required')
             agents=session.get('agents',{})
