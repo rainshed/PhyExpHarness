@@ -96,6 +96,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     runtime_root = Path(__file__).resolve().parents[3]
     bundle_root, quantum_harbor, output = map(lambda p: Path(p).resolve(), [bundle_root, quantum_harbor, output])
     bundle = verify(bundle_root)
+    process_contract = bundle.get('schemaVersion') == 3
     recipe = json.loads((bundle_root / 'recipe.json').read_text())
     benchmark = recipe.get('timePolicy') == BENCHMARK_TIME
     timing = read_task_time(quantum_harbor, task_name) if benchmark else None
@@ -126,9 +127,14 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
             raise TimeoutError('Insufficient time for startup and official verification')
         # No generated plugin is loaded during this host preflight.
         auth = "import fs from 'node:fs';import {createProviderCredentials} from './src/execution/host/provider_auth.mjs';const c=createProviderCredentials(JSON.parse(fs.readFileSync(process.argv[2])),{minimumValidityMs:Number(process.argv[1])});c.dispose();"
-        if not os.environ.get('PHYEXP_REFERENCE_SPEC'):subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
-        image = subprocess.run(['docker', 'image', 'inspect', os.environ.get('PHYEXP_REFERENCE_IMAGE') or bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
-        provenance['runnerImageId'] = image
+        if process_contract:
+            from ..process.binding import binding
+            binding(recipe, deadline)
+        elif not os.environ.get('PHYEXP_REFERENCE_SPEC'):subprocess.run(['node', '--input-type=module', '-e', auth, str(int((remaining+120)*1000)), str(bundle_root/'recipe.json')], cwd=runtime_root, check=True)
+        image = subprocess.run(['docker', 'image', 'inspect', recipe['processResources']['brokerImage'] if process_contract else os.environ.get('PHYEXP_REFERENCE_IMAGE') or bundle['runnerImage'], '--format', '{{.Id}}'], text=True, capture_output=True, check=True).stdout.strip()
+        provenance['brokerImageId' if process_contract else 'runnerImageId'] = image
+        if process_contract:
+            provenance.update(runContract=bundle['infrastructureVersion'], processResources=recipe['processResources'])
         solver_deadline = None if benchmark else min(deadline - TRIAL_CLOSEOUT_RESERVE_SECONDS, time.time() + recipe['agentTimeoutSec'])
         if not benchmark:provenance['solverDeadline']=solver_deadline
         selected=(ref.get('native') or {}).get('call') or ref['fixedSolver'] if os.environ.get('PHYEXP_REFERENCE_SPEC') else recipe
@@ -171,10 +177,19 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
                 write_json(output/'supervisor.json', {'pid':os.getpid(), 'childPid':process.pid, 'state':'running', 'deadline':deadline,'heartbeat':time.time()})
                 time.sleep(.5)
         write_json(output/'process.json', {'harborExitCode':process.returncode,'stopReason':stopped['reason']})
-        result = collect(output)
+        if process_contract:
+            from ..adapters.quantum_harbor.official import collect as collect_official
+            result = collect_official(output, bundle_id=bundle['id'], task=task_name)
+        else:
+            result = collect(output)
     except Exception as error:
         from .failure import failed_result
         result = failed_result(output, error, stopped['reason'])
+        if process_contract:
+            result.update(resultContract='official-result-v3',
+                execution={'status':stopped['reason'] or 'error','exception':str(error)},
+                officialResult={'status':'not_run' if isinstance(error,FileNotFoundError) else 'unavailable'},
+                evidenceStatus={'status':'partial'},comparison={'status':'identity_unverified'})
     finally:
         signal.signal(signal.SIGTERM, previous)
         if process and process.poll() is None:
@@ -186,6 +201,10 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
                 provenance.update({k:phase[k] for k in ('solverStartedAt','solverDeadline')})
         provenance.update(finishedAt=now(), wallTimeSeconds=time.time()-started)
         write_json(output/'provenance.json', provenance)
+    if process_contract and result.get('officialReward') is not None:
+        # Projection digests must describe the finalized provenance, not its
+        # starting checkpoint. No model or task execution is repeated.
+        result = collect_official(output, bundle_id=bundle['id'], task=task_name)
     result.update(runId=output.name,runDir=str(output),bundleId=bundle['id'],wallTimeSeconds=time.time()-started,cleanup=actions)
     write_json(output/'summary.json', result)
     write_json(output/'supervisor.json', {'pid':os.getpid(),'state':'finished','deadline':deadline,'finishedAt':now()})

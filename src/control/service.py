@@ -386,7 +386,7 @@ class ControlService:
             frozen=self.store.get('campaigns',trial['campaignId'])['config']
             env=dict(self.providers.environment(frozen['solver']['provider'],campaign_route(frozen,'solver')),**model_environment(self.base_url,lease['id'],token,frozen),
                 PHYEXP_LAUNCH_ID=trial['launchId'])
-            args=[sys.executable,str(runtime/'run.py'),*(['--bundle',str(bundle)] if manifest.get('schemaVersion')==2 else []),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
+            args=[sys.executable,str(runtime/'run.py'),*(['--bundle',str(bundle)] if manifest.get('schemaVersion') in (2,3) else []),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
                 '--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-time.time()))]
             if not control_only(frozen):args+=['--soft-token-limit',str(frozen['softTokenLimit'] or 'none')]
             config=self.store.get('campaigns',trial['campaignId'])['config']

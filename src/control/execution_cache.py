@@ -116,6 +116,22 @@ def prepare_dependencies(resolved, cache, log):
 def prepare_runtime(bundle_root, cache, log=None, *, install=True):
     resolved = resolve(bundle_root)
     cache = Path(cache).resolve()
+    if resolved.manifest.get('schemaVersion') == 3:
+        # Trusted adapter files only; candidate sources and built artifacts are
+        # resolved separately and are never installed/imported on the host.
+        contents = {p: f.read_bytes() for p, f in resolved.assets.items()
+                    if not p.startswith('candidate/') and p not in ('candidate.tar', 'recipe.json', 'objects.json')}
+        key = resolved.manifest['adapter']; parent = cache / 'process-adapters'
+        with _lock(parent, key):
+            expected = {p: digest(v) for p, v in contents.items()}
+            existing = _current(parent, key)
+            if existing and hashes(existing) == expected: return existing
+            with tempfile.TemporaryDirectory(prefix='.preparing-', dir=parent) as temporary:
+                stage = Path(temporary) / 'adapter'; stage.mkdir()
+                for name, value in contents.items():
+                    file = stage / name; file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_bytes(value); file.chmod(0o444)
+                return _publish(parent, key, stage)
     modules = resolved.root / 'node_modules'
     if (resolved.manifest.get('schemaVersion', 1) == 1 and modules.is_symlink()
             and modules.resolve().is_relative_to(cache / 'dependencies') and install):
