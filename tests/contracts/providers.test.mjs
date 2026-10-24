@@ -32,7 +32,7 @@ for(const role of ['solver','meta'])test(`configured pi-ai ${role} uses its froz
   const gateway=new ModelGateway({model,adapter:runtime,deadline:Date.now()+40000,audit:path.join(dir,'gateway.jsonl')});
   const plugins=path.join(dir,'plugins');fs.mkdirSync(plugins);
   fs.writeFileSync(path.join(plugins,'probe.mjs'),`import {defineTool} from '@deepseek-ai/dsh-tools';export const name='probe';export const inject=['tools'];export function apply(ctx){ctx.tools.register(defineTool({name:'probe',description:'Fixture',parameters:{},output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute(){if(process.env.PHYEXP_FIXTURE_KEY)throw Error('secret leaked');return 'offline-fixture-result';}}));}`);
-  session=isolatedSession({executionRoot:'src/execution',logs:dir,gateway,
+  session=isolatedSession({image:process.env.PHYEXP_META_TEST_IMAGE,executionRoot:'src/execution',logs:dir,gateway,
    config:{disableLocalTools:true,fixedModel:model,modelInfo:runtime.info,plugins:role==='meta'?[{id:'meta',name:'/opt/phyexp/meta-plugin/index.mjs',config:{systemPrompt:'Offline fixture'}}]:[{id:'probe',name:'/opt/phyexp/plugins/probe.mjs'}]},
    mounts:role==='meta'?[`type=bind,source=${path.resolve('packages/meta-harness')},target=/opt/phyexp/meta-plugin,readonly`]:[`type=bind,source=${plugins},target=/opt/phyexp/plugins,readonly`],
    async *handler(op,payload){if(op==='receipt'){yield {ok:true};return;}assert.equal(op,'meta');assert.equal(payload.operation,'campaign_status');yield {fixture:'offline-fixture-result'};}});

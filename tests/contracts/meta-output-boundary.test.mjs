@@ -46,7 +46,9 @@ test('large success, denial, host failure and raw event queries stay compact thr
    yield*call('session_event_read',{seq:rawSeq,before:0,after:0},'event-read');
   }else yield*done();
  }};
- const makeHost=attempt=>new MetaHost({config,root,image:process.env.PHYEXP_META_TEST_IMAGE,logs:path.join(dir,'logs-'+attempt),frozen:{id:'fixture',composition:JSON.parse(fs.readFileSync(path.join(root,'packages/meta-harness/composition-native.json'))),systemPrompt:{text:'Bounded results fixture'},reviewerPrompt:'Review'},
+ const composition=JSON.parse(fs.readFileSync(path.join(root,'packages/meta-harness/composition-native.json')));
+ composition.plugins.find(p=>p.id==='meta-stop-review').enabled=true;
+ const makeHost=attempt=>new MetaHost({config,root,image:process.env.PHYEXP_META_TEST_IMAGE,logs:path.join(dir,'logs-'+attempt),frozen:{id:'fixture',composition,systemPrompt:{text:'Bounded results fixture'},reviewerPrompt:'Review'},
   gateway:new MetaGateway({mainSessionId:config.id,model,deadline:Date.now()+85000,audit:path.join(dir,'audit-'+attempt),reserve:async()=>{},settle:async()=>{},adapter}),
   modelInfo:{provider:model.provider,id:model.model,name:model.model,context:{contextWindow:272000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}},
   async api(_route,{action,input}){

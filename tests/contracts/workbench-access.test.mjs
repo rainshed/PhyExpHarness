@@ -40,7 +40,7 @@ for(const variant of ['studio','all','both'])test(`native ${variant} login prote
  const ui=spawn(process.execPath,['scripts/workbench.mjs'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
  let output='';ui.stdout.on('data',chunk=>output+=chunk);ui.stderr.on('data',chunk=>output+=chunk);
  try{
-  for(let i=0;i<150&&!output.includes('dsh web:');i++){assert.equal(ui.exitCode,null,'UI exited before startup');await delay(100);}
+  for(let i=0;i<150&&!output.includes('dsh web:');i++){assert.equal(ui.exitCode,null,'UI exited before startup: '+output);await delay(100);}
   const launch=output.match(/dsh web: (https:\/\/\S+)/)?.[1];assert.ok(launch,'UI must print the advertised login URL');
   const url=new URL(launch);assert.equal(url.origin,origin);
   const entries=JSON.parse(fs.readFileSync(path.join(data,'ui','workbench.patch.json'),'utf8'))[0].insert;

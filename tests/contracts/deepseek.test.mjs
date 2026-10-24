@@ -39,7 +39,7 @@ for(const role of ['solver','meta'])test(`DeepSeek ${role} completes an isolated
   const plugins=path.join(dir,'plugins');fs.mkdirSync(plugins);
   fs.writeFileSync(path.join(plugins,'probe.mjs'),`import {defineTool} from '@deepseek-ai/dsh-tools';
    export const name='probe';export const inject=['tools'];export function apply(ctx){ctx.tools.register(defineTool({name:'probe',description:'Offline isolation fixture',parameters:{},output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute(){if(process.env.DEEPSEEK_API_KEY)throw Error('credential leaked');return 'offline-fixture-result';}}));}`);
-  session=isolatedSession({executionRoot:'src/execution',logs:dir,gateway,
+  session=isolatedSession({image:process.env.PHYEXP_META_TEST_IMAGE,executionRoot:'src/execution',logs:dir,gateway,
    config:{disableLocalTools:true,fixedModel:model,modelInfo:runtime.info,plugins:role==='meta'?
     [{id:'meta',name:'/opt/phyexp/meta-plugin/index.mjs',config:{systemPrompt:'Exercise the offline fixture only.'}}]:[{id:'probe',name:'/opt/phyexp/plugins/probe.mjs'}]},
    mounts:role==='meta'?[`type=bind,source=${path.resolve('packages/meta-harness')},target=/opt/phyexp/meta-plugin,readonly`]:[`type=bind,source=${plugins},target=/opt/phyexp/plugins,readonly`],
