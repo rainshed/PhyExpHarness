@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phyexp:harness-project-v1",
+  "title": "Complete candidate project for harbor-process-v1",
+  "type": "object",
+  "required": [
+    "runContract",
+    "entrypoint",
+    "build"
+  ],
+  "properties": {
+    "runContract": {
+      "const": "harbor-process-v1"
+    },
+    "entrypoint": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\u0000]*$"
+      },
+      "prefixItems": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$"
+        }
+      ]
+    },
+    "build": {
+      "type": "object",
+      "required": [
+        "image",
+        "argv",
+        "locks"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "locks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Exact dependency locks; empty for a dependency-free build. The immutable build image and output digest are always recorded."
+        }
+      },
+      "additionalProperties": true
+    },
+    "framework": {},
+    "profile": {},
+    "runtimeConfig": {},
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

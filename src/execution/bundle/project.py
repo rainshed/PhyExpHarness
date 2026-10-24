@@ -44,6 +44,9 @@ def snapshot(directory):
         raise ValueError('Project changed while snapshotting')
     if 'harness.json' not in contents: raise ValueError('Missing harness.json')
     spec = json.loads(contents['harness.json'])
+    from jsonschema import Draft202012Validator
+    schema=Path(__file__).resolve().parents[3]/'schemas/execution/harness-project.schema.json'
+    Draft202012Validator(json.loads(schema.read_text())).validate(spec)
     if spec.get('runContract') != CONTRACT: raise ValueError('Unsupported process contract')
     for field in ('entrypoint',):
         argv = spec.get(field)
