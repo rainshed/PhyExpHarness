@@ -1,5 +1,7 @@
 # Meta-Harness 实现方案
 
+2026-10-24 执行边界重构目标：由 Meta 拥有完整候选 Harness 的入口、依赖、工具、上下文与恢复策略，平台收窄为必要运行监督和官方评测接入。全链路审计、限制取舍及目标架构见[职责设计](execution-harness-boundary.md)，迁移和验收见[实施计划](../plans/execution-harness-refactor.md)。方案尚未实施；下文固定 SDK/profile、工具集合和恢复策略等条款描述既有实现，不作为新链路的长期约束，旧冻结活动继续保留原语义。
+
 当前模型调用采用[无用量记账的控制检查](model-access-without-accounting.md)：新活动绑定 `control-only-v1`、`meta-tools-v8`、`meta-system-v10`。旧文中的 token 预留、结算、对账与消耗汇总仅保留历史兼容职责；新链路保留权限、时间、次数、并发及存储控制。
 
 日期：2026-10-23 · 状态：架构基线，包含已实施与待完成部分；第 8.6 节的进化解释增量与可选参考实验插件已实施，参考接入支持范围见专项设计第 13 节 · 需求基线：[meta-harness.md v0.15](../requirements/meta-harness.md)

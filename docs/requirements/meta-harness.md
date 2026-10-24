@@ -1,5 +1,7 @@
 # Meta-Harness 需求文档
 
+2026-10-24 目标边界更新：Meta 的研究对象扩展为完整执行 Harness 组合，执行策略、框架/profile、启动入口及依赖由候选版本拥有；平台仅保留用户与 benchmark 的外部约束、运行监督、官方评测及证据职责。具体保留/移除清单见[职责设计](../design/execution-harness-boundary.md)，交付与验收见[实施计划](../plans/execution-harness-refactor.md)。本增量为待实施目标，不改变当前运行、旧冻结对象或既有计分规则；与本目标冲突的固定执行策略条款仅适用于旧链路。
+
 当前用量范围：新活动已移除 token 账本、消耗统计及 token 总量限制，按时间、轮次、实验次数和并发执行。原始轨迹与历史记录保留。具体边界见[移除方案](../design/model-access-without-accounting.md)。下文历史版本中涉及 token 预算的要求仅适用于旧冻结活动。
 
 版本：0.15 · 日期：2026-10-23 · 状态：需求基线；参考实验新增 Claude Code、UI 独立开关与用户选定范围内的 Meta 自主组合，设计与开发计划已编写，功能尚未实施。进化可读性、插件版本管理与按需导出已实现；Meta 通用 Agent 核心链路已实现、完整验收继续，Meta 组合效果比较仅保留设计基础。已有能力与限制见[运行说明](../operations/meta-harness.md)，具体验收证据保存在本地
