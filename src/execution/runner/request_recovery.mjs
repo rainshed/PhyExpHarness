@@ -21,6 +21,7 @@ export function retryPlan(policy,previous,failure,deadline,now=Date.now()){
  return {retry:previous+1,delayMs};
 }
 function recoverableFailure(failure){
+ if(failure?.status>=400&&failure.status<500)return false;
  return failure?.code==='TRANSPORT'||failure?.code==='SERVER'&&
   (failure.status===503||failure.message==='Model service overloaded');
 }

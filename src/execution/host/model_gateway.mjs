@@ -137,7 +137,7 @@ export class ModelGateway {
     if(chunk.type==='finish'&&finish?.kind==='max-tokens')failure('model_output_limit');
     if(chunk.type==='finish'&&finish?.kind==='error'){
      transport.adapterFailure(finish.failure);
-     const normalized=classifyModelFailure(finish.failure);failure(normalized.code,normalized.observed);
+     const normalized=classifyModelFailure(finish.failure,transport.failureFacts());failure(normalized.code,normalized.observed);
      state.providerCode=normalized.failure.code;
      finish={...finish,failure:{...normalized.failure,requestId:id}};
      yield {...chunk,reason:finish};
@@ -147,7 +147,7 @@ export class ModelGateway {
   }catch(error){
    transport.error('adapter_error',error);
    this.record({type:'adapter_error',id,error:{name:error?.name,code:error?.code,message:String(error?.message||error)}});
-   const normalized=classifyModelFailure(error);
+   const normalized=classifyModelFailure(error,transport.failureFacts());
    if(!state.failure)failure(combined.aborted?'request_cancelled':normalized.code,normalized.observed);
    state.providerCode=state.failure.code==='model_stream_incomplete'?'TRANSPORT':normalized.failure.code;
    // Carry safe structured facts through the process bridge; arbitrary stack text stays local.

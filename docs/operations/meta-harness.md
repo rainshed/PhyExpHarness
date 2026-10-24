@@ -770,3 +770,9 @@ python3 tests/smoke/references/run.py --execute-real-models \
 新冻结执行包为每次容器命令分配宿主调用 ID，`container-exec.jsonl` 的开始/结束记录可准确配对；`phyexp/container-transport.json` 保留接收、执行、证据写入、回传及关闭阶段的异常与后续连接恢复标记。执行结果已完整记录后的回传/关闭异常不再单独阻止正常退出的 Solver 进入官方评分；没有执行的无效命令也不算环境故障。命令执行抛错、执行中被取消或审计写入失败仍阻止评分，后续另一条命令成功不会抹去原来的不确定结果。
 
 Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评分准入判断。平台不会为恢复连接而自动重放容器命令，也不会把 `accepted` 文本当作官方得分。回归入口为 Harbor Python 环境中的 `python -m unittest tests.unit.bridge_recovery_test tests.unit.harbor_adapter_test tests.unit.benchmark_time_test`。旧冻结包不热替换，已有失败记录和评分不回填。
+
+### HTTP 状态丢失时的请求恢复
+
+网关在错误分类前补入当前逻辑请求中可明确归属的 HTTP 状态和 `Retry-After`。适配器仅返回通用错误、但同一请求的唯一 HTTP 尝试返回 503 时，按模型服务故障进入现有 Solver 请求恢复；不会借用其他并发请求、包含多个 HTTP 子请求的链路或先前 HTTP 尝试后已切换到 WebSocket 的状态。适配器明确的状态和上下文/凭据等非瞬时错误优先，HTTP 4xx 不进入此恢复路径。
+
+仍只重试当前模型请求，沿用已冻结的五次等待、原任务截止时间、取消和访问检查；不重放已完成的工具调用，不增加试验次数，也不自动重启整个活动。旧冻结包不升级。回归使用本地 HTTP/WebSocket 服务和实际 SDK 适配器，不访问真实模型供应商；包括缺失状态的 503、并发归属、歧义链路、401/403、重试耗尽与截止时间。

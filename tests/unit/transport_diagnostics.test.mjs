@@ -32,6 +32,7 @@ async function fixture(t,behavior){
  const counts={websocket:0,sse:0},settlements=[],wireMessages=[];
  const server=http.createServer((req,res)=>{
   counts.sse++;req.resume();
+  if(behavior==='sse-unknown-503'){res.writeHead(503,{'retry-after':'2'});res.end('{}');return;}
   if(behavior==='exhausted'){res.writeHead(503);res.end('{"error":{"message":"server overloaded"}}');return;}
   res.writeHead(200,behavior==='sse-no-content-type'?{}:{'content-type':'text/event-stream',
    ...(behavior==='sse-gzip'?{'content-encoding':'gzip'}:{})});
@@ -133,6 +134,13 @@ test('explicit recovery exhaustion keeps final overload failure and both request
  assert.equal(final.requestRecovery.failedRequests,2);assert.equal(final.requestRecovery.recoveredRequests,0);
  assert.equal(final.failure.observed.transport.httpStatus,503);
  assert.equal(f.settlements.length,2);
+});
+test('real adapter with an uninformative HTTP 503 response preserves recoverability',async t=>{
+ const f=await fixture(t,'sse-unknown-503');const chunks=await f.call();
+ const failure=chunks.at(-1).reason.failure;
+ assert.equal(failure.code,'SERVER');assert.equal(failure.status,503);
+ assert.equal(f.gateway.firstFailure.code,'model_service_overloaded');assert.equal(f.gateway.terminalFailure,null);
+ assert.equal(f.counts.sse,1,'Adapter retry must stay disabled');
 });
 test('clean service-restart close is recoverable transport failure and audit reason is redacted',async t=>{
  const f=await fixture(t,'clean-close');const chunks=await f.call();

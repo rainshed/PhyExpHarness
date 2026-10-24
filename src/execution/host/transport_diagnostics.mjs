@@ -44,6 +44,8 @@ function install() {
  channel('undici:request:create').subscribe(observe(({request})=>{
   const owner=scope.getStore();if(!owner)return;
   const attempt={owner,requestBytes:0,responseBytes:0,decoder:new TextDecoder(),buffer:'',discardLine:false};
+  owner.data.httpRequestCount=(owner.data.httpRequestCount||0)+1;
+  owner.lastTransportAttempt='http';
   httpRequests.set(request,attempt);
   owner.emit('http_request',{method:['GET','POST'].includes(request.method)?request.method:'other'});
  }));
@@ -64,6 +66,10 @@ function install() {
    owner.data.protocolStarted??=attempt.parse?false:null;
   }else owner.data.actualTransport??='http';
   owner.data.httpStatus=response.statusCode;
+  const retryAfter=header(response.headers,'retry-after').trim();
+  const delay=/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();
+  owner.httpFailureFacts={status:response.statusCode,
+   ...(Number.isFinite(delay)&&delay>0?{providerRetryAfterMs:delay}:{})};
   owner.data.requestBytes=attempt.requestBytes;
   owner.emit('http_response',{status:response.statusCode,transport:attempt.sse?'sse':'http',
    requestBytes:attempt.requestBytes,sseEventsObservable:attempt.parse});
@@ -114,6 +120,7 @@ function install() {
     connection.owner=current;connection.requests++;
     current.connections.add(connection);
     current.data.actualTransport='websocket';
+    current.lastTransportAttempt='websocket';
     current.data.protocolStarted=false;
     current.data.connectionId=connection.id;
     current.data.connectionAgeMs=Date.now()-connection.openedAt;
@@ -192,6 +199,13 @@ export class TransportDiagnostics {
  }
  adapterFailure(failure){
   this.emit('adapter_failure',{error:errorFacts(failure,this.redact)});
+ }
+ failureFacts(){
+  // Only a single HTTP attempt in this logical request is unambiguous. Do not
+  // borrow status from another request, an auth/redirect chain, or an earlier
+  // HTTP request followed by WebSocket generation.
+  return this.data.httpRequestCount===1&&this.lastTransportAttempt==='http'&&this.httpFailureFacts?.status>=400
+   ?{...this.httpFailureFacts}:{};
  }
  snapshot(){
   const value={...this.data};
