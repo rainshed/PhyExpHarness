@@ -85,7 +85,8 @@ def resolve(root):
         _hashes_match(root, raw['files'])
         return ResolvedBundle(root, raw, {p: root / p for p in raw['files']}, {},
                               {p['name']: root / 'plugins' / p['name'] for p in raw.get('plugins', [])})
-    if raw.get('schemaVersion') != 2 or raw.get('kind') != 'plugin-composition':
+    process = raw.get('schemaVersion') == 3 and raw.get('kind') == 'harness-composition-v3'
+    if not process and (raw.get('schemaVersion') != 2 or raw.get('kind') != 'plugin-composition'):
         raise ValueError('Unsupported bundle format')
     portable = (root / 'objects.json').exists()
     catalog = json.loads(checked_path(root, 'objects.json').read_text()) if portable else {}
@@ -122,6 +123,26 @@ def resolve(root):
             _hashes_match(object_root, expected)
         return document
 
+    if process:
+        add_object(raw['adapter'], 'execution-adapter-v3')
+        add_object(raw['sources'], 'harness-sources', 'candidate/')
+        add_object(raw['artifact'], 'harness-artifact')
+        recipe_path = checked_path(root, 'recipe.json')
+        if digest(recipe_path.read_bytes()) != raw['recipeDigest']:
+            raise ValueError('Recipe content mismatch')
+        if json.loads(assets['candidate/harness.json'].read_text()) != raw['project']:
+            raise ValueError('Project declaration mismatch')
+        if digest(assets['candidate.tar'].read_bytes()) != raw['buildReceipt']['artifactSha256']:
+            raise ValueError('Built artifact mismatch')
+        files['recipe.json'], assets['recipe.json'] = raw['recipeDigest'], recipe_path
+        if portable:
+            if set(catalog) != set(objects): raise ValueError('Unexpected portable object descriptor')
+            files['objects.json'] = digest(canonical(objects) + b'\n')
+            assets['objects.json'] = root / 'objects.json'
+            _hashes_match(root, files)
+        else:
+            _hashes_match(root, {'recipe.json': raw['recipeDigest']})
+        return ResolvedBundle(root, {**raw, 'compositionId': raw['id'], 'files': files}, assets, objects, {})
     add_object(raw['adapter'], 'execution-adapter')
     add_object(raw['dependencies'], 'dependencies')
     lock = json.loads(assets['package-lock.json'].read_text())
@@ -199,6 +220,8 @@ def read_plugins(root, relative):
 
 
 def infrastructure_identity(manifest):
+    if manifest.get('schemaVersion') == 3:
+        return {k: manifest[k] for k in ('adapter', 'infrastructureVersion')}
     if manifest.get('schemaVersion') == 2:
         return {k: manifest[k] for k in ('adapter', 'dependencies', 'framework', 'profileDigest')}
     return {'files': {p: h for p, h in manifest['files'].items()

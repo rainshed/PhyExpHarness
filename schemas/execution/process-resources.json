@@ -1,0 +1,6 @@
+{
+  "version": "process-resources-v1",
+  "build": {"cpus": 2, "memoryBytes": 4294967296, "pids": 256, "timeoutSeconds": 600, "artifactBytes": 1073741824},
+  "broker": {"cpus": 1, "memoryBytes": 536870912, "pids": 64, "requestBytes": 67108864},
+  "description": "External capacities, recorded in build receipts and Trial conditions; candidate strategies have no separate permission gates. Task main resources come from the benchmark environment."
+}

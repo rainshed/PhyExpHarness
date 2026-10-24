@@ -1,0 +1,17 @@
+{
+  "src/execution/bundle/manifest.py": "src/execution/bundle/manifest.py",
+  "src/execution/adapters/quantum_harbor/official.py": "src/execution/adapters/quantum_harbor/official.py",
+  "src/execution/adapters/quantum_harbor/results.py": "src/execution/adapters/quantum_harbor/results.py",
+  "src/execution/host/failure.py": "src/execution/host/failure.py",
+  "src/execution/host/log_store.py": "src/execution/host/log_store.py",
+  "src/execution/host/container_runtime.py": "src/execution/host/container_runtime.py",
+  "src/execution/host/network.py": "src/execution/host/network.py",
+  "src/execution/host/task_time.py": "src/execution/host/task_time.py",
+  "src/execution/host/single_run.py": "src/execution/host/single_run.py",
+  "src/execution/adapters/quantum_harbor/pinned_environment.py": "src/execution/adapters/quantum_harbor/pinned_environment.py",
+  "src/execution/host/task_network.py": "src/execution/host/task_network.py",
+  "run.py": "templates/standalone/run.py",
+  "requirements.txt": "templates/standalone/requirements.txt",
+  "requirements.lock": "templates/standalone/requirements.lock",
+  "README.md": "templates/standalone/README.md"
+}
