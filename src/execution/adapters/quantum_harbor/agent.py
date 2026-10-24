@@ -164,8 +164,12 @@ asyncio.run(main())
                         from harbor.trial.errors import AgentTimeoutError
                         raise AgentTimeoutError('Benchmark agent deadline reached')
                     raise RuntimeError(f'DeepSeek worker exited {code}; see phyexp/runtime-summary.json')
-                if bridge.errors:
-                    raise RuntimeError('Container transport failed: ' + '; '.join(bridge.errors))
+                # Close admission and account for unfinished commands before the
+                # verifier gate; connection cleanup must not hide late failures.
+                server.close()
+                await server.wait_closed()
+                await bridge.close()
+                bridge.check_verification()
             finally:
                 if proc and proc.returncode is None:
                     os.killpg(proc.pid, signal.SIGTERM)
@@ -177,6 +181,7 @@ asyncio.run(main())
                 server.close()
                 await server.wait_closed()
                 await bridge.close()
+                (self.host_logs / 'container-transport.json').write_text(json.dumps(bridge.diagnostics(), indent=2))
                 for tunnel in tunnels:
                     await tunnel.close()
                 (self.host_logs / 'mcp-transport.json').write_text(json.dumps({

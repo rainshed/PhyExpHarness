@@ -764,3 +764,9 @@ python3 tests/smoke/references/run.py --execute-real-models \
 写锁最多等待 30 秒，仅在 `BEGIN IMMEDIATE` 尚未成功时退避重试，不重放事务正文、构建或模型调用。锁等待或事务耗时达到 1 秒，以及 SQLite 错误，会向后台日志写出 `control_transaction`：含事务 ID、调用位置/操作、进程/线程、等待和持锁时间、尝试次数、结果及 SQLite 错误码，不记录 SQL 参数、模型正文或凭据。可据此定位慢写入；不能仅凭一次忙错误断定是并发上限导致。
 
 离线回归入口：`python3 -m unittest tests.unit.database_concurrency_test`。覆盖 15 路并发候选登记、状态查询、含较大事实快照的报告保存与重复请求，以及渲染阻塞、文件发布失败、修订冲突、事务回滚和只读调用不等待写锁；不代表真实模型长活动的稳定性验收。
+
+### 容器命令结果与连接异常
+
+新冻结执行包为每次容器命令分配宿主调用 ID，`container-exec.jsonl` 的开始/结束记录可准确配对；`phyexp/container-transport.json` 保留接收、执行、证据写入、回传及关闭阶段的异常与后续连接恢复标记。执行结果已完整记录后的回传/关闭异常不再单独阻止正常退出的 Solver 进入官方评分；没有执行的无效命令也不算环境故障。命令执行抛错、执行中被取消或审计写入失败仍阻止评分，后续另一条命令成功不会抹去原来的不确定结果。
+
+Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评分准入判断。平台不会为恢复连接而自动重放容器命令，也不会把 `accepted` 文本当作官方得分。回归入口为 Harbor Python 环境中的 `python -m unittest tests.unit.bridge_recovery_test tests.unit.harbor_adapter_test tests.unit.benchmark_time_test`。旧冻结包不热替换，已有失败记录和评分不回填。
