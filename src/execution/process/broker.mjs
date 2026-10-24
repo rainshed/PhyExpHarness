@@ -2,10 +2,11 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import {once} from 'node:events';
 import {pathToFileURL} from 'node:url';
 
-const forbidden = new Set(['authorization','proxy-authorization','cookie','host','connection','content-length','transfer-encoding','chatgpt-account-id','originator','x-api-key']);
+const forbidden = new Set(['authorization','proxy-authorization','cookie','host','connection','content-length','content-encoding','transfer-encoding','chatgpt-account-id','originator','x-api-key']);
 export function fixedRequest(binding, url, body) {
  const path = new URL(url,'http://local').pathname.replace(/^\/codex\//,'/');
  const paths = binding.protocol === 'responses' ? ['/responses','/responses/compact','/v1/responses','/v1/responses/compact'] :
@@ -49,7 +50,16 @@ export async function serve({binding,token,deadline,requestBytes,port=0,host='12
    if(req.method!=='POST')throw Object.assign(new Error('Model POST required'),{status:405});
    const chunks=[];let size=0;
    for await(const chunk of req){size+=chunk.length;if(size>requestBytes)throw Object.assign(new Error('Declared request capacity exceeded'),{status:413});chunks.push(chunk);}
-   const request=fixedRequest(binding,req.url,JSON.parse(Buffer.concat(chunks).toString()));
+   let bytes=Buffer.concat(chunks);
+   const encoding=req.headers['content-encoding'];
+   if(encoding&&encoding!=='identity'){
+    const decode={zstd:zlib.zstdDecompressSync,gzip:zlib.gunzipSync,deflate:zlib.inflateSync,br:zlib.brotliDecompressSync}[encoding];
+    if(!decode)throw Object.assign(new Error('Unsupported request content encoding'),{status:415});
+    try{bytes=decode(bytes,{maxOutputLength:requestBytes});}
+    catch(error){throw Object.assign(error,{status:error.code==='ERR_BUFFER_TOO_LARGE'?413:400});}
+   }
+   let body;try{body=JSON.parse(bytes.toString());}catch{throw Object.assign(new Error('Invalid request JSON'),{status:400});}
+   const request=fixedRequest(binding,req.url,body);
    record({type:'request',id,endpoint:req.url,body:request.body});
    const headers=Object.fromEntries(Object.entries(req.headers).filter(([k])=>!forbidden.has(k)));
    Object.assign(headers,binding.headers,{'content-type':'application/json'});

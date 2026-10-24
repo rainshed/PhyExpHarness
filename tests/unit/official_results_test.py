@@ -64,3 +64,14 @@ class OfficialResultsTests(unittest.TestCase):
         result = collect(self.root)
         self.assertEqual(result['officialReward'], 0)
         self.assertEqual(result['taskOutcome'], 'no_submission')
+
+    def test_absent_reward_keeps_execution_failure_and_verifier_source(self):
+        from src.execution.adapters.quantum_harbor.official import unavailable
+        reward=self.root/'harbor/trial/verifier/reward.txt'; reward.unlink()
+        try: collect(self.root)
+        except FileNotFoundError as error: result=unavailable(self.root,error,bundle_id='candidate',task='task')
+        self.assertEqual(result['execution']['status'],'nonzero_exit')
+        self.assertEqual(result['execution']['exitCode'],7)
+        self.assertEqual(result['execution']['exception']['exception_type'],'NonZeroAgentExitCodeError')
+        self.assertIsNone(result['officialReward'])
+        self.assertEqual(result['officialResult']['status'],'unavailable')

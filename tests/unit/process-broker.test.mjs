@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import {serve,fixedRequest} from '../../src/execution/process/broker.mjs';
 const binding={model:{model:'fixed',reasoningEffort:'medium'},protocol:'responses',baseURL:'https://provider.invalid/v1',headers:{authorization:'Bearer secret'}};
@@ -39,4 +40,12 @@ test('revocation cancels an in-flight request without contacting the controller'
   fetchImpl:async(_url,{signal})=>{started();return new Promise((_,reject)=>signal.addEventListener('abort',()=>{aborted=true;reject(new Error('cancelled'));},{once:true}));}});
  const request=fetch(proxy.url+'/responses',{method:'POST',headers:{authorization:'Bearer trial'},body:'{"model":"fixed"}'}).catch(()=>null);
  await ready;proxy.revoke();await request;assert.equal(aborted,true);await proxy.close();
+});
+
+test('native compressed requests are decoded within declared capacity, with no stale encoding',async()=>{
+ let calls=0;const proxy=await serve({binding,token:'trial',deadline:Date.now()+10000,requestBytes:4096,
+  fetchImpl:async(_url,request)=>{calls++;assert.equal(request.headers['content-encoding'],undefined);assert.equal(JSON.parse(request.body).model,'fixed');return new Response('ok');}});
+ try{for(const [input,status] of [[{model:'fixed'},200],[{model:'fixed',input:'a'.repeat(10000)},413]]){
+  const response=await fetch(proxy.url+'/codex/responses',{method:'POST',headers:{authorization:'Bearer trial','content-encoding':'zstd'},body:zlib.zstdCompressSync(JSON.stringify(input))});assert.equal(response.status,status);await response.text();
+ }assert.equal(calls,1);}finally{await proxy.close();}
 });

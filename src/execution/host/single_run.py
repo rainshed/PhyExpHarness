@@ -157,6 +157,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         env = dict(provider_environment(), PYTHONPATH=str(runtime_root), PHYEXP_PYTHON=sys.executable, PHYEXP_RUN_TOKEN_LIMIT=str(soft_token_limit or ''))
         # Disallow a parent checkout from winning module resolution.
         env['PYTHONNOUSERSITE'] = '1'
+        if process_contract: env['PHYEXP_LAUNCH_ID'] = os.environ.get('PHYEXP_LAUNCH_ID',output.name)
         env['PHYEXP_RUNNER_IMAGE_ID'] = image
         harbor = shutil.which('harbor')
         if not harbor:
@@ -186,10 +187,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         from .failure import failed_result
         result = failed_result(output, error, stopped['reason'])
         if process_contract:
-            result.update(resultContract='official-result-v3',
-                execution={'status':stopped['reason'] or 'error','exception':str(error)},
-                officialResult={'status':'not_run' if isinstance(error,FileNotFoundError) else 'unavailable'},
-                evidenceStatus={'status':'partial'},comparison={'status':'identity_unverified'})
+            from ..adapters.quantum_harbor.official import unavailable
+            result.update(unavailable(output,error,bundle_id=bundle['id'],task=task_name,stopped=stopped['reason']))
     finally:
         signal.signal(signal.SIGTERM, previous)
         if process and process.poll() is None:
@@ -229,7 +228,12 @@ def main(bundle_root=None, argv=None):
     if args.verify:
         print(json.dumps({'bundleId':verify(bundle_root)['id'],'status':'verified'}));return 0
     if args.collect:
-        verify_manifest(args.collect);print(json.dumps(collect(args.collect)));return 0
+        if verify(bundle_root).get('schemaVersion') == 3:
+            from ..adapters.quantum_harbor.official import collect as collect_official
+            result=collect_official(args.collect,bundle_id=verify(bundle_root)['id'],archived=True)
+        else:
+            verify_manifest(args.collect);result=collect(args.collect)
+        print(json.dumps(result));return 0
     if not all([args.quantum_harbor,args.task,args.output]) or (args.timeout is not None and args.timeout<=0) or (args.soft_token_limit is not None and args.soft_token_limit<=0):
         parser.error('Explicit task, environment and output; positive time limits are required')
     if args.deadline is not None:

@@ -7,21 +7,23 @@ const root=import.meta.dirname,output=context.outputDirectory;
 fs.mkdirSync(output,{recursive:true});
 const config=JSON.parse(fs.readFileSync(path.join(root,'harness.json'))).runtimeConfig;
 const channel=context.modelChannel;
-const api=channel.codexSubscription?'openai-codex-responses':channel.protocol==='responses'?'openai-responses':channel.protocol==='anthropic'?'anthropic-messages':'openai-completions';
+const provider=channel.codexSubscription?'openai-codex':'solver';
+const remaining=()=>Math.max(1,Math.floor(context.deadline*1000-Date.now()));
+const api=channel.protocol==='responses'?'openai-responses':channel.protocol==='anthropic'?'anthropic-messages':'openai-completions';
 const effort=context.solver.reasoningEffort;
 const model={id:context.solver.model,contextWindow:config.contextWindow,maxTokens:config.maxTokens,
  reasoningEfforts:effort===undefined?false:{off:null,low:'low',medium:'medium',high:'high',xhigh:'xhigh',max:'max'}};
-const insert=[{id:'candidate-provider',name:'@deepseek-ai/dsh-llm-pi-ai',config:{providers:{solver:{api,
- baseURL:channel.url+(channel.codexSubscription?'/codex':channel.protocol==='completions'?'/v1':''),
+const insert=[{id:'candidate-provider',name:'@deepseek-ai/dsh-llm-pi-ai',config:{providers:{[provider]:{...(channel.codexSubscription?{}:{api}),
+ baseURL:channel.url+(channel.protocol==='completions'?'/v1':''),
  apiKeyEnv:'CANDIDATE_MODEL_TOKEN',transport:'sse',models:[model],retryPolicy:{mode:'normal',maxRetries:0}}}}},
  ...context.mcpServers.map((server,i)=>({id:'task-mcp-'+i,name:'@deepseek-ai/dsh-mcp-client',
  config:{serverName:server.name,transport:server.transport,url:server.url,failOnStartupError:true,
- toolCallTimeoutMs:Math.max(1,context.deadline*1000-Date.now()),reconnect:{enabled:true}}}))];
+ toolCallTimeoutMs:remaining(),reconnect:{enabled:true}}}))];
 if(config.recovery)insert.push({id:'candidate-recovery',name:path.join(root,'recovery/plugin.mjs'),config:{policy:config.recovery,deadline:context.deadline*1000}});
 for(const plugin of config.plugins||[])insert.push({...plugin,name:plugin.name.startsWith('.')?path.resolve(root,plugin.name):plugin.name});
 const patch=[{id:'llm-deepseek',disabled:true},{id:'tool-fs',config:{read:true,readImage:true,write:true,edit:true}},
- {id:'persistent-bash',config:{timeoutMs:Math.max(1,context.deadline*1000-Date.now())}},
- {id:'terminal-bash',config:{timeoutMs:Math.max(1,context.deadline*1000-Date.now())}},
+ {id:'persistent-bash',config:{timeoutMs:remaining()}},
+ {id:'terminal-bash',config:{timeoutMs:remaining()}},
  {insert},...(config.patches||[])];
 const patchFile=path.join(output,'patches.json');fs.writeFileSync(patchFile,JSON.stringify(patch));
 const child=spawn(process.execPath,[path.join(root,'boot.mjs'),patchFile],{cwd:context.workspace,
@@ -40,7 +42,7 @@ lines.on('line',line=>{
 });
 function request(method,params){const id=String(++sequence);return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');});}
 try{
- await request('initialize',{cwd:context.workspace,provider:'solver',model:context.solver.model,...(effort===undefined?{}:{reasoningEffort:effort}),maxTokens:config.maxTokens});
+ await request('initialize',{cwd:context.workspace,provider,model:context.solver.model,...(effort===undefined?{}:{reasoningEffort:effort}),maxTokens:config.maxTokens});
  const sessions=config.sessions||1;
  for(let i=0;i<sessions;i++){
   const id='solver-'+i;const idle=new Promise((resolve,reject)=>turn={id,resolve,reject,received:false});idle.catch(()=>{});

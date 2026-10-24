@@ -14,22 +14,13 @@ def read_summary(trial, candidate):
     root = Path(trial['output'])
     bundle = verify(candidate['bundlePath'])
     if bundle.get('schemaVersion') == 3:
-        from src.execution.adapters.quantum_harbor.official import collect
+        from src.execution.adapters.quantum_harbor.official import collect, unavailable
         if bundle['id'] != candidate['bundleId']:
             raise ValueError('Candidate identity mismatch')
         try:
             summary = collect(root, bundle_id=bundle['id'], task=trial['task'], archived=True)
         except (OSError, ValueError, KeyError) as error:
-            # Failed or damaged official output remains a visible unscored
-            # attempt. No frozen diagnostic value can manufacture a score.
-            summary = {'resultContract':'official-result-v3','pipelineStatus':'failed',
-                'status':'infrastructure_error','officialReward':None,'scoringStatus':'unavailable',
-                'task':trial['task'],'bundleId':bundle['id'],
-                'officialResult':{'status':'not_run' if isinstance(error,FileNotFoundError) else 'invalid_source'},
-                'execution':{'status':'unknown'},'evidenceStatus':{'status':'partial','error':str(error)},
-                'comparison':{'status':'identity_unverified'},
-                'failure':{'code':'official_result_unavailable','stage':'collection','message':str(error)},
-                'resultCollection':{'version':'official-result-v3'}}
+            summary = unavailable(root,error,bundle_id=bundle['id'],task=trial['task'],stopped=trial.get('stopReason'))
         summary.update(runId=root.name, runDir=str(root))
         return summary
     results.verify_manifest(root)

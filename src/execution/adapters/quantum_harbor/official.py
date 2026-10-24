@@ -46,7 +46,7 @@ def collect(root, *, bundle_id=None, task=None, archived=False):
     reward = float(read(reward_path, text=True).strip())
     score = read(score_path)
     assessed = official_assessment(score, reward)
-    if trial.get('verifier_result', {}).get('rewards', {}).get('reward') != reward:
+    if (trial.get('verifier_result') or {}).get('rewards', {}).get('reward') != reward:
         raise ValueError('Harbor and official reward disagree')
     if score.get('task_id') != trial['task_name']:
         raise ValueError('Official score belongs to another task')
@@ -99,3 +99,31 @@ def collect(root, *, bundle_id=None, task=None, archived=False):
                      **({'submission': answer_path} if submitted else {})},
         'resultCollection': {'version': VERSION, 'sourceDigests': sources},
     }
+
+
+def unavailable(root, error, *, bundle_id=None, task=None, stopped=None):
+    """Preserve independent execution diagnostics when official output is absent.
+
+    Diagnostics are explicitly not score authority. A damaged diagnostic cannot
+    replace the original collection error or manufacture a verifier result.
+    """
+    root = Path(root); runtime = {}; exception = None; gaps = []
+    for pattern, kind in [('harbor/*/phyexp/runtime-summary.json','runtime'), ('harbor/*/result.json','harbor')]:
+        paths = list(root.glob(pattern))
+        if len(paths) != 1: continue
+        try:
+            path=paths[0]
+            if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()): raise ValueError('Unsafe diagnostic path')
+            value=json.loads(path.read_text())
+            if kind == 'runtime': runtime=value
+            else: exception=value.get('exception_info')
+        except (OSError,ValueError) as failure: gaps.append({'path':pattern,'reason':str(failure)})
+    return {'resultContract':VERSION,'pipelineStatus':'failed','status':'infrastructure_error',
+        'task':task,'bundleId':bundle_id,'officialReward':None,'scoringStatus':'unavailable',
+        'execution':{'status':stopped or runtime.get('status') or ('error' if exception else 'unknown'),
+                     'exitCode':runtime.get('exitCode'),'exception':exception or runtime.get('exception')},
+        'officialResult':{'status':'unavailable' if isinstance(error,OSError) else 'invalid_source',
+                          'errorType':type(error).__name__,'message':str(error)},
+        'evidenceStatus':{'status':'partial','gaps':gaps},'comparison':{'status':'identity_unverified'},
+        'runtime':runtime,'failure':{'code':'official_result_unavailable','stage':'collection','message':str(error)},
+        'stopReason':stopped,'resultCollection':{'version':VERSION}}

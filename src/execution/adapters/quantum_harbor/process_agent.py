@@ -58,7 +58,7 @@ class ProcessHarborAgent(BaseAgent):
             'artifact':self.bundle['artifact'],'project':self.bundle['project'],'adapter':self.bundle['adapter']})
         (self.logs/'container-images.txt').write_text(await docker('inspect',self.main,self.qsim,'--format','{{json .Name}} {{json .Image}}'))
         await environment.upload_file(self.resolved.asset('candidate.tar'),'/tmp/phyexp-candidate.tar')
-        command="import tarfile; tarfile.open('/tmp/phyexp-candidate.tar').extractall('/opt/harness',filter='data')"
+        command="import tarfile,hashlib; p='/tmp/phyexp-candidate.tar'; assert hashlib.file_digest(open(p,'rb'),'sha256').hexdigest()=="+repr(self.bundle['buildReceipt']['artifactSha256'])+"; tarfile.open(p).extractall('/opt/harness',filter='data')"
         result=await environment.exec(command='python3 -c '+shlex.quote(command),cwd='/app',timeout_sec=120)
         if result.return_code: raise RuntimeError('Candidate deployment failed: '+str(result.stderr))
     async def run(self,instruction,environment,context):
@@ -128,6 +128,9 @@ class ProcessHarborAgent(BaseAgent):
             except (asyncio.TimeoutError,asyncio.CancelledError):
                 runtime['status']='timed_out' if time.time()>=self.deadline else 'cancelled'
                 if runtime['status']=='timed_out': raise AgentTimeoutError('Benchmark solver deadline reached')
+                raise
+            except Exception as error:
+                if runtime['status']=='running':runtime.update(status='error',exception={'type':type(error).__name__,'message':str(error)})
                 raise
             finally:
                 # External process ownership: all candidate children share main's
