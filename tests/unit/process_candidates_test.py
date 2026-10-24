@@ -23,7 +23,7 @@ class ProcessCandidatesTests(unittest.TestCase):
         cfg={'solver':model,'meta':model,'tasks':['time_budgeted_hamlearn_10q'],'concurrency':1,'wallTimeSeconds':20000,
              'executionContract':'harbor-process-v1','executionResources':json.loads((ROOT/'schemas/execution/process-resources.json').read_text())}
         self.cid=self.service.store.create(cfg,'fixture')['id']
-        def built(contents,spec,cache,log,resources):
+        def built(contents,spec,cache,log,resources,**kwargs):
             artifact=self.root/(digest(source_tar(contents))+'.tar');artifact.write_bytes(source_tar(contents))
             return artifact,{'artifactSha256':digest(artifact.read_bytes()),'status':'passed','inputs':{'sources':{n:digest(v) for n,v in contents.items()}}}
         mock=patch('src.execution.bundle.project.build',side_effect=built);mock.start();self.addCleanup(mock.stop)

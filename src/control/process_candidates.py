@@ -1,6 +1,7 @@
 """Complete candidate development through the existing check/freeze operations."""
 import json
 import shutil
+import time
 from pathlib import Path
 from .operations import workspace_path
 from .store import Refused, identity
@@ -13,6 +14,12 @@ from src.execution.host.task_time import POLICY
 def build_candidate(service,campaign,project_path,description,parent=None,display_name=None,check_only=False,research_refs=None):
     service.store.writable(campaign)
     activity=service.store.get('campaigns',campaign);config=activity['config']
+    initial_state=activity['state']
+    def cancelled():
+        if service.store.deletion(campaign):return True
+        current=service.store.get('campaigns',campaign)
+        return (current['state']!=initial_state and current['state'] in ('paused','closing','finished','failed','deleting') or
+                current.get('deadline') is not None and time.time()>=current['deadline'])
     workspace=service.workspace(campaign)
     if project_path is None:
         project=workspace/'h0'
@@ -26,7 +33,7 @@ def build_candidate(service,campaign,project_path,description,parent=None,displa
     try:
         with (logs/'build.log').open('w') as log:
             frozen=freeze_project(service.source,service.data/'objects/sha256',project,recipe,service.data/'cache/project-builds',log,
-                config['executionResources']['build'],on_publish=lambda path,kind:service.store.track_artifact(campaign,path,kind))
+                config['executionResources']['build'],cancel=cancelled,on_publish=lambda path,kind:service.store.track_artifact(campaign,path,kind))
         previous=service.store.list('candidates',campaign)
         if previous and infrastructure_identity(verify(previous[0]['bundlePath']))!=infrastructure_identity(frozen['manifest']):
             raise Refused('External runtime contract changed; use a new activity for the new conditions')

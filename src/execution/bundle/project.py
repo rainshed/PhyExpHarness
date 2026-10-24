@@ -92,21 +92,48 @@ def validate_artifact(path, entrypoint, limit):
         if entrypoint[0] not in files: raise ValueError('Built entrypoint is missing')
 
 
-def build(contents, spec, cache, log, resources):
+def check_cancel(cancel):
+    if cancel and cancel():raise InterruptedError('Candidate build cancelled by activity supervision')
+
+
+def supervised_command(argv,log,seconds,cancel):
+    check_cancel(cancel);expires=time.monotonic()+seconds
+    process=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT)
+    try:
+        while process.poll() is None:
+            check_cancel(cancel)
+            if time.monotonic()>=expires:raise TimeoutError('Candidate build command timed out')
+            try:process.wait(timeout=min(.25,max(.001,expires-time.monotonic())))
+            except subprocess.TimeoutExpired:pass
+        if process.returncode:raise subprocess.CalledProcessError(process.returncode,argv)
+    finally:
+        if process.poll() is None:process.kill();process.wait()
+
+
+def build(contents, spec, cache, log, resources, *, cancel=None):
     """Content cache holds tar files, never imports generated code into the host."""
     cache = Path(cache); cache.mkdir(parents=True, exist_ok=True)
-    image = subprocess.check_output(['docker', 'image', 'inspect', spec['build']['image'], '--format', '{{.Id}}'], text=True).strip()
+    check_cancel(cancel)
+    inspection=subprocess.run(['docker','image','inspect',spec['build']['image'],'--format','{{.Id}}'],capture_output=True,text=True)
+    if inspection.returncode:
+        supervised_command(['docker','pull',spec['build']['image']],log,resources['timeoutSeconds'],cancel)
+        inspection=subprocess.run(['docker','image','inspect',spec['build']['image'],'--format','{{.Id}}'],capture_output=True,text=True,check=True)
+    image=inspection.stdout.strip()
     if not re.fullmatch('sha256:[0-9a-f]{64}', image): raise ValueError('Build image must resolve to an immutable image')
     inputs = {'sources': {k: digest(v) for k, v in contents.items()}, 'image': image,
               'build': spec['build'], 'resources': resources, 'sourceModes':getattr(contents,'modes',{})}
     key = digest(canonical(inputs)); record = cache / (key + '.json'); artifact = cache / (key + '.tar')
     with (cache / (key + '.lock')).open('a') as mutex:
-        fcntl.flock(mutex, fcntl.LOCK_EX)
+        while True:
+            check_cancel(cancel)
+            try:fcntl.flock(mutex,fcntl.LOCK_EX|fcntl.LOCK_NB);break
+            except BlockingIOError:time.sleep(.1)
         if record.exists() and artifact.exists():
             receipt = json.loads(record.read_text())
             if receipt['artifactSha256'] == digest(artifact.read_bytes()):
                 log.write('Reused isolated build ' + key + '\n'); return artifact, receipt
         name = 'phyexp-build-' + uuid.uuid4().hex
+        log.write('Build container '+name+'\n');log.flush()
         with tempfile.TemporaryDirectory(dir=cache) as temporary:
             stage = Path(temporary)
             (stage / 'source.tar').write_bytes(source_tar(contents, 'candidate/'))
@@ -119,8 +146,7 @@ def build(contents, spec, cache, log, resources):
                 # docker cp creates no host mount or control socket inside the build.
                 with (stage / 'source.tar').open('rb') as source:
                     subprocess.run(['docker', 'cp', '-', name + ':/'], stdin=source, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=60)
-                subprocess.run(['docker', 'start', '--attach', name], stdout=log, stderr=subprocess.STDOUT,
-                               check=True, timeout=resources['timeoutSeconds'])
+                supervised_command(['docker','start','--attach',name],log,resources['timeoutSeconds'],cancel)
                 code = int(subprocess.check_output(['docker', 'inspect', name, '--format', '{{.State.ExitCode}}'], text=True))
                 if code: raise RuntimeError('Candidate build exited ' + str(code))
                 # Bound bytes while receiving, before any oversized artifact can
@@ -130,10 +156,11 @@ def build(contents, spec, cache, log, resources):
                     received=0;expires=time.monotonic()+resources['timeoutSeconds']
                     try:
                         while True:
+                            check_cancel(cancel)
                             remaining=expires-time.monotonic()
                             if remaining<=0:raise TimeoutError('Build artifact transfer timed out')
-                            ready,_,_=select.select([copied.stdout],[],[],remaining)
-                            if not ready:raise TimeoutError('Build artifact transfer timed out')
+                            ready,_,_=select.select([copied.stdout],[],[],min(.25,remaining))
+                            if not ready:continue
                             chunk=os.read(copied.stdout.fileno(),65536)
                             if not chunk:break
                             received+=len(chunk)
@@ -152,10 +179,11 @@ def build(contents, spec, cache, log, resources):
                 subprocess.run(['docker', 'rm', '-f', name], stdout=log, stderr=subprocess.STDOUT, timeout=60)
 
 
-def freeze_project(source_root, store, directory, recipe, cache, log, resources, *, on_publish=None):
+def freeze_project(source_root, store, directory, recipe, cache, log, resources, *, on_publish=None, cancel=None):
     from .freeze import _object, _publish
     contents, spec = snapshot(directory)
-    artifact, receipt = build(contents, spec, cache, log, resources)
+    artifact, receipt = build(contents, spec, cache, log, resources,**({'cancel':cancel} if cancel else {}))
+    check_cancel(cancel)
     store = Path(store); store.mkdir(parents=True, exist_ok=True)
     source_ref, _ = _object(store, 'harness-sources', contents, on_publish)
     built_ref, _ = _object(store, 'harness-artifact', {'candidate.tar': artifact.read_bytes()}, on_publish)
