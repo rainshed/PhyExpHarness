@@ -1,4 +1,4 @@
-from src.execution.host.log_store import read_log
+from .accounting import reconcile_audit
 """Independent control service: owns scheduling, recovery and admission; never executes generated code."""
 import hashlib
 import fcntl
@@ -403,12 +403,7 @@ class ControlService:
     def _reconcile_usage(self,trial):
         if not trial.get('leaseId'):return
         for file in Path(trial['output']).glob('harbor/*/phyexp/gateway-audit.jsonl'):
-            for line in read_log(file).decode('utf-8').splitlines():
-                try:row=json.loads(line)
-                except json.JSONDecodeError:continue
-                if row.get('type')!='settled':continue
-                try:self.store.settle(trial['campaignId'],trial['leaseId'],row['id'],(row.get('usage') or {}).get('totalTokens'),not row.get('finish') or row.get('finish',{}).get('kind')=='error' or not row.get('usage'),host_audit=True)
-                except (KeyError,ValueError):pass
+            reconcile_audit(self.store,trial['campaignId'],trial['leaseId'],file)
         self.store.mark_unknown(trial['leaseId'])
     def _collect(self,trial):
         output=Path(trial['output'])

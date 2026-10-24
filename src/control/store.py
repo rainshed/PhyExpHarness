@@ -564,7 +564,7 @@ class Store:
                 if row['campaignId']!=campaign or row['leaseId']!=lease:raise Conflict('Request identity conflict')
                 return row
             except KeyError:pass
-            c=self._get(db,'campaigns',campaign);cfg=c['config'];u=self.usage(campaign,db)
+            c=self._get(db,'campaigns',campaign);cfg=c['config']
             effective_deadline=c['deadline']
             if purpose=='solver' and cfg['stopMode']=='drain':
                 try:effective_deadline=min(self._get(db,'leases',lease)['deadline'],c['deadline']+cfg['drainGraceSeconds'])
@@ -574,8 +574,10 @@ class Store:
             if purpose not in ['solver','meta','report'] or type(reserved_tokens) is not int or reserved_tokens<1:raise Refused('Invalid request reservation')
             closing=purpose=='report' or (purpose=='meta' and (c['state']=='closing' or c['explorationClosed']))
             ceiling=cfg['softTokenLimit']-(0 if closing else cfg['reserveTokens']) if cfg['softTokenLimit'] is not None else None
-            if ceiling is not None and sum(u[k] for k in ['confirmedTokens','unknownReservedTokens','inflightReservedTokens'])+reserved_tokens>ceiling:
-                raise Refused('Soft token threshold reached')
+            if ceiling is not None:
+                u=self.usage(campaign,db)
+                if sum(u[k] for k in ['confirmedTokens','unknownReservedTokens','inflightReservedTokens'])+reserved_tokens>ceiling:
+                    raise Refused('Soft token threshold reached')
             from .reference.policy import token_admission
             decision=token_admission(self,db,c,next((l for l in self._list(db,'leases',campaign) if l['id']==lease),{}),reserved_tokens)
             if decision.get('status') in ('waiting','denied'):raise Refused('Reference token threshold reached')
@@ -588,8 +590,9 @@ class Store:
             c=self._get(db,'campaigns',campaign);cfg=c['config'];now=self.clock()
             if purpose not in ('solver','meta','report') or type(reserved_tokens) is not int or reserved_tokens<1:raise Refused('Invalid request reservation')
             if not isinstance(id,str) or not id or len(id)>200:raise Refused('Invalid request identity')
-            existing=next((r for r in self._list(db,'admissions',campaign) if r['id']==id),None)
-            if existing and (existing['leaseId']!=lease or existing['reservedTokens']!=reserved_tokens or existing['purpose']!=purpose):raise Conflict('Admission identity conflict')
+            try:existing=self._get(db,'admissions',id)
+            except KeyError:existing=None
+            if existing and (existing['campaignId']!=campaign or existing['leaseId']!=lease or existing['reservedTokens']!=reserved_tokens or existing['purpose']!=purpose):raise Conflict('Admission identity conflict')
             try:
                 row=self._get(db,'usage',id)
                 if row['campaignId']!=campaign or row['leaseId']!=lease:raise Conflict('Request identity conflict')
@@ -597,8 +600,10 @@ class Store:
             except KeyError:pass
             owner=self._get(db,'leases',lease)
             if owner['campaignId']!=campaign or owner['role']!=purpose:raise Refused('Lease role mismatch')
-            usage=self.usage(campaign,db)
-            committed=usage['confirmedTokens']+usage['unknownReservedTokens']
+            # Unlimited requests need no total-history scan. Keep cheap receipts;
+            # aggregate usage only for actual limits, status queries and reports.
+            usage=self.usage(campaign,db) if cfg['softTokenLimit'] is not None else {}
+            committed=usage.get('confirmedTokens',0)+usage.get('unknownReservedTokens',0)
             hard_end=planning.end_time(c) if purpose=='solver' else c['deadline']
             decision={'status':'granted','requestId':id}
             if owner.get('revoked') or c['state'] in ('draft','finished','failed') or (purpose=='meta' and c['state']=='paused'):

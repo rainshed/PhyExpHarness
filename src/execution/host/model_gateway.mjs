@@ -160,7 +160,8 @@ export class ModelGateway {
    if(state.failure)state.failure.observed={...state.failure.observed,transport:transport.snapshot()};
    const usageStatus=Number.isFinite(usage?.totalTokens)&&finish&&finish.kind!=='error'?'reported':'unknown';
    this.record({type:'settled',id,usage,finish,usageStatus});
-   try{await this.settle(id,{usage,finish});}catch(error){this.record({type:'settlement_pending',id,reason:'controller_unavailable'});}
+   try{const receipt=await this.settle(id,{usage,finish});if(receipt?.status==='pending')this.record({type:'settlement_pending',id,...receipt});}
+   catch(error){this.record({type:'settlement_pending',id,reason:'controller_unavailable'});}
    finally{this.active.delete(id);}
    if(!state.failure&&finish&&finish.kind!=='error'){
     state.completedAt=Date.now();

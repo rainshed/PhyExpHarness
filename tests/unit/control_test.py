@@ -5,6 +5,8 @@ import sys
 import tempfile
 import time
 import unittest
+import sqlite3
+from unittest.mock import patch
 from pathlib import Path
 from fastapi.testclient import TestClient
 from src.control.service import ControlService
@@ -27,6 +29,34 @@ class ControlTests(unittest.TestCase):
         self.c=self.service.store.create(self.config,'setup')['id'];self.service.store.control(self.c,'start','start')
     def tearDown(self):
         self.service.pool.shutdown(wait=True);self.client.close();self.temp.cleanup()
+    def test_busy_accounting_returns_retryable_response_and_same_receipt_can_recover(self):
+        lease,token=self.service.lease(self.c,'meta',time.time()+60)
+        self.client.headers['Authorization']='Bearer '+token
+        route='/accounting/'+lease['id']
+        body={'id':'request','reservedTokens':300000,'admissionVersion':1}
+        self.assertEqual(self.client.post(route+'/reserve',json=body).status_code,200)
+        # Obtain a real SQLITE_BUSY error without delaying a production-size timeout.
+        first=sqlite3.connect(self.data/'busy.sqlite');second=sqlite3.connect(self.data/'busy.sqlite',timeout=0)
+        try:
+            first.execute('BEGIN IMMEDIATE')
+            try:second.execute('BEGIN IMMEDIATE')
+            except sqlite3.OperationalError as error:busy=error
+        finally:first.close();second.close()
+        receipt={'id':'request','confirmedTokens':12,'unknown':False}
+        with patch.object(self.service.store,'settle',side_effect=busy):
+            response=self.client.post(route+'/settle',json=receipt)
+        self.assertEqual(response.status_code,503)
+        self.assertEqual(response.json()['code'],'accounting_unavailable')
+        self.assertEqual(self.service.store.get('usage','request')['status'],'inflight')
+        for _ in range(2):self.assertEqual(self.client.post(route+'/settle',json=receipt).status_code,200)
+        self.assertEqual(self.service.store.usage(self.c)['confirmedTokens'],12)
+        with patch.object(self.service,'authenticate',side_effect=busy):
+            self.assertEqual(self.client.get('/health').status_code,503)
+    def test_database_fault_response_does_not_leak_internal_details(self):
+        with patch.object(self.service.store,'list',side_effect=sqlite3.OperationalError('private database path')):
+            response=self.client.get('/health')
+        self.assertEqual(response.status_code,500)
+        self.assertNotIn('private',response.text)
     def test_list_and_detail_expose_latest_meta_health_without_raw_logs_or_state_changes(self):
         store=self.service.store
         before=store.get('campaigns',self.c)

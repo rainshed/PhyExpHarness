@@ -78,6 +78,9 @@ class ReferencesTest(unittest.TestCase):
         denied=self.store.admit(self.c,'lease','c',1,'solver')
         self.assertEqual(denied['boundary'],'reference_model')
         self.assertEqual(self.store.usage(self.c)['confirmedTokens'],400)
+    def test_reference_token_caps_still_apply_without_global_token_limit(self):
+        self.store.control(self.c,'limits','unlimited',changes={'softTokenLimit':None})
+        self.test_joint_tokens_charged_once_and_overlapping_caps_apply()
     def test_drain_and_cancelled_started_run_is_still_charged(self):
         self.h0();self.submit();self.store.claim(self.c);run=self.store.claim(self.c)
         self.assertTrue(run['id'].startswith('reference-run-'))

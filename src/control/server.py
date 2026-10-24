@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import fcntl
 import json
+import sqlite3
 from pathlib import Path
 from .stop_policy import CONTROLLED_POLICIES
 from fastapi import FastAPI,Request,HTTPException
@@ -41,13 +42,22 @@ def make_app(service,supervise=True):
     async def invalid(_request,error):return JSONResponse({'error':str(error)},status_code=400)
     @app.exception_handler(TypeError)
     async def invalid_type(_request,error):return JSONResponse({'error':'Invalid operation arguments: '+str(error)},status_code=400)
+    def database_error(error):
+        code=getattr(error,'sqlite_errorcode',0)
+        busy=(code & 0xff) in (sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED)
+        return JSONResponse({'error':'Control ledger temporarily busy' if busy else 'Control database error',
+            **({'code':'accounting_unavailable','retryAfterMs':500} if busy else {})},
+            status_code=503 if busy else 500,headers={'Cache-Control':'no-store'})
+    @app.exception_handler(sqlite3.OperationalError)
+    async def database_unavailable(_request,error):return database_error(error)
     @app.middleware('http')
     async def boundary(request,call_next):
         try:length=int(request.headers.get('content-length','0'))
         except ValueError:return JSONResponse({'error':'Invalid content length'},status_code=400)
         if length>4_000_000:return JSONResponse({'error':'Request too large'},status_code=413)
-        try:request.state.identity=service.authenticate(request.headers.get('authorization','').removeprefix('Bearer '))
+        try:request.state.identity=await asyncio.to_thread(service.authenticate,request.headers.get('authorization','').removeprefix('Bearer '))
         except Refused as error:return JSONResponse({'error':str(error),'code':'accounting_lease_expired' if 'expired' in str(error).lower() else 'accounting_auth_failed'},status_code=401)
+        except sqlite3.OperationalError as error:return database_error(error)
         try:
             service.deletions.guard_route(request.url.path)
             response=await call_next(request)

@@ -1,4 +1,3 @@
-from src.execution.host.log_store import read_log
 """Persisted Meta sessions and event delivery. No scientific improvement procedure is prescribed."""
 import json
 import os
@@ -15,6 +14,7 @@ from .meta_composition import verify as verify_meta
 from src.execution.host.models import campaign_route
 from . import resource_planning as planning
 from .meta_recovery import recovery
+from .accounting import reconcile_audit
 
 def native_config(c):return c['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
 
@@ -156,12 +156,7 @@ class MetaDriver:
             # Host audit settles calls that could not reach the ledger during a control restart.
             audits=[Path(row['output'])/'gateway-audit.jsonl',*Path(row['output']).glob('review-sessions/*/gateway-audit.jsonl')]
             for audit in [a for a in audits if a.exists()]:
-                for line in read_log(audit).decode('utf-8').splitlines():
-                    try:item=json.loads(line)
-                    except json.JSONDecodeError:continue
-                    if item.get('type')=='settled':
-                        try:self.store.settle(campaign,row['leaseId'],item['id'],(item.get('usage') or {}).get('totalTokens'),not item.get('finish') or item.get('finish',{}).get('kind')=='error' or not item.get('usage'),host_audit=True)
-                        except (KeyError,ValueError):pass
+                reconcile_audit(self.store,campaign,row['leaseId'],audit)
             for review in self.store.list('stop_reviews',campaign):
                 if review['sessionId']==row['id'] and review['state']=='pending':
                     review.update(state='failed',failure='Owner session ended before review completion',finishedAt=time.time());self.store.put('stop_reviews',review)

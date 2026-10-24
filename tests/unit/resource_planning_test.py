@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from src.control.store import Store, Refused, Conflict
@@ -191,6 +192,16 @@ class ResourcePlanningTests(unittest.TestCase):
         self.assertEqual(restored.usage(c)['requests'],4)
         events=[e for e in restored.events(c,0) if e['type']=='admission_waiting' and e.get('requestId')=='waiting']
         self.assertEqual(len(events),1)
+
+    def test_unlimited_admission_does_not_aggregate_token_history(self):
+        c,_=self.activity();lease=c+'-lease'
+        with patch.object(self.store,'usage',side_effect=AssertionError('Unlimited admission must not scan token history')):
+            self.assertEqual(self.store.admit(c,lease,'structured',300000,'solver')['status'],'granted')
+            self.store.reserve(c,lease,'legacy',300000,'solver')
+            self.assertEqual(self.store.admit(c,lease,'structured',300000,'solver')['status'],'granted')
+        self.store.settle(c,lease,'structured',123,False)
+        self.assertEqual(self.store.usage(c)['confirmedTokens'],123)
+        self.assertEqual(self.store.usage(c)['inflightReservedTokens'],300000)
 
     def test_meta_can_revise_plan_when_solver_waits_on_its_reserve(self):
         c,_=self.activity(softTokenLimit=1000000,reserveTokens=0)
