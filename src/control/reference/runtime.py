@@ -67,6 +67,9 @@ def prepare_image(source,data,harness,base,log):
 def prepare_images(service,campaign,bundle):
     c=service.store.get('campaigns',campaign)
     if not c['config'].get('referencePolicy',{}).get('harnessEnabled'):return
+    if bundle.get('schemaVersion')==3:
+        from .process import prepare_harness_base
+        bundle=prepare_harness_base(service,campaign)
     base=subprocess.check_output(['docker','image','inspect',bundle['runnerImage'],'--format','{{.Id}}'],text=True).strip()
     for harness in c['config']['referencePolicy']['harnessRefs']:
         receipt=prepare_image(service.source,service.data,harness,base,service.data/'campaigns'/campaign/(harness+'-image.log'))
@@ -87,15 +90,29 @@ def launch(service,trial):
     if model:
         frozen=service.references.catalog.binding(model)
         if hashlib.sha256(encoded(frozen).encode()).hexdigest()!=ref['modelBindingDigest']:raise Refused('Reference model changed')
+    reference_env={};execution_candidate=candidate
+    if bundle.get('schemaVersion')==3:
+        if harness:
+            execution_candidate={**candidate,**cfg['referenceBindings']['baseBundle']}
+        else:
+            from .process import bind_model
+            execution,reference_env=bind_model(service,c['id'],candidate,frozen,model)
+            execution_candidate={**candidate,**execution}
+        bundle=verify(execution_candidate['bundlePath'])
+        if bundle.get('schemaVersion')==3:
+            from ..execution_cache import prepare_runtime
+            runtime=prepare_runtime(execution_candidate['bundlePath'],service.data/'cache')
+        ref={**ref,'candidateBundleId':candidate['bundleId'],'executionBundleId':bundle['id']}
+        trial=service.store.trial_update(trial['id'],executionBundle={k:execution_candidate[k] for k in ('bundleId','bundlePath','executionContract')},reference=ref)
     spec={**ref,'native':frozen,'credentialFile':str(service.references.catalog.root/'credentials'/(model+'.json')) if model else None,
           'fixedSolver':{**{k:v for k,v in json.loads((Path(candidate['bundlePath'])/'recipe.json').read_text()).items() if k in ('provider','model','reasoningEffort','maxTokens')},'providerConfig':campaign_route(cfg,'solver')}}
     private=service.data/'campaigns'/c['id']/'reference-private'/(trial['id']+'.json');atomic_private(private,spec)
-    image=cfg['referenceBindings']['harnesses'].get(harness,{}).get('image') if harness else image_for(service,trial,bundle)
+    image=(json.loads((Path(execution_candidate['bundlePath'])/'recipe.json').read_text())['processResources']['brokerImage'] if bundle.get('schemaVersion')==3 else cfg['referenceBindings']['harnesses'].get(harness,{}).get('image') if harness else image_for(service,trial,bundle))
     if not image:raise Refused('Reference Harness image was not prepared')
     env=dict(provider_environment() if model else service.providers.environment(cfg['solver']['provider'],campaign_route(cfg,'solver')),
-             **model_environment(service.base_url,lease['id'],token,cfg),
+             **model_environment(service.base_url,lease['id'],token,cfg),**reference_env,
              PHYEXP_LAUNCH_ID=trial['launchId'],PHYEXP_REFERENCE_SPEC=str(private),PHYEXP_REFERENCE_IMAGE=image)
-    args=[sys.executable,'-m','src.execution.host.single_run','--bundle',candidate['bundlePath'],'--quantum-harbor',str(service.quantum),
+    args=[sys.executable,'-m','src.execution.host.single_run','--bundle',execution_candidate['bundlePath'],'--quantum-harbor',str(service.quantum),
           '--task',trial['task'],'--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-service.store.clock()))]
     if not control_only(cfg):args+=['--soft-token-limit',str(cfg['softTokenLimit'] or 'none')]
     lock=cfg.get('taskImageLocks',{}).get(trial['task'])

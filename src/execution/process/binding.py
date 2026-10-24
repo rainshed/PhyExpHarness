@@ -25,5 +25,5 @@ def binding(recipe, deadline):
     protocol = ('anthropic' if route['adapter']=='deepseek' or route.get('api')=='anthropic-messages'
                 else 'responses' if route.get('api')=='openai-responses' else 'completions')
     headers = {'x-api-key':secret, 'anthropic-version':'2023-06-01'} if protocol=='anthropic' else {'authorization':'Bearer '+secret}
-    return {'model':model, 'protocol':protocol, 'baseURL':route['baseURL'], 'headers':headers,
+    return {'model':model, 'protocol':protocol, 'baseURL':route['baseURL'], 'headers':{**route.get('headers',{}),**headers},
             'deepseek':route['adapter']=='deepseek'}

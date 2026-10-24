@@ -12,6 +12,7 @@ VERSION = 'result-collection-v2'
 
 def read_summary(trial, candidate):
     root = Path(trial['output'])
+    if trial.get('reference') and trial.get('executionBundle'):candidate={**candidate,**trial['executionBundle']}
     manifest_path=Path(candidate['bundlePath'])/'bundle.json'
     process=candidate.get('executionContract')=='harbor-process-v1' or (manifest_path.is_file() and json.loads(manifest_path.read_text()).get('schemaVersion')==3)
     if process:

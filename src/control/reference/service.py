@@ -92,6 +92,9 @@ class References:
             digest=hashlib.sha256(encoded(binding).encode()).hexdigest()
             if digest!=c['config'].get('referenceBindings',{}).get('models',{}).get(model,{}).get('digest'):raise Refused('Frozen native model integrity mismatch')
         if model:
+            if not harness and c['config'].get('executionContract')=='harbor-process-v1':
+                from .process import model_route
+                model_route(binding)
             recipe=Path(selected.get('bundlePath',''))/'recipe.json'
             solver=json.loads(recipe.read_text()) if recipe.is_file() else c['config']['solver']
             original={k:solver.get(k) for k in ('provider','model','reasoningEffort','maxTokens')}
