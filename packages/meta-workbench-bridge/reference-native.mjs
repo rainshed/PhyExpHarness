@@ -3,8 +3,7 @@ import {launchEnvironmentOf} from '@deepseek-ai/dsh-launch-environment';
 // Trusted host bridge: this document never goes to a browser. Use the native
 // directory/settings/credential services; do not maintain a second model catalog.
 import crypto from 'node:crypto';
-import {createChatGPTCredentials} from '../../src/execution/host/chatgpt_auth.mjs';
-import {codexHostProfile} from '../../src/execution/reference/native_auth.mjs';
+import {codexHostProfile,codexHostAvailable} from './codex-host.mjs';
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export async function captureNativeModels(ctx){
  const llm=ctx.get('llm'),settings=ctx.get('settings'),credentials=ctx.get('credentials');
@@ -31,8 +30,7 @@ export async function captureNativeModels(ctx){
   const codexHost=!ref&&codexHostProfile(adapter,provider.id,raw);
   let unavailable=ref&&!credential?'Native credential is unavailable':!ref?'Native authentication requires a dedicated adapter':null;
   if(codexHost){
-   try{const auth=createChatGPTCredentials();auth.dispose();unavailable=null;}
-   catch{unavailable='宿主 Codex 登录不可用或即将过期，请更新登录后刷新目录';}
+   unavailable=codexHostAvailable()?null:'宿主 Codex 登录不可用或即将过期，请更新登录后刷新目录';
   }
   const models=await llm.listModels(provider.id);
   for(const model of models){
