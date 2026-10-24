@@ -4,23 +4,25 @@ import {BENCHMARK_STREAM_POLICY} from '../host/stream_guard.mjs';
 import path from 'node:path';
 import {referenceProvider} from './native.mjs';
 import {WireGateway,wireBinding} from './wire.mjs';
-import {budgetGate} from '../host/budget.mjs';
+import {executionAccess} from '../host/model_access.mjs';
 import {isolatedSession} from '../host/isolation.mjs';
 import {forwardMcp,callContainer} from '../host/capabilities.mjs';
 import {resolveBundle} from '../bundle/manifest.mjs';
 import {summarizeWireUsage} from '../host/usage.mjs';
 export async function runExternal({logs,bundleRoot,socketPath,deadline,reference}){
  const bundle=resolveBundle(bundleRoot).manifest;
- const budget=budgetGate({deadline,softTokenLimit:Number(process.env.PHYEXP_RUN_TOKEN_LIMIT)||Infinity,url:process.env.PHYEXP_ACCOUNTING_URL,token:process.env.PHYEXP_ACCOUNTING_TOKEN,purpose:'solver'});
+ const budget=executionAccess(deadline);
  let runtime,gateway,session,timer,checkpoint;
  const summary={status:'running',bundleId:bundle.id,recipe:JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json'))),reference:{mode:reference.mode,harnessRef:reference.harnessRef,modelRef:reference.modelRef,runtime:reference.runtime},toolCalls:0};
  const benchmark=summary.recipe.timePolicy==='benchmark-time-v1';
  const save=()=>{
   const events=session?.messages.filter(m=>m.method==='reference/event').map(m=>m.params)||[];
-  summary.accounting=budget.snapshot();
-  const audit=path.join(logs,'gateway-audit.jsonl');
-  const receipts=fs.existsSync(audit)?readLogSync(audit).toString('utf8').split('\n').filter(Boolean).map(JSON.parse):[];
-  summary.usage={...summarizeWireUsage(receipts),totalTokens:summary.accounting.confirmedTokens,accounting:'host gateway confirmed tokens; unknown requests reserved separately'};
+  if(budget.snapshot){
+   summary.accounting=budget.snapshot();
+   const audit=path.join(logs,'gateway-audit.jsonl');
+   const receipts=fs.existsSync(audit)?readLogSync(audit).toString('utf8').split('\n').filter(Boolean).map(JSON.parse):[];
+   summary.usage={...summarizeWireUsage(receipts),totalTokens:summary.accounting.confirmedTokens,accounting:'host gateway confirmed tokens; unknown requests reserved separately'};
+  }
   summary.failureContract='request-failure-v2';summary.failure=summary.status==='completed'?null:gateway?.failure||null;
   summary.toolCalls=events.reduce((n,e)=>n+(e.type==='item.completed'&&e.item?.type==='mcp_tool_call'?1:e.type==='assistant'?e.message?.content?.filter(c=>c.type==='tool_use').length||0:0),0);
   const redact=runtime?.credentials.redact||String;

@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createProviderCredentials} from '../execution/host/provider_auth.mjs';
 import {providerRuntime} from '../execution/host/model_gateway.mjs';
 import {budgetGate} from '../execution/host/budget.mjs';
+import {modelAccess} from '../execution/host/model_access.mjs';
 import {isolatedSession} from '../execution/host/isolation.mjs';
 import {summarizeUsage} from '../execution/host/usage.mjs';
 const config=JSON.parse(fs.readFileSync(process.argv[2]));
@@ -24,13 +25,14 @@ async function api(route,body){
   body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
  const result=await response.json();if(!response.ok)throw new Error(result.error||'Control interface unavailable');return result;
 }
-const budget=budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,
+const unmetered=config.modelAccessPolicy==='control-only-v1';
+const budget=unmetered?modelAccess({deadline:config.deadline*1000,url:base+'/model-access/'+config.leaseId,token}):budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,
  url:base+'/accounting/'+config.leaseId,token,purpose:'meta'});
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
  if(gateway)Object.assign(summary,['completed','error','interrupted'].includes(summary.status)?gateway.persistFinal(summary):gateway.diagnostics(summary));
  const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
- summary.usage=summarizeUsage(events);summary.accounting=budget.snapshot();summary.cursor=cursor;
+ if(!unmetered)summary.usage=summarizeUsage(events);if(budget.snapshot)summary.accounting=budget.snapshot();summary.cursor=cursor;
  fs.writeFileSync(path.join(logs,'events.json'),redact(JSON.stringify(events))+'\n');
  fs.writeFileSync(path.join(logs,'summary.json'),redact(JSON.stringify(summary,null,2))+'\n');
 }
@@ -38,7 +40,7 @@ async function stop(){if(closing)return;closing=true;summary.status='interrupted
 try{
  credentials=createProviderCredentials(model,{providerConfig:config.providerConfig,minimumValidityMs:Math.max(120000,config.deadline*1000-Date.now()+120000)});
  provider=await providerRuntime({model,credentialFile:credentials.credentialFile,providerConfig:config.providerConfig});
- gateway=new MetaGateway({mainSessionId:config.id,model,adapter:provider,deadline:config.deadline*1000,audit:path.join(logs,'gateway-audit.jsonl'),reserve:async(id,request,options)=>{await budget.reserve(id,request,options);if(config.metaCompositionRoot)await api('/meta-sessions/'+config.id+'/runtime',{action:'model_request',input:{id,agentId:request.sessionId}});},settle:budget.settle,redact:credentials.redact});
+ gateway=new MetaGateway({mainSessionId:config.id,model,adapter:provider,deadline:config.deadline*1000,audit:path.join(logs,'gateway-audit.jsonl'),reserve:async(id,request,options)=>{await budget.reserve(id,request,options);if(!unmetered&&config.metaCompositionRoot)await api('/meta-sessions/'+config.id+'/runtime',{action:'model_request',input:{id,agentId:request.sessionId}});},settle:budget.settle,redact:credentials.redact});
  const frozen=config.metaCompositionRoot?JSON.parse(fs.readFileSync(path.join(config.metaCompositionRoot,'manifest.json'))):null;
  const {compositionEntries}=frozen?await import(pathToFileURL(path.join(root,'packages/meta-harness/composition.mjs'))):{};
  const plugins=frozen?compositionEntries(frozen.composition,{systemPrompt:frozen.systemPrompt.text,reviewerPrompt:frozen.reviewerPrompt,compositionId:frozen.id}):[{id:'meta-harness',name:'/opt/phyexp/meta-plugin/index.mjs',config:{systemPrompt:config.systemPrompt.text}}];

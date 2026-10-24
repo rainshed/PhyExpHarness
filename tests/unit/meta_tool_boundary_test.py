@@ -74,7 +74,7 @@ class ToolBoundaryTests(unittest.TestCase):
                 parts.append(result['text']);offset=result['nextOffset']
             self.assertEqual(''.join(parts),text)
     def test_v4_binding_retains_original_source_hashes(self):
-        self.assertEqual(version(self.service,self.c),'meta-tools-v7')
+        self.assertEqual(version(self.service,self.c),'meta-tools-v8')
         for name,sha in binding('meta-tools-v4')['files'].items():
             file=base.ROOT/'packages/meta-harness/protocols/meta-tools-v4'/name
             self.assertEqual(hashlib.sha256(file.read_bytes()).hexdigest(),sha)

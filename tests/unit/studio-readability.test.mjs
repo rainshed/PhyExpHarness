@@ -23,23 +23,23 @@ test('image proofs must exist on all attempts, mixed budgets inside a version re
  delete c.trials[1].comparisonContext.runnerExecutionManifest;assert.equal(comparison(c,'h1','h0').state,'different');
  const more={...row('h1','a',50),id:'extra'};c.trials.push(more);withTrials(c);assert.equal(comparison(c,'h1','h1').state,'different');
 });
-test('cost is a labeled ledger subtotal, missing use and incomplete timing never become zero',()=>{
- assert.equal(versionCost([{}]).tokens,null);assert.equal(versionCost([{}]).seconds,null);
+test('duration summary omits accounting and preserves incomplete timing',()=>{
+ assert.equal(versionCost([{}]).tokens,undefined);assert.equal(versionCost([{}]).seconds,null);
  const cost=versionCost([{accountedUsage:{confirmedTokens:100,unknownRequests:1},startedAt:0,finishedAt:10},{usage:{tokens:900},startedAt:5}]);
- assert.deepEqual(cost,{tokens:100,recorded:1,attempts:2,unknown:1,unknownReserved:0,seconds:10,timed:1});
+ assert.deepEqual(cost,{attempts:2,seconds:10,timed:1});
 });
 test('report ordering selects newest revision independently of backend list order',()=>{
  const r=[{id:'old',batchId:'b',kind:'round',analysisRevision:1,createdAt:5},{id:'latest',batchId:'b',kind:'round',analysisRevision:3,createdAt:7},{id:'middle',batchId:'b',kind:'round',analysisRevision:2,createdAt:6},{id:'summary',kind:'status_summary',createdAt:8}];
  assert.deepEqual(reportGroups(r,[{id:'b',round:1}]).map(x=>x.map(v=>v.id)),[['summary'],['latest','middle','old']]);
 });
-test('report comparison stays inside its frozen tables and does not invent older ledger totals',()=>{
+test('report comparison stays inside its frozen tables without computing usage',()=>{
  const r={facts:{campaign:{id:'activity',config:{tasks:['a']}},trials:[{...row('h1'),accountedUsage:{confirmedTokens:12}}]},tables:{rounds:[{candidateId:'h0',results:[row('h0')]},{candidateId:'h1',results:[row('h1')]}],versions:[]}};
- const c=reportCampaign(r);assert.equal(trialsFor(c).length,2);assert.equal(versionCost(trialsFor(c,'h0')).tokens,null);assert.equal(versionCost(trialsFor(c,'h1')).tokens,12);assert.equal(c.reports,undefined);
+ const c=reportCampaign(r);assert.equal(trialsFor(c).length,2);assert.equal(versionCost(trialsFor(c,'h0')).tokens,undefined);assert.equal(versionCost(trialsFor(c,'h1')).tokens,undefined);assert.equal(c.reports,undefined);
 });
 
-test('archived accounting receipts support live cost without treating raw model totals as confirmed',()=>{
+test('archived receipts and raw totals do not create new usage statistics',()=>{
  const cost=versionCost([{summary:{accounting:{confirmedTokens:20,unknownReservedTokens:30}}},{usage:{totalTokens:100}}]);
- assert.equal(cost.tokens,20);assert.equal(cost.recorded,1);assert.equal(cost.unknownReserved,30);
+ assert.deepEqual(cost,{attempts:2,seconds:null,timed:0});
 });
 
 test('evidence pagination follows Unicode characters rather than UTF-16 units or bytes',async()=>{

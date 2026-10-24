@@ -4,6 +4,11 @@ from pathlib import Path
 from src.execution.host.single_run import TRIAL_CLOSEOUT_RESERVE_SECONDS
 from src.execution.host.task_time import benchmark_time, POLICY as BENCHMARK_TIME
 
+from .model_access import control_only, TOKEN_FIELDS
+
+def limit_keys(config):
+    return tuple(k for k in LIMITS if not control_only(config) or k not in TOKEN_FIELDS)
+
 POLICY = 'meta-resource-planning-v1'
 LIMITS = ('maxRounds', 'maxTrials', 'concurrency', 'wallTimeSeconds', 'trialTimeSeconds',
           'softTokenLimit', 'reserveSeconds', 'reserveTokens', 'stopMode', 'drainGraceSeconds')
@@ -36,13 +41,13 @@ def reserves(campaign):
         return cfg['reserveSeconds'], cfg['reserveTokens']
     plan = campaign.get('resourcePlan') or {}
     return (max(cfg['reserveSeconds'], plan.get('closeoutReserveSeconds', 0)),
-            max(cfg['reserveTokens'], plan.get('closeoutReserveTokens', 0)) if cfg['softTokenLimit'] is not None else 0)
+            max(cfg['reserveTokens'], plan.get('closeoutReserveTokens', 0)) if cfg.get('softTokenLimit') is not None else 0)
 
 
 def validate_plan(campaign, value):
     from .store import Refused
     cfg = campaign['config']
-    fields=tuple(k for k in FIELDS if k!='defaultTrialTimeSeconds' or not benchmark_time(cfg))
+    fields=tuple(k for k in FIELDS if (k!='defaultTrialTimeSeconds' or not benchmark_time(cfg)) and (k!='closeoutReserveTokens' or not control_only(cfg)))
     if set(value) != set(fields):
         raise Refused('Plan requires exactly: ' + ', '.join(fields))
     for key in fields:
@@ -57,10 +62,10 @@ def validate_plan(campaign, value):
         raise Refused('Trial time must exceed fixed verification/cleanup reserve: '+str(trial_closeout(campaign))+' seconds')
     if value['closeoutReserveSeconds'] >= cfg['wallTimeSeconds']:
         raise Refused('Plan closeout time must be less than total time')
-    if cfg['softTokenLimit'] is None:
-        if value['closeoutReserveTokens']:
+    if cfg.get('softTokenLimit') is None:
+        if value.get('closeoutReserveTokens',0):
             raise Refused('Unlimited tokens require zero token closeout reservation')
-    elif value['closeoutReserveTokens'] >= cfg['softTokenLimit']:
+    elif value['closeoutReserveTokens'] >= cfg.get('softTokenLimit'):
         raise Refused('Plan closeout tokens must be less than total tokens')
     return dict(value)
 
@@ -107,9 +112,9 @@ def view(campaign, trials=()):
             'executionTimePolicy':cfg.get('executionTimePolicy',execution_time_policy()),
             'suggestions': {'parallelism': cfg['concurrency'],
                 **({} if benchmark_time(cfg) else {'defaultTrialTimeSeconds': min(3600, cfg['trialTimeSeconds'] or cfg['wallTimeSeconds'])}),
-                'closeoutReserveSeconds': 0, 'closeoutReserveTokens': 0},
+                'closeoutReserveSeconds': 0, **({} if control_only(cfg) else {'closeoutReserveTokens':0})},
             'taskTimeLimits':cfg.get('taskTimeLimits',{}),
-            'effectiveReserves': dict(zip(('seconds', 'tokens'), reserves(campaign))),
+            'effectiveReserves': {'seconds':reserves(campaign)[0],**({} if control_only(cfg) else {'tokens':reserves(campaign)[1]})},
             'schedulingWait':campaign.get('resourcePlanWait'),
             'runningConditions': [{k: t.get(k) for k in ('id', 'task', 'deadline', 'effectiveConditions', 'launchLimits')}
                                   for t in trials if t['state'] in ('launching', 'running')],

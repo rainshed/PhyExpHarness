@@ -11,6 +11,7 @@ import * as DeepSeek from '@deepseek-ai/dsh-llm-deepseek-api-key';
 import {providerRoute,piAiProfile} from './providers.mjs';
 import {classifyModelFailure,RECOVERABLE_REQUEST_FAILURES} from './model_failures.mjs';
 import {ADMISSION_CODES} from './budget.mjs';
+import {ACCESS_CODES} from './model_access.mjs';
 import {TransportDiagnostics} from './transport_diagnostics.mjs';
 const contextOverflow=failure=>failure?.observed?.providerCode==='CONTEXT_WINDOW_EXCEEDED';
 
@@ -81,7 +82,7 @@ export class ModelGateway {
    await this.reserve(id,request,{signal:combined,onState:state=>this.record({type:'admission_'+state.status,id,...state})});
   }catch(error){
    const detail=error.admissionFailure||{};
-   const code=controller.signal.reason==='trial_deadline'?'trial_deadline':combined.aborted?'request_cancelled':ADMISSION_CODES.has(detail.code)?detail.code:'accounting_unavailable';
+   const code=controller.signal.reason==='trial_deadline'?'trial_deadline':combined.aborted?'request_cancelled':(ADMISSION_CODES.has(detail.code)||ACCESS_CODES.has(detail.code))?detail.code:'control_unavailable';
    const failure={schemaVersion:1,code,stage:'admission',source:'host-admission',requestId:id,
     detectedAt:new Date().toISOString(),termination:'admission',observed:{...detail}};
    this.record({type:'admission_denied',id,failure});this.fail(failure);

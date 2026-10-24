@@ -1,3 +1,4 @@
+from src.control.model_access import control_only
 """Append-only authored explanations. Provenance validation never certifies causality."""
 import copy
 import hashlib
@@ -123,10 +124,10 @@ class Research:
         ids=seen|{selected['id']}
         if c.get('retainedCandidateId'):ids.add(c['retainedCandidateId'])
         trials=[t for t in self.store._list(db,'trials',c['id']) if t['candidateId'] in ids]
-        usage=self.store._list(db,'usage',c['id'])
+        usage=[] if control_only(c['config']) else self.store._list(db,'usage',c['id'])
         for t in trials:
             requests=[r for r in usage if r['leaseId']==t.get('leaseId')]
-            t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
+            if not control_only(c['config']):t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
         from src.evidence.diagnostics import trial_diagnostics
         from src.evidence.outcomes import evaluation
         from .store import comparison_issues

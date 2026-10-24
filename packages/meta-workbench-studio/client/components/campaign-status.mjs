@@ -3,6 +3,7 @@ const labels={draft:'待启动',running:'运行中',paused:'已暂停',closing:'
 const failures={
  model_transport_error:'模型连接中断',model_service_overloaded:'模型服务暂时过载',
  request_timeout:'单次模型请求达到时间上限',stream_idle_timeout:'模型连接长时间没有返回数据',
+ control_unavailable:'后台运行控制暂时不可用',request_auth_failed:'后台请求凭证验证失败',request_lease_expired:'后台请求凭证已到期或撤销',control_protocol_error:'后台运行控制协议异常',
  accounting_unavailable:'后台用量账本暂时不可用',accounting_auth_failed:'后台请求凭证验证失败',
  accounting_lease_expired:'后台请求凭证已到期或被撤销',budget_admission_denied:'剩余额度不足以继续模型请求',
  model_authentication:'模型服务认证失败',model_auth_error:'模型服务认证失败',

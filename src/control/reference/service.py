@@ -6,6 +6,7 @@ from ..store import Refused,Conflict,encoded
 from ..meta_api import page
 from src.execution.host.models import campaign_route
 from .catalog import Catalog,HARNESS,uses_codex_host
+from ..model_access import control_only, check_config
 from .policy import DEFAULT,validate,effective,enabled,TERMINAL,release_cancelled_slots
 from src.evidence.outcomes import outcome_summary
 from src.evidence.diagnostics import trial_diagnostics
@@ -128,6 +129,7 @@ class References:
             prior=self.store._idem(db,campaign,'reference-policy',key,payload)
             if prior:return prior
             c=self.store._get(db,'campaigns',campaign);old=effective(c);original=c['config'].get('referencePolicy',DEFAULT)
+            if control_only(c['config']):check_config({'referencePolicy':policy})
             if old['revision']!=expected:raise Conflict('Reference policy revision changed')
             if c['state'] in ('finished','failed'):raise Refused('Reference policy is frozen after closeout')
             for axis in ('model','harness'):

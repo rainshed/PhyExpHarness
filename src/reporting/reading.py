@@ -91,14 +91,14 @@ def render_reading(report):
             for alternative in d.get('alternatives',[]):
                 lines += ['  备选 '+versions.get(alternative['candidateId'],alternative['candidateId'])+'：'+cell(alternative['reason'])+'；依据：'+cell('、'.join(alternative['evidenceRefs']) or '未另列证据')+'。']
             if 'alternatives' not in d:lines += ['  未记录备选分析；不能据此认定其他版本已被否决。']
-    lines+=['','## 消耗与停止原因','',f"活动：{cfg.get('name','进化活动')}。Solver：{cfg['solver']['model']} / {cfg['solver'].get('reasoningEffort','无')}；Meta：{cfg['meta']['model']} / {cfg['meta'].get('reasoningEffort','无')}。",
+    lines+=['','## 运行情况与停止原因','',f"活动：{cfg.get('name','进化活动')}。Solver：{cfg['solver']['model']} / {cfg['solver'].get('reasoningEffort','无')}；Meta：{cfg['meta']['model']} / {cfg['meta'].get('reasoningEffort','无')}。",
         f"活动累计 {c['counts']['rounds']} 轮、{c['counts']['startedTrials']} 次已启动实验；耗时 {c['elapsedSeconds']/60:.1f} 分钟。",
-        f"活动累计已确认 {u['confirmedTokens']:,} token；在途预留 {u['inflightReservedTokens']:,}；未知请求 {u['unknownRequests']} 个，保守预留 {u['unknownReservedTokens']:,}。",
+        *([f"活动累计已确认 {u['confirmedTokens']:,} token；在途预留 {u['inflightReservedTokens']:,}；未知请求 {u['unknownRequests']} 个，保守预留 {u['unknownReservedTokens']:,}。"] if 'confirmedTokens' in u else []),
         '停止原因：'+REASONS.get(c['stopReason'],c['stopReason'] or '尚未停止')+'。',
         '最终版本：'+versions.get(c.get('finalCandidateId'),'尚未选择')+'。']
     if c.get('finishAssessment'):lines+=['Meta 结束依据：'+c['finishAssessment']['reason']]
     if f.get('metaComposition'):
-        meta=f['metaComposition'];lines+=['','### Meta 插件组合与停止审查','',f"冻结组合：{meta['preset']}；标识：{meta['id']}。",'审查消耗已计入 Meta 总量，不重复相加；插件触发记录不代表效果认证。']
+        meta=f['metaComposition'];lines+=['','### Meta 插件组合与停止审查','',f"冻结组合：{meta['preset']}；标识：{meta['id']}。",'插件触发记录不代表效果认证。']
         for p in meta['plugins']:
             hits=sum(o['pluginId']==p['id'] and o['event']=='triggered' for o in f.get('metaObservations',[]))
             lines.append(f"- {p['id']}：{'启用' if p['enabled'] else '禁用'}；观察到 {hits} 次工具或审查触发。")
@@ -107,7 +107,7 @@ def render_reading(report):
     for role,usage in f.get('usageByRole',{}).items():lines.append(f"- {'Solver 执行' if role=='solver' else 'Meta 设计与报告'}累计：{usage['confirmedTokens']:,} token。")
     for i,t in enumerate(f['trials'],1):
         elapsed=(t.get('finishedAt') or t.get('startedAt') or 0)-(t.get('startedAt') or 0)
-        lines.append(f"- 实验 {i}：{'未评分' if t['score'] is None else '评分 '+str(t['score'])}；耗时 {elapsed/60:.1f} 分钟；已确认 {t.get('accountedUsage',{}).get('confirmedTokens',0):,} token。")
+        lines.append(f"- 实验 {i}：{'未评分' if t['score'] is None else '评分 '+str(t['score'])}；耗时 {elapsed/60:.1f} 分钟。"+(f" 已确认 {t['accountedUsage']['confirmedTokens']:,} token。" if 'accountedUsage' in t else ''))
     lines += ['', '## 实验状态与故障原因', '']
     for r in rounds:
         for t in r['results']:
@@ -126,13 +126,14 @@ def render_reading(report):
     benchmark=cfg.get('executionTimePolicy',{}).get('version')=='benchmark-time-v1'
     if benchmark:trial_label='遵循各题 benchmark'
     lines+=['',f"总时限 {cfg['wallTimeSeconds']/3600:g} 小时；轮次 {limit(cfg['maxRounds'])}；实验次数 {limit(cfg['maxTrials'])}；最高并发 {cfg['concurrency']}。",
-        f"总用量软阈值：{limit(cfg['softTokenLimit'])}；单次上限：{trial_label}；配置的收尾最低预留 {cfg['reserveSeconds']/60:g} 分钟 / {cfg['reserveTokens']:,} token，包含在总额度内。"]
+        f"单次上限：{trial_label}；配置的收尾最低预留 {cfg['reserveSeconds']/60:g} 分钟。"]
+    if 'softTokenLimit' in cfg:lines.append(f"历史总用量软阈值：{limit(cfg['softTokenLimit'])}；收尾预留 {cfg['reserveTokens']:,} token。")
     if planned:
         plan=c.get('resourcePlan') or {}
         plan_time='遵循 benchmark' if benchmark else str(plan.get('defaultTrialTimeSeconds','待定'))+' 秒'
         lines+=['', '## 资源计划与有效条件', '',
                 f"计划版本 {plan.get('revision',0)}；来源 {plan.get('source','尚未制定')}；理由：{plan.get('reason','等待初始计划')}。",
-                f"计划并发 {plan.get('parallelism','待定')}；后续单次 {plan_time}；计划收尾 {plan.get('closeoutReserveSeconds',0)} 秒 / {plan.get('closeoutReserveTokens',0)} token。"]
+                f"计划并发 {plan.get('parallelism','待定')}；后续单次 {plan_time}；计划收尾 {plan.get('closeoutReserveSeconds',0)} 秒。"]
         if benchmark:
             lines.append('求解与评分时限遵循各题 benchmark 原始配置；环境准备和评分不占用求解时间。')
         elif cfg.get('executionTimePolicy'):

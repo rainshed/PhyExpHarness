@@ -34,7 +34,7 @@ class ProviderSettings:
             for row in db.execute('SELECT id,data FROM tests').fetchall():
                 test = json.loads(row['data'])
                 if test['state'] == 'running':
-                    test.update(state='interrupted', finishedAt=time.time(), error='后台重启，测试已中断；未自动重试，用量待核实。', usageStatus='unknown')
+                    test.update(state='interrupted', finishedAt=time.time(), error='后台重启，测试已中断，未自动重试。')
                     db.execute('UPDATE tests SET data=? WHERE id=?', (json.dumps(test), row['id']))
             self.service.store.model_config = self.effective(self.document(db))
 
@@ -235,7 +235,7 @@ class ProviderSettings:
             env = self.environment(provider, route)
             id = 'test-' + str(uuid.uuid4())
             test = {'id': id, **model, 'configurationRevision': doc['revision'], 'state': 'running', 'startedAt': time.time(),
-                    'usageStatus': 'pending', 'maxRequests': 2, 'timeoutSeconds': 45, 'maxOutputTokensPerRequest': min(512, route['models'][0].get('maxTokens', 8192))}
+                    'maxRequests': 2, 'timeoutSeconds': 45, 'maxOutputTokensPerRequest': min(512, route['models'][0].get('maxTokens', 8192))}
             db.execute('INSERT INTO tests VALUES(?,?,?,?)', (id, key, payload, json.dumps(test)))
         self.service.pool.submit(self._test_worker, test, route, env)
         return test
@@ -251,9 +251,9 @@ class ProviderSettings:
             result = json.loads(line.split('=', 1)[1])
             test.update(result, state='passed' if result.get('passed') else 'failed')
         except subprocess.TimeoutExpired:
-            test.update(state='failed', error='测试超过时限，已停止；未取得完整回执，用量待核实。', usageStatus='unknown')
+            test.update(state='failed', error='测试超过时限，已停止。')
         except Exception:
-            test.update(state='failed', error='测试进程未完成；用量待核实。', usageStatus='unknown')
+            test.update(state='failed', error='测试进程未完成。')
         test['finishedAt'] = time.time()
         # No request bodies, environment or raw stderr are retained in the test history.
         with self.lock, self.connection(True) as db:

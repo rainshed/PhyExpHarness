@@ -112,7 +112,7 @@ class Receipts:
             remainingSeconds=c['remainingSeconds'],activeTrials=c['counts']['activeTrials'],reservedTrials=c['counts']['reservedTrials'],
             explorationClosed=c['explorationClosed'],stopReason=c.get('stopReason'),unresolvedOperationCount=unresolved,
             pendingQuestionCount=sum(q['state']=='pending' for q in self.store.list('meta_questions',campaign)),
-            budget={'confirmed':usage['confirmedTokens'],'inflight':usage['inflightReservedTokens'],'unknown':usage['unknownReservedTokens'],'limit':c['config']['softTokenLimit']})
+            **({'budget':{'confirmed':usage['confirmedTokens'],'inflight':usage['inflightReservedTokens'],'unknown':usage['unknownReservedTokens'],'limit':c['config']['softTokenLimit']}} if 'confirmedTokens' in usage else {}))
     def candidates(self,campaign):
         items=[];assets={}
         for kind in ['version','plugin']:

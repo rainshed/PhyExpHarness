@@ -1,5 +1,7 @@
 # 参考模型与参考 Harness 插件设计
 
+当前增量：新活动及参考实验不再统计 token 或设置 token 子额度，保留实验次数子额度、运行权限、并发和时间控制。下文 token 共享账本与费用分组属于旧活动兼容设计，详见[移除方案](model-access-without-accounting.md)。
+
 日期：2026-10-23 · 状态：工程实现已落地；验证范围与接入限制见第 13 节 · 需求：[v0.15](../requirements/meta-harness.md) · 实施与验收：[开发计划](../plans/meta-reference-experiments.md)
 
 本文定义两个可独立启用和移除的 Meta 插件，分别开放参考模型和参考 Harness 两个选择维度。参考模型遵循 DeepSeek Harness 的原生模型配置；参考 Harness 首期包括 Codex、Claude Code 和 DeepSeek Harness 标准模式，并保留扩展接口。用户在 UI 中独立开关插件、选择允许的模型和 Harness，并可授权 Meta 在兼容组合中自主取样。两个插件同时开启时支持参考模型 × 参考 Harness，无需第三个组合插件。两插件、三适配器与 Studio 授权界面已经实现；设计目标与当前支持范围的差异集中记录在第 13 节。

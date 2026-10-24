@@ -8,6 +8,7 @@ import fcntl
 import sys
 from pathlib import Path
 from ..store import Refused,encoded
+from ..model_access import control_only, environment as model_environment
 from .catalog import atomic_private,HARNESS,uses_codex_host
 
 def freeze_runtime(source,data):
@@ -92,11 +93,11 @@ def launch(service,trial):
     image=cfg['referenceBindings']['harnesses'].get(harness,{}).get('image') if harness else image_for(service,trial,bundle)
     if not image:raise Refused('Reference Harness image was not prepared')
     env=dict(provider_environment() if model else service.providers.environment(cfg['solver']['provider'],campaign_route(cfg,'solver')),
-             PHYEXP_ACCOUNTING_URL=service.base_url+'/accounting/'+lease['id'],PHYEXP_ACCOUNTING_TOKEN=token,
+             **model_environment(service.base_url,lease['id'],token,cfg),
              PHYEXP_LAUNCH_ID=trial['launchId'],PHYEXP_REFERENCE_SPEC=str(private),PHYEXP_REFERENCE_IMAGE=image)
     args=[sys.executable,'-m','src.execution.host.single_run','--bundle',candidate['bundlePath'],'--quantum-harbor',str(service.quantum),
-          '--task',trial['task'],'--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-service.store.clock())),
-          '--soft-token-limit',str(cfg['softTokenLimit'] or 'none')]
+          '--task',trial['task'],'--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-service.store.clock()))]
+    if not control_only(cfg):args+=['--soft-token-limit',str(cfg['softTokenLimit'] or 'none')]
     lock=cfg.get('taskImageLocks',{}).get(trial['task'])
     if cfg.get('taskImagePolicy') and not lock:raise Refused('Reference task images unavailable')
     if lock:

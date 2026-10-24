@@ -6,8 +6,7 @@
       "type": "object",
       "required": [
         "parallelism",
-        "closeoutReserveSeconds",
-        "closeoutReserveTokens"
+        "closeoutReserveSeconds"
       ],
       "properties": {
         "parallelism": {
@@ -15,10 +14,6 @@
           "minimum": 1
         },
         "closeoutReserveSeconds": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "closeoutReserveTokens": {
           "type": "integer",
           "minimum": 0
         }
@@ -488,13 +483,6 @@
           ],
           "minimum": 1
         },
-        "softTokenLimit": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1
-        },
         "wallTimeSeconds": {
           "type": "integer",
           "minimum": 1
@@ -551,10 +539,18 @@
                   "const": "model-transport-v1"
                 },
                 "actualTransport": {
-                  "enum": ["websocket", "sse", "http", null]
+                  "enum": [
+                    "websocket",
+                    "sse",
+                    "http",
+                    null
+                  ]
                 },
                 "protocolStarted": {
-                  "type": ["boolean", "null"]
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
                 },
                 "connectionId": {
                   "type": "string"
@@ -602,7 +598,6 @@
         "evidenceRefs",
         "verifiedEvidence",
         "assessment",
-        "usage",
         "counts",
         "context"
       ],
@@ -738,7 +733,12 @@
       ],
       "properties": {
         "rule": {
-          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3", "task-completion-v4"]
+          "enum": [
+            "task-completion-v1",
+            "task-completion-v2",
+            "task-completion-v3",
+            "task-completion-v4"
+          ]
         },
         "category": {
           "enum": [
@@ -788,7 +788,12 @@
       ],
       "properties": {
         "rule": {
-          "enum": ["task-completion-v1", "task-completion-v2", "task-completion-v3", "task-completion-v4"]
+          "enum": [
+            "task-completion-v1",
+            "task-completion-v2",
+            "task-completion-v3",
+            "task-completion-v4"
+          ]
         },
         "total": {
           "type": "object"
@@ -835,7 +840,10 @@
           "const": "meta-composition-v1"
         },
         "stopPolicy": {
-          "enum": ["stop-review-v1", "goal-or-budget-v1"]
+          "enum": [
+            "stop-review-v1",
+            "goal-or-budget-v1"
+          ]
         },
         "preset": {
           "type": "string"
@@ -953,6 +961,75 @@
           "type": "object"
         }
       }
+    },
+    "LegacyResourcePlanSettings": {
+      "type": "object",
+      "required": [
+        "parallelism",
+        "closeoutReserveSeconds",
+        "closeoutReserveTokens"
+      ],
+      "properties": {
+        "parallelism": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "closeoutReserveSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "closeoutReserveTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "LegacyRunLimits": {
+      "type": "object",
+      "required": [
+        "wallTimeSeconds",
+        "concurrency"
+      ],
+      "properties": {
+        "maxRounds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "maxTrials": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "trialTimeSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "softTokenLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "wallTimeSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
     }
   }
 }

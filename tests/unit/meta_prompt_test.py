@@ -36,7 +36,7 @@ class MetaPromptTests(unittest.TestCase):
             expected = system_prompt({**config, 'stopPolicy': GOAL_POLICY})
             self.assertEqual(frozen['systemPrompt'], expected)
             self.assertEqual(first['stopPolicy'], GOAL_POLICY)
-            self.assertEqual(first['toolContract']['version'], 'meta-tools-v7')
+            self.assertEqual(first['toolContract']['version'], 'meta-tools-v8')
             self.assertFalse(next(p for p in first['plugins'] if p['id']=='meta-stop-review')['enabled'])
             second = freeze(ROOT, temp, {**config, 'objective': '另一个目标'})
             self.assertNotEqual(first['id'], second['id'])

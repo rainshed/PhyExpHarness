@@ -150,6 +150,18 @@ class ResultsTests(unittest.TestCase):
         self.assertEqual(result['officialReward'], 0)
         self.assertFalse(result['sciencePassed'])
 
+    def test_control_only_archive_preserves_scores_without_reconstructing_usage(self):
+        from unittest.mock import patch
+        self.write('provenance.json', {'modelAccessPolicy': 'control-only-v1'})
+        self.write('harbor/trial/phyexp/events.json', [{'type': 'assistant/message', 'data': {}}])
+        with patch('src.execution.adapters.quantum_harbor.results.subprocess.check_output', side_effect=AssertionError('No usage aggregation')):
+            result = collect(self.root)
+        self.assertEqual(result['officialReward'], 0)
+        self.assertEqual(result['pipelineStatus'], 'completed')
+        self.assertNotIn('usage', result)
+        (self.base/'phyexp/events.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'trajectory'):collect(self.root)
+
     def test_v2_recipe_without_label_preserves_frozen_identity_and_score(self):
         runtime = json.loads((self.base/'phyexp/runtime-summary.json').read_text())
         runtime.update(recipe={'plugins': []}, bundleId='a'*64)

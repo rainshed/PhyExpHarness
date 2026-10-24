@@ -10,7 +10,7 @@ import {versionCost,comparison,readableText} from '../readability.mjs';
 
 function DecisionCost({rows}:any){
  const cost=versionCost(rows);
- return <p className="mh-muted">{cost.tokens==null?'确认用量未记录':number(cost.tokens)+' token 已确认'} · 用量记录 {cost.recorded}/{cost.attempts} · {cost.seconds==null?'耗时未记录':duration(cost.seconds)+' 单次耗时合计'} · 完整耗时 {cost.timed}/{cost.attempts} · 未知请求 {cost.unknown} / 预留 {number(cost.unknownReserved)} token。仅含这些实验，不含 Meta；耗时合计不等于活动墙钟。</p>;
+ return <p className="mh-muted">{cost.seconds==null?'耗时未记录':duration(cost.seconds)+' 单次耗时合计'} · 完整耗时 {cost.timed}/{cost.attempts}。并行实验耗时合计不等于活动墙钟。</p>;
 }
 
 function Decision({row,campaignId,tables,readEvidence,onReport}:any){
@@ -37,7 +37,6 @@ function Decision({row,campaignId,tables,readEvidence,onReport}:any){
     <SnapshotNotice campaign={snapshot}/><p>此前保留：{name(d.previousCandidateId)||'尚未选择'}；本次选定：{name(d.candidateId)}。</p>
     {d.assessment?.comparisonLimitations?.map((s:string,i:number)=><p key={i}>{s}</p>)}
     {d.consideredSnapshot?Object.entries(d.consideredSnapshot.taskEvaluation.byCandidate).map(([id,stats]:any)=><section key={id}><h4>{name(id)}</h4><p>{comparison(compareSnapshot,id,d.candidateId).label}：{comparison(compareSnapshot,id,d.candidateId).reasons.join('；')}</p><TaskEvaluation value={stats} rows={d.consideredSnapshot.trials.filter((t:any)=>t.candidateId===id)} campaign={snapshot} details/><DecisionCost rows={d.consideredSnapshot.trials.filter((t:any)=>t.candidateId===id)}/></section>):<TaskEvaluation value={d.assessment?.taskEvaluation?.candidate} rows={d.assessment?.trials||[]} campaign={snapshot} details/>}
-    <p>活动当时已确认 {number(d.usage?.confirmedTokens)} token；未知请求 {d.usage?.unknownRequests??'未记录'}；未知预留 {number(d.usage?.unknownReservedTokens)} token。</p>
    </ReadingSection>
    <ReadingSection number="↳" title="这一决定依据了哪些研究？" description="打开当时引用的解释修订，再定位对应实验与原文。">
     {d.researchRecords?.map((r:any)=><details key={r.id}><summary>{r.record.summary} · 当时的解释修订 {r.revision}</summary><ResearchArticle row={r} c={{id:campaignId||d.campaignId,tables:evidenceContext.tables}} onEvidence={evidence} onReport={onReport}/></details>)}

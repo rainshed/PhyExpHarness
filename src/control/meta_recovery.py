@@ -4,7 +4,7 @@ DELAYS=(2,5,10,20,30,60)
 NONRECOVERABLE={'model_authentication','model_permission','model_invalid_request','request_cancelled',
     'model_auth_error','model_permission_error','model_invalid_request_error','model_configuration_error',
     'trial_deadline','token_limit','budget_exhausted','budget_admission_denied','admission_denied','integrity_error',
-    'accounting_auth_failed','accounting_lease_expired'}
+    'accounting_auth_failed','accounting_lease_expired','request_auth_failed','request_lease_expired','control_protocol_error'}
 
 def recovery(summary,attempt,now,deadline,stopped=False):
     failure=summary.get('failure') or {};code=failure.get('code','')

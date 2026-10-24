@@ -1,5 +1,7 @@
 # Meta-Harness AI 开发任务书
 
+2026-10-24 增量：按[移除用量账本方案](../design/model-access-without-accounting.md)取消新活动的 token 预留、结算、统计和预算控制；保留运行管理与历史兼容。此前里程碑中的记账验收是历史要求，新行为以该方案为准。
+
 日期：2026-10-23 · 状态：开发与验收规则；第 24 节参考实验插件工程实现及可复现检查已落地。第 23 节进化可读性增量已实施并通过真实 E2E 验收。插件版本管理与按需导出已落地，Meta 通用 Agent 核心增量已实现、完整验收继续，具体检查和运行证据仅保存在本地 · 执行者：Codex / GPT-6 Astra
 需求：[meta-harness.md v0.15](../requirements/meta-harness.md) · 架构：[实现方案](../design/meta-harness-implementation.md) · 仓库入口：[AGENTS.md](../../AGENTS.md)
 

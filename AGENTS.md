@@ -40,6 +40,7 @@
 | 模型流保护、失败诊断与离线回放 | [运行说明](docs/operations/meta-harness.md#模型请求保护与故障诊断) |
 | 模型请求恢复与故障零分增量 | [专项计划](docs/plans/model-request-recovery.md) |
 | 已结束未评分尝试计失败与历史计分兼容 | [任务完成规则 v4](docs/design/task-completion-v4.md) |
+| 移除用量账本、统计与 token 预算 | [当前方案](docs/design/model-access-without-accounting.md) |
 | Meta 自主资源规划与限额执行修改 | [专项计划](docs/plans/meta-resource-planning.md) |
 | 执行插件开发接口与样例 | [SDK 资料](knowledge/plugin-sdk/README.md) |
 | Meta 系统职责与默认目标 | [系统模板](src/control/prompts/meta-system.md)、[默认值](schemas/meta-defaults.json) |

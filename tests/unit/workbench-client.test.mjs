@@ -107,3 +107,21 @@ test('deleting subscriptions drop historical events and clear a removed selectio
   state='deleted';await sub.refresh();assert.equal(updates.at(-1).selectionMissing,true);assert.equal(updates.at(-1).campaign,null);
  }finally{sub.dispose()}
 });
+
+
+test('removing usage budgets preserves uncertain historical create identity and backs up fresh drafts',async()=>{
+ const old={...config,softTokenLimit:'3000000',reserveTokens:'300000',referencePolicy:{limits:{model:{softTokenLimit:400,maxTrials:2}}}};
+ const saved=numericConfig(old),signature=JSON.stringify(saved);
+ const storage=memory();storage.setItem('phyexp:ui:studio:state',JSON.stringify({version:1,config:old,attempt:{signature,key:'old-intent'}}));
+ const store=createDraftStore(storage,'studio',defaults);let payload;
+ const commands=createCommands({store,makeKey:()=> 'new-intent',request:async(_,body)=>{payload=body;return {id:'existing'}}});
+ await commands.create(store.read().config);
+ assert.equal(payload.idempotencyKey,'old-intent');assert.equal(payload.config.softTokenLimit,3000000);
+ await commands.create(store.read().config);
+ assert.equal(payload.idempotencyKey,'new-intent');assert.equal('softTokenLimit' in payload.config,false);
+ assert.deepEqual(payload.config.referencePolicy.limits.model,{maxTrials:2});
+ const fresh=memory();fresh.setItem('phyexp:ui:studio:state',JSON.stringify({version:1,config:old,attempt:null}));
+ const migrated=createDraftStore(fresh,'studio',defaults);
+ assert.equal('reserveTokens' in migrated.read().config,false);
+ assert.ok(fresh.getItem('phyexp:ui:studio:state:before-usage-removal'));
+});

@@ -1,4 +1,5 @@
 from .accounting import reconcile_audit
+from .model_access import POLICY as MODEL_ACCESS_POLICY, control_only, check_config, environment as model_environment
 """Independent control service: owns scheduling, recovery and admission; never executes generated code."""
 import hashlib
 import fcntl
@@ -140,6 +141,13 @@ class ControlService:
             with self.store.connection() as db:
                 replay=db.execute("SELECT payload FROM commands WHERE campaign='global' AND kind='create' AND key=?",(key,)).fetchone()
             config=dict(config)
+            original=json.loads(replay['payload']) if replay else {}
+            if not replay:
+                if config.get('modelAccessPolicy',MODEL_ACCESS_POLICY)!=MODEL_ACCESS_POLICY:raise Refused('New activities require control-only model access')
+                check_config(config)
+                config['modelAccessPolicy']=MODEL_ACCESS_POLICY
+            elif original.get('modelAccessPolicy'):
+                config['modelAccessPolicy']=original['modelAccessPolicy']
             if not replay:
                 if config.get('resourcePolicy',planning.POLICY)!=planning.POLICY:
                     raise Refused('New activities require benchmark resource planning')
@@ -151,7 +159,7 @@ class ControlService:
                 config.setdefault('resourcePolicy',planning.POLICY)
             if planning.enabled(config) and 'configurationSources' not in config:
                 config['configurationSources']=json.loads(replay['payload'])['configurationSources'] if replay else {k:{'source':source if config.get(k) is not None else 'unset' if k in ('maxRounds','maxTrials','softTokenLimit','trialTimeSeconds') else 'platform_default',
-                    'value':config.get(k)} for k in planning.LIMITS}
+                    'value':config.get(k)} for k in planning.limit_keys(config)}
             if planning.enabled(config) and 'taskEvaluationRule' not in config:
                 # A replay must use the original request defaults, including pre-v4 creates.
                 original=json.loads(replay['payload']) if replay else {}
@@ -376,11 +384,11 @@ class ControlService:
             runtime=prepare_runtime(bundle,self.data/'cache')
             trial=self.store.trial_update(trial['id'],executionEntry=str(runtime/'run.py'))
             frozen=self.store.get('campaigns',trial['campaignId'])['config']
-            env=dict(self.providers.environment(frozen['solver']['provider'],campaign_route(frozen,'solver')),PHYEXP_ACCOUNTING_URL=self.base_url+'/accounting/'+lease['id'],PHYEXP_ACCOUNTING_TOKEN=token,
+            env=dict(self.providers.environment(frozen['solver']['provider'],campaign_route(frozen,'solver')),**model_environment(self.base_url,lease['id'],token,frozen),
                 PHYEXP_LAUNCH_ID=trial['launchId'])
             args=[sys.executable,str(runtime/'run.py'),*(['--bundle',str(bundle)] if manifest.get('schemaVersion')==2 else []),'--quantum-harbor',str(self.quantum),'--task',trial['task'],
-                '--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-time.time())),
-                '--soft-token-limit',str(self.store.get('campaigns',trial['campaignId'])['config']['softTokenLimit'] or 'none')]
+                '--output',str(output),'--deadline',str(trial['deadline']),'--timeout',str(max(1,trial['deadline']-time.time()))]
+            if not control_only(frozen):args+=['--soft-token-limit',str(frozen['softTokenLimit'] or 'none')]
             config=self.store.get('campaigns',trial['campaignId'])['config']
             lock=config.get('taskImageLocks',{}).get(trial['task'])
             if config.get('taskImagePolicy')==TASK_IMAGE_POLICY and not lock:
@@ -401,7 +409,7 @@ class ControlService:
         if self._process_alive(trial.get('pid'),trial.get('output','')):
             os.kill(trial['pid'],signal.SIGTERM)
     def _reconcile_usage(self,trial):
-        if not trial.get('leaseId'):return
+        if not trial.get('leaseId') or control_only(self.store.get('campaigns',trial['campaignId'])['config']):return
         for file in Path(trial['output']).glob('harbor/*/phyexp/gateway-audit.jsonl'):
             reconcile_audit(self.store,trial['campaignId'],trial['leaseId'],file)
         self.store.mark_unknown(trial['leaseId'])
@@ -542,7 +550,7 @@ class ControlService:
                             # Meta still needs its turn to revise an infeasible plan.
                             pass
                 usage=c['usage']
-                if cfg['softTokenLimit'] is not None and not usage['inflightReservedTokens'] and usage['confirmedTokens']+usage['unknownReservedTokens']+300000>cfg['softTokenLimit']-cfg['reserveTokens']:
+                if cfg.get('softTokenLimit') is not None and not usage['inflightReservedTokens'] and usage['confirmedTokens']+usage['unknownReservedTokens']+300000>cfg['softTokenLimit']-cfg['reserveTokens']:
                     self.store.close_admission(id,'token_threshold')
                 if now>=c['deadline']-(0 if planning.enabled(cfg) else cfg['reserveSeconds']) and c['state']!='closing':self.store.close_admission(id,'time_limit')
                 if c['state']=='running' and self.storage.permit(id,'trial'):

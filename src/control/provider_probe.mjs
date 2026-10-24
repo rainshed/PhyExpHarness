@@ -12,17 +12,15 @@ export async function probeProvider({model,providerConfig}) {
  fs.chmodSync(dir,0o700);
  const started=Date.now(),deadline=started+45000;
  const selected={...model,maxTokens:Math.min(512,providerConfig.models[0].maxTokens??8192)};
- let credentials,runtime,gateway,requests=0,reported=0,total=0;
- const checks={response:false,stream:false,toolCall:false,toolResult:false,usage:false};
+ let credentials,runtime,gateway,requests=0;
+ const checks={response:false,stream:false,toolCall:false,toolResult:false};
  let error='';
  try {
   credentials=createProviderCredentials(selected,{providerConfig,minimumValidityMs:120000});
   runtime=await providerRuntime({model:selected,providerConfig,credentialFile:credentials.credentialFile});
   gateway=new ModelGateway({model:selected,adapter:runtime,deadline,audit:path.join(dir,'audit.jsonl'),redact:credentials.redact,
    policy:{requestTimeoutMs:25000,streamIdleTimeoutMs:15000,maxResponseBytes:65536,maxToolArgumentBytes:4096,cleanupGraceMs:1000},
-   reserve:async()=>{if(++requests>2)throw Error('测试最多允许两次请求');},
-   // Both fixed prompts are nonempty; SDK-synthesized zero counters cannot prove zero usage.
-   settle:async(_,result)=>{if(result.finish&&result.finish.kind!=='error'&&Number.isFinite(result.usage?.totalTokens)&&result.usage.totalTokens>0){reported++;total+=result.usage.totalTokens;}}});
+   reserve:async()=>{if(++requests>2)throw Error('测试最多允许两次请求');}});
   const request={...selected,messages:[{role:'user',content:[{type:'text',text:'Connection test. Call phyexp_connection_check exactly once with value "connection-ok". After receiving the tool result, reply with exactly PHYEXP_OK. Do not call other tools.'}]}],
    tools:[{name:'phyexp_connection_check',description:'Return a fixed connection-test value; no external action.',parameters:{type:'object',properties:{value:{type:'string',enum:['connection-ok']}},required:['value'],additionalProperties:false}}]};
   async function turn(input) {
@@ -54,12 +52,9 @@ export async function probeProvider({model,providerConfig}) {
   try{await Promise.race([runtime?.dispose(),new Promise(resolve=>{timer=setTimeout(resolve,1500)})]);}catch{}finally{clearTimeout(timer)}
   credentials?.dispose();fs.rmSync(dir,{recursive:true,force:true});
  }
- checks.usage=reported===requests&&requests>0;
- if(!checks.usage&&!error)error='未取得所有请求的可靠用量回执。';
  if(!checks.stream&&!error)error='未观察到流式增量响应。';
  return {passed:Object.values(checks).every(Boolean),checks,error:error||null,requests,
-  usageStatus:checks.usage?'reported':requests?'unknown':'not_started',
-  confirmedTokens:reported?total:null,unknownRequests:Math.max(0,requests-reported),durationMs:Date.now()-started};
+  durationMs:Date.now()-started};
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){

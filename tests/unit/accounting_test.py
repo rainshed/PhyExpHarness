@@ -11,6 +11,7 @@ class AccountingTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);self.store=Store(self.root/'control.sqlite')
         self.file=self.root/'gateway-audit.jsonl'
+        self.store.put('campaigns',{'id':'campaign','config':{}})
 
     def reserve(self,id,lease='lease'):
         self.store.put('usage',{'id':id,'campaignId':'campaign','leaseId':lease,'purpose':'meta',

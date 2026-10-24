@@ -46,7 +46,7 @@ def request_valid(store,db,c,request):
 def ready(store,db,c):
     if c['state']!='running' or c['explorationClosed']:raise Refused('Exploration is not open')
     if store.clock()>=c['deadline']-c['config']['reserveSeconds']:raise Refused('Exploration time exhausted; controller owns resource stop')
-    usage=store.usage(c['id'],db);cap=c['config']['softTokenLimit']
+    usage=store.usage(c['id'],db);cap=c['config'].get('softTokenLimit')
     if cap is not None and usage['confirmedTokens']+usage['inflightReservedTokens']+usage['unknownReservedTokens']>=cap-c['config']['reserveTokens']:raise Refused('Exploration token threshold reached')
 def no_pending(store,db,c):
     if any(t['state'] not in TERMINAL for t in store._runs(db,c['id'])) or any(o['state']=='running' for o in store._list(db,'operations',c['id'])):raise Refused('Pending experiments or builds must settle before voluntary stop')

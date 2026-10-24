@@ -56,7 +56,10 @@ def make_app(service,supervise=True):
         except ValueError:return JSONResponse({'error':'Invalid content length'},status_code=400)
         if length>4_000_000:return JSONResponse({'error':'Request too large'},status_code=413)
         try:request.state.identity=await asyncio.to_thread(service.authenticate,request.headers.get('authorization','').removeprefix('Bearer '))
-        except Refused as error:return JSONResponse({'error':str(error),'code':'accounting_lease_expired' if 'expired' in str(error).lower() else 'accounting_auth_failed'},status_code=401)
+        except Refused as error:
+            modern=request.url.path.startswith('/model-access/')
+            code=('request_lease_expired' if modern else 'accounting_lease_expired') if 'expired' in str(error).lower() else ('request_auth_failed' if modern else 'accounting_auth_failed')
+            return JSONResponse({'error':str(error),'code':code},status_code=401)
         except sqlite3.OperationalError as error:return database_error(error)
         try:
             service.deletions.guard_route(request.url.path)
@@ -267,6 +270,16 @@ def make_app(service,supervise=True):
         if role.get('id')!=row['leaseId'] or role['role']!='meta':raise Refused('Meta session lease mismatch')
         if not service.meta_driver:raise Refused('Meta driver unavailable')
         return service.meta_driver.acknowledge(id,body.get('cursor'))
+    @app.post('/model-access/{lease_id}')
+    def model_access(lease_id:str,request:Request,body:dict):
+        from .model_access import check_access
+        lease=request.state.identity
+        if lease.get('id')!=lease_id or lease['role'] not in ('meta','solver'):raise Refused('Model access lease mismatch')
+        decision=check_access(service.store,lease_id,body.get('agentId'))
+        if decision['status']=='granted' and not service.storage.permit(lease['campaignId'],'request'):
+            decision={'status':'waiting','code':'storage_capacity_wait'}
+        return JSONResponse(decision,status_code=200 if decision['status']=='granted' else 429 if decision['status']=='waiting' else 403)
+    # Compatibility endpoint for pre-existing frozen runtimes only.
     @app.post('/accounting/{lease_id}/{action}')
     def accounting(lease_id:str,action:str,request:Request,body:dict):
         lease=request.state.identity

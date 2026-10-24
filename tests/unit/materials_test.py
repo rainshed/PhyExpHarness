@@ -49,7 +49,7 @@ class MaterialTests(unittest.TestCase):
         config=self.store.get('campaigns',self.c)['config']
         self.assertEqual(config['executionTimePolicy']['version'],'benchmark-time-v1')
         frozen=json.loads((self.service.data/'meta-compositions'/config['metaComposition']['id']/'manifest.json').read_text())
-        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v9')
+        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v10')
         self.assertEqual(config['stopPolicy'],'goal-or-budget-v1')
         self.assertNotIn('benchmark 原始配置',frozen['systemPrompt']['text'])
         self.assertNotIn('trial_conditions_accept',frozen['systemPrompt']['text'])
@@ -190,7 +190,7 @@ class MaterialTests(unittest.TestCase):
                       [{'path':draft}],self.service.knowledge.manifest)
         c=self.store.candidate(self.c,bundle,'中文版本说明',check={'status':'passed'})
         (draft/'index.mjs').write_text('changed draft')
-        self.store.update_plan(self.c,{'parallelism':1,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'Fixture execution plan','plan',0,source='operator')
+        self.store.update_plan(self.c,{'parallelism':1,'closeoutReserveSeconds':0},'Fixture execution plan','plan',0,source='operator')
         batch=self.store.submit(self.c,c['id'],[TASK],1,'batch')
         return c,batch
 

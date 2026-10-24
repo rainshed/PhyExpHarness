@@ -15,6 +15,7 @@ from src.execution.host.models import campaign_route
 from . import resource_planning as planning
 from .meta_recovery import recovery
 from .accounting import reconcile_audit
+from .model_access import control_only
 
 def native_config(c):return c['config'].get('metaComposition',{}).get('version')=='meta-composition-v2'
 
@@ -59,7 +60,7 @@ class MetaDriver:
         route=campaign_route(c['config'],'meta')
         config={'id':id,'campaignId':campaign,'leaseId':lease['id'],'model':{**c['config']['meta'],'maxTokens':route['models'][0].get('maxTokens',8192)},
             'providerConfig':route,
-            'deadline':c['deadline'],'softTokenLimit':c['config']['softTokenLimit'],'cursor':cursor,
+            'deadline':c['deadline'],**({'modelAccessPolicy':c['config']['modelAccessPolicy']} if control_only(c['config']) else {'softTokenLimit':c['config']['softTokenLimit']}),'cursor':cursor,
             'knowledgePackId':pack.manifest['id'],'systemPrompt':system,'prompt':json.dumps(prompt,ensure_ascii=False,separators=(',',':'))}
         if frozen:
             from .reference.policy import effective
@@ -120,7 +121,7 @@ class MetaDriver:
         pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts']['reservedTrials'])
         from .meta_contracts import version
         state=activity_state(self.service,campaign)
-        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7'):
+        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8'):
             state=self.service.meta_api.receipts.status(campaign)
             details=self.service.meta_api.receipts.snapshot(campaign,'notifications',{'after':after,'cursor':cursor},selected)
             selected=[{k:e[k] for k in ['seq','type','operationId','trialId','batchId','state'] if k in e} for e in selected]
@@ -156,11 +157,11 @@ class MetaDriver:
             # Host audit settles calls that could not reach the ledger during a control restart.
             audits=[Path(row['output'])/'gateway-audit.jsonl',*Path(row['output']).glob('review-sessions/*/gateway-audit.jsonl')]
             for audit in [a for a in audits if a.exists()]:
-                reconcile_audit(self.store,campaign,row['leaseId'],audit)
+                if not control_only(c['config']):reconcile_audit(self.store,campaign,row['leaseId'],audit)
             for review in self.store.list('stop_reviews',campaign):
                 if review['sessionId']==row['id'] and review['state']=='pending':
                     review.update(state='failed',failure='Owner session ended before review completion',finishedAt=time.time());self.store.put('stop_reviews',review)
-            self.store.mark_unknown(row['leaseId'])
+            if not control_only(c['config']):self.store.mark_unknown(row['leaseId'])
             row.update(state='completed' if summary['status']=='completed' else 'interrupted' if row.get('stopReason') in ('pause','reference_policy_changed','storage_capacity') else 'failed',
                 finishedAt=time.time(),summary=summary);self._save_session(row)
             if row['state']=='failed':

@@ -98,6 +98,9 @@ def collect(run_dir):
     }
     if submitted:
         result['evidence']['submission'] = rel(answer)
+    if (read_json(run_dir / 'provenance.json') if (run_dir / 'provenance.json').is_file() else {}).get('modelAccessPolicy')=='control-only-v1':
+        if not (base/'phyexp/events.json').is_file():raise ValueError('Missing durable Solver trajectory')
+        return result
     # Recalculate presentation metrics from the immutable trajectory; never rewrite raw runtime/Harbor results.
     module = Path(__file__).resolve().parents[2] / 'host/usage.mjs'
     external=(runtime.get('reference') or {}).get('harnessRef') in ('codex','claude-code')

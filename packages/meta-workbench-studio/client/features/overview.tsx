@@ -41,6 +41,6 @@ export function Overview({w,tablesProps}:any){
   <ResearchPanel c={c} compact onEvidence={w.readEvidence} onReport={w.readReport} onAll={()=>navigate('lab','research')}/>
   <section className="studio-next-step"><span aria-hidden="true">↗</span><div><small>{ended?'接下来如何阅读':'最近记录的验证计划'}</small><p>{ended?'查看最终选择的依据，或从任务结果回到每次实验。后续研究方向保留在报告中。':next||'尚未记录下一步研究计划。'}</p>{!ended&&next&&<small>计划记录于 {date(recent.recordedAt)}；是否已启动以任务矩阵为准。</small>}</div><button onClick={()=>ended&&latest?w.readReport(latest.id):navigate('rounds')}>{ended&&latest?'阅读最终报告':'查看实验记录'} →</button></section>
   <div className="studio-path-grid"><button onClick={()=>navigate('lab')}><strong>一个插件为什么被写出来？</strong><span>从用途、动机，一直看到具体来源。</span></button><button onClick={()=>navigate('compare','decision')}><strong>为什么选它，而没有选另一个？</strong><span>查看备选、代价和重新考虑的条件。</span></button></div>
-  <section className="studio-run-strip" aria-label="运行概况"><span>{activityProgress(c)}</span><span>{c.counts.startedTrials} 次已启动实验 · {c.counts.rounds} 轮</span><span>{number(c.usage.confirmedTokens)} token 已确认 · {duration(c.elapsedSeconds)}</span><button onClick={()=>navigate('meta')}>用量、配置与运行详情 →</button>{c.usage.unknownRequests>0&&<strong>仍有 {c.usage.unknownRequests} 个请求用量待核实</strong>}</section>
+  <section className="studio-run-strip" aria-label="运行概况"><span>{activityProgress(c)}</span><span>{c.counts.startedTrials} 次已启动实验 · {c.counts.rounds} 轮</span><span>{duration(c.elapsedSeconds)}</span><button onClick={()=>navigate('meta')}>配置与运行详情 →</button></section>
  </>;
 }

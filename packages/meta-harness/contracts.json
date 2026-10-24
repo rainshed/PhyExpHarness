@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v7",
+  "version": "meta-tools-v8",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -25,15 +25,11 @@
               },
               "closeoutReserveSeconds": {
                 "type": "integer"
-              },
-              "closeoutReserveTokens": {
-                "type": "integer"
               }
             },
             "required": [
               "parallelism",
-              "closeoutReserveSeconds",
-              "closeoutReserveTokens"
+              "closeoutReserveSeconds"
             ],
             "additionalProperties": false
           },
@@ -57,7 +53,7 @@
         "additionalProperties": false
       },
       "write": true,
-      "description": "Submit the initial resource plan to admit H0, or update future parallelism and closeout reserves. Read resourcePlanning in campaign_status for user limits and expectedPlanRevision. Benchmark task times are fixed. When tokens are unlimited, closeoutReserveTokens must be 0. A reserve blocking execution can be adjusted; it does not mean the activity budget is exhausted."
+      "description": "Submit the initial resource plan to admit H0, or update future parallelism and closeout time. Read resourcePlanning in campaign_status for user limits and expectedPlanRevision. Benchmark task times are fixed. Token accounting and token budgets are unavailable."
     },
     "campaign_finish": {
       "plugin": "campaign",

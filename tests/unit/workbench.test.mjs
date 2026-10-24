@@ -46,7 +46,6 @@ test('typed limits preserve integers and reject blank, unsafe and inconsistent b
  assert.equal(configError(valid),'');assert.equal(numericConfig(valid).maxTrials,4);
  for(const value of ['', '1.5','-1','9007199254740993'])assert.match(configError({...valid,maxTrials:value}),/整数/);
  assert.match(configError({...valid,reserveSeconds:'14400'}),/预留时间/);
- assert.match(configError({...valid,reserveTokens:'8000000'}),/预留 token/);
  assert.match(configError({...valid,concurrency:'5'}),/并发/);
  assert.match(configError({...valid,stopMode:'drain',drainGraceSeconds:'901'}),/900/);
 });

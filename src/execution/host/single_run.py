@@ -86,7 +86,9 @@ def cleanup(output):
     return actions
 
 
-def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_limit=3_000_000, task_image_lock=None):
+def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_limit=None, task_image_lock=None):
+    if soft_token_limit is not None and not os.environ.get('PHYEXP_ACCOUNTING_URL'):
+        raise ValueError('Token budgets are unavailable for new standalone runs')
     from .container_runtime import preflight, policy, PODMAN_SINGLE_UID
     preflight([task_name])
     if policy() == PODMAN_SINGLE_UID and not task_image_lock:
@@ -108,7 +110,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         stopped['reason'] = 'user_stop'
     previous = signal.signal(signal.SIGTERM, stop)
     provenance = {'schemaVersion':1, 'startedAt':now(), 'bundleId':bundle['id'], 'bundleRoot':str(bundle_root),
-        'recipe':recipe, 'deadline':deadline, 'task':task_name, 'softTokenLimit':soft_token_limit,
+        'recipe':recipe, 'deadline':deadline, 'task':task_name, **({'softTokenLimit':soft_token_limit} if os.environ.get('PHYEXP_ACCOUNTING_URL') else {'modelAccessPolicy':'control-only-v1'}),
         **({'benchmarkTime':timing} if benchmark else {'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS}),
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
     if os.environ.get('PHYEXP_REFERENCE_SPEC'):
@@ -199,7 +201,7 @@ def main(bundle_root=None, argv=None):
     parser.add_argument('--output',type=Path)
     parser.add_argument('--timeout',type=float)
     parser.add_argument('--deadline',type=float)
-    parser.add_argument('--soft-token-limit',type=lambda x:None if x=='none' else int(x),default=3_000_000,help='Positive soft threshold, or none for no token cap')
+    parser.add_argument('--soft-token-limit',type=lambda x:None if x=='none' else int(x),default=None,help=argparse.SUPPRESS)
     parser.add_argument('--task-image-lock',type=Path,help='Operator-prepared immutable task image identities')
     parser.add_argument('--verify',action='store_true')
     parser.add_argument('--collect',type=Path)
@@ -210,7 +212,7 @@ def main(bundle_root=None, argv=None):
     if args.collect:
         verify_manifest(args.collect);print(json.dumps(collect(args.collect)));return 0
     if not all([args.quantum_harbor,args.task,args.output]) or (args.timeout is not None and args.timeout<=0) or (args.soft_token_limit is not None and args.soft_token_limit<=0):
-        parser.error('Explicit task, environment and output; positive time/token limits are required')
+        parser.error('Explicit task, environment and output; positive time limits are required')
     if args.deadline is not None:
         deadline=args.deadline if args.timeout is None else min(args.deadline,time.time()+args.timeout)
     else:

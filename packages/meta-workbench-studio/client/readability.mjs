@@ -61,11 +61,8 @@ export function taskMean(v, tasks) {
 }
 export {outcomeNote} from './components/trial-status.mjs';
 export function versionCost(rows) {
-  const usage = rows.map(t=>t.accountedUsage || t.summary?.accounting); // Ledger snapshot or archived accounting receipt, never a guessed token total.
-  const recorded = usage.filter(u=>finite(u?.confirmedTokens));
   const timed = rows.filter(t=>finite(t.startedAt)&&finite(t.finishedAt));
-  return {tokens:recorded.length?recorded.reduce((n,u)=>n+u.confirmedTokens,0):null, recorded:recorded.length, attempts:rows.length,
-    unknown:recorded.reduce((n,u)=>n+(u.unknownRequests||0),0), unknownReserved:recorded.reduce((n,u)=>n+(u.unknownReservedTokens||0),0), seconds:timed.length?timed.reduce((n,t)=>n+Math.max(0,t.finishedAt-t.startedAt),0):null, timed:timed.length};
+  return {attempts:rows.length, seconds:timed.length?timed.reduce((n,t)=>n+Math.max(0,t.finishedAt-t.startedAt),0):null, timed:timed.length};
 }
 export const reportKey = r => r.batchId || r.kind;
 export function reportGroups(reports=[], batches=[]) {

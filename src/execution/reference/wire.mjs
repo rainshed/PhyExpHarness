@@ -4,6 +4,7 @@ import {DEFAULT_STREAM_POLICY} from '../host/stream_guard.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import {ADMISSION_CODES} from '../host/budget.mjs';
+import {ACCESS_CODES} from '../host/model_access.mjs';
 import {classifyModelFailure} from '../host/model_failures.mjs';
 export function wireBinding(runtime,harness){
  const profile=runtime.wireProfile,model=runtime.model;
@@ -104,7 +105,7 @@ export class WireGateway{
    else if(!finished)this.fail('model_stream_incomplete',id,'model');
   }catch(error){
    const code=error.admissionFailure?.code||error.code;
-   this.fail(ADMISSION_CODES.has(code)?code:Date.now()>=this.deadline?'trial_deadline':bound.aborted?'request_cancelled':classifyModelFailure(error).code,id,reserved?'model':'admission',error.admissionFailure||{});
+   this.fail((ADMISSION_CODES.has(code)||ACCESS_CODES.has(code))?code:Date.now()>=this.deadline?'trial_deadline':bound.aborted?'request_cancelled':classifyModelFailure(error).code,id,reserved?'model':'admission',error.admissionFailure||{});
    throw error;
   }finally{
    clearTimeout(idle);this.active.delete(ctl);
@@ -113,7 +114,7 @@ export class WireGateway{
     const total=usage.total_tokens??(Number.isFinite(input)&&Number.isFinite(output)?input+output+(usage.cache_read_input_tokens||0)+(usage.cache_creation_input_tokens||0):null);
     const cacheRead=usage.cache_read_input_tokens??usage.input_tokens_details?.cached_tokens??0;
     const result={finish:finished?{kind:'completed'}:{kind:'error'},usage:total===null?null:{totalTokens:total,inputTokens:this.binding.protocol==='responses'&&Number.isFinite(input)?input-cacheRead:input,outputTokens:output,cacheReadTokens:cacheRead,cacheWriteTokens:usage.cache_creation_input_tokens||0}};
-    this.record({type:'settled',id,...result});await this.budget.settle(id,result);
+    this.record({type:'settled',id,...result});await this.budget.settle?.(id,result);
    }
   }
  }

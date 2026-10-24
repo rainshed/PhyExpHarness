@@ -125,7 +125,7 @@ class ProviderSettingsTests(unittest.TestCase):
             time.sleep(.05)
         self.fail('Probe did not finish')
 
-    def test_live_loopback_protocols_test_usage_and_idempotency(self):
+    def test_live_loopback_protocols_and_idempotency(self):
         for api in ['openai-completions', 'openai-responses', 'anthropic-messages']:
             route = {**self.route, 'api': api}
             if api=='anthropic-messages':route['baseURL']=route['baseURL'].removesuffix('/v1')
@@ -135,7 +135,7 @@ class ProviderSettingsTests(unittest.TestCase):
             self.assertEqual(accepted.status_code, 200, accepted.text)
             result = self.wait_test(accepted.json()['id'])
             self.assertEqual(result['state'], 'passed', result)
-            self.assertEqual(result['confirmedTokens'], 24)
+            self.assertNotIn('confirmedTokens', result)
             self.assertTrue(all(result['checks'].values()))
             calls = len(self.remote.calls)
             replay = self.client.post('/providers/fixture/test', json=body)
@@ -144,20 +144,20 @@ class ProviderSettingsTests(unittest.TestCase):
             self.assertNotIn(fixture.KEY, json.dumps(result))
         self.assertEqual(len(self.remote.calls), 6)
 
-    def test_failed_auth_redacted_and_missing_usage_not_zero(self):
+    def test_failed_auth_redacted_and_missing_usage_does_not_block_connection(self):
         saved = self.save(apiKey='bad-private-fixture-key')
         result = self.wait_test(self.client.post('/providers/fixture/test', json={'model': 'fixture-model', 'expectedRevision': saved.json()['revision'], 'idempotencyKey': 'auth-failure'}).json()['id'])
         self.assertEqual(result['state'], 'failed')
         self.assertNotIn('bad-private-fixture-key', json.dumps(result))
         self.assertEqual(len(self.remote.calls), 1)
-        self.assertEqual(result['usageStatus'], 'unknown')
+        self.assertNotIn('usageStatus', result)
         route = copy.deepcopy(self.route)
         route['models'][0]['id'] = 'no-usage'
         saved = self.save(route=route, apiKey=fixture.KEY)
         result = self.wait_test(self.client.post('/providers/fixture/test', json={'model': 'no-usage', 'expectedRevision': saved.json()['revision'], 'idempotencyKey': 'missing-usage'}).json()['id'])
-        self.assertEqual(result['state'], 'failed', result)
-        self.assertEqual(result['usageStatus'], 'unknown')
-        self.assertIsNone(result['confirmedTokens'])
+        self.assertEqual(result['state'], 'passed', result)
+        self.assertNotIn('usageStatus', result)
+        self.assertNotIn('confirmedTokens', result)
 
     def test_codex_route_and_process_environment_cannot_be_repurposed(self):
         codex = self.client.get('/providers').json()['providers'][0]['route']
@@ -229,7 +229,7 @@ class ProviderSettingsTests(unittest.TestCase):
         try:
             recovered = other.providers.get_test('lost-test')
             self.assertEqual(recovered['state'], 'interrupted')
-            self.assertEqual(recovered['usageStatus'], 'unknown')
+            self.assertNotIn('usageStatus', recovered)
             self.assertEqual(len(self.remote.calls), 0)
         finally:
             other.pool.shutdown(wait=True)

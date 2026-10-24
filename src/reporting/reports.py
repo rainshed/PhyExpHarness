@@ -1,3 +1,4 @@
+from src.control.model_access import control_only
 """System facts and versioned Meta analysis stay distinct in every report."""
 import hashlib
 import copy
@@ -64,12 +65,12 @@ class Reports:
             batches=[b for b in batches if b['id']==batch_id]
             if not batches:raise Refused('Batch unavailable')
         ids={b['id'] for b in batches};trials=[t for t in self.store.list('trials',campaign) if t['batchId'] in ids]
-        usage=self.store.list('usage',campaign)
+        usage=[] if control_only(c['config']) else self.store.list('usage',campaign)
         for t in trials:
             if 'taskSources' in t.get('comparisonContext',{}):
                 context=t['comparisonContext'];context['taskSourcesDigest']=hashlib.sha256(encoded(context.pop('taskSources')).encode()).hexdigest()
             requests=[r for r in usage if r['leaseId']==t.get('leaseId')]
-            t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
+            if not control_only(c['config']):t['accountedUsage']={'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in requests),'unknownRequests':sum(r['status']=='unknown' for r in requests),'unknownReservedTokens':sum(r['reservedTokens'] for r in requests if r['status']=='unknown')}
         trials=trial_diagnostics(trials,self.root.parent,c['config'])
         for t in trials:t.pop('summary',None)
         candidates=[{**candidate,'versionLabel':f'H{index}'} for index,candidate in enumerate(sorted(self.store.list('candidates',campaign),key=lambda c:(c.get('createdAt',0),c['id'])))
@@ -86,7 +87,7 @@ class Reports:
         for row in references:row.pop('summary',None)
         return {'referenceExperiments':{'batches':self.store.list('reference_batches',campaign),'runs':references,'scoreScope':'separate; excluded from primary results','attribution':'joint-reference does not isolate model or harness causality'},'stopReviews':self.store.list('stop_reviews',campaign),'metaObservations':self.store.list('meta_observations',campaign),
             'metaSessions':self.store.list('meta_sessions',campaign),'metaComposition':c['config'].get('metaComposition'),
-            'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,'usageByRole':by_role,
+            'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,**({} if control_only(c['config']) else {'usageByRole':by_role}),
             'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
             'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
             'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials+references)],

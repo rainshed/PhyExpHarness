@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {createProviderCredentials} from '../execution/host/provider_auth.mjs';
 import {providerRuntime} from '../execution/host/model_gateway.mjs';
 import {budgetGate} from '../execution/host/budget.mjs';
+import {modelAccess} from '../execution/host/model_access.mjs';
 import {MetaGateway} from './meta_gateway.mjs';
 import {MetaHost} from './meta_host.mjs';
 const config=JSON.parse(fs.readFileSync(process.argv[2]));
@@ -17,9 +18,10 @@ async function api(route,body){
  const response=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
  const result=await response.json();if(!response.ok)throw new Error(result.error||'Control interface unavailable');return result;
 }
-const budget=budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,url:base+'/accounting/'+config.leaseId,token,purpose:'meta'});
+const unmetered=config.modelAccessPolicy==='control-only-v1';
+const budget=unmetered?modelAccess({deadline:config.deadline*1000,url:base+'/model-access/'+config.leaseId,token}):budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,url:base+'/accounting/'+config.leaseId,token,purpose:'meta'});
 function save(){
- if(gateway)Object.assign(summary,gateway.diagnostics(summary));summary.cursor=cursor;summary.accounting=budget.snapshot();
+ if(gateway)Object.assign(summary,gateway.diagnostics(summary));summary.cursor=cursor;if(budget.snapshot)summary.accounting=budget.snapshot();
  const redact=value=>credentials?credentials.redact(value):value;
  // Child events live in their native sessions; keep the main archive unambiguous.
  const events=session?.messages.filter(m=>m.method==='session.event'&&m.params.sessionId===nativeId).map(m=>m.params.event)||[];
@@ -31,7 +33,7 @@ try{
  credentials=createProviderCredentials(config.model,{providerConfig:config.providerConfig,minimumValidityMs:Math.max(120000,config.deadline*1000-Date.now()+120000)});
  provider=await providerRuntime({model:config.model,credentialFile:credentials.credentialFile,providerConfig:config.providerConfig});
  gateway=new MetaGateway({mainSessionId:nativeId,model:config.model,adapter:provider,deadline:config.deadline*1000,audit:path.join(logs,'gateway-audit.jsonl'),
-  reserve:async(id,request,options)=>{await budget.reserve(id,request,options);await api('/meta-sessions/'+config.id+'/runtime',{action:'model_request',input:{id,agentId:request.sessionId}});},settle:budget.settle,redact:credentials.redact});
+  reserve:async(id,request,options)=>{await budget.reserve(id,request,options);if(!unmetered)await api('/meta-sessions/'+config.id+'/runtime',{action:'model_request',input:{id,agentId:request.sessionId}});},settle:budget.settle,redact:credentials.redact});
  const frozen=JSON.parse(fs.readFileSync(path.join(config.metaCompositionRoot,'manifest.json')));
  host=new MetaHost({config,frozen,root,logs,api,gateway,modelInfo:provider.info,image:frozen.runnerImage});session=host.create(nativeId,'meta');
  process.once('SIGTERM',stop);process.once('SIGINT',stop);watchdog=setTimeout(stop,Math.max(1,config.deadline*1000-Date.now()));timer=setInterval(save,3000);

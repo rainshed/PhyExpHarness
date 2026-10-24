@@ -8,7 +8,7 @@ import {createProviderCredentials} from '../host/provider_auth.mjs';
 import {ModelGateway,providerRuntime} from '../host/model_gateway.mjs';
 import {isolatedSession} from '../host/isolation.mjs';
 import {forwardMcp,callContainer} from '../host/capabilities.mjs';
-import {budgetGate} from '../host/budget.mjs';
+import {executionAccess} from '../host/model_access.mjs';
 import {summarizeUsage} from '../host/usage.mjs';
 import {verifyToolReceipt} from '../adapters/quantum_harbor/profile.mjs';
 import {resolveBundle,pluginMounts} from '../bundle/manifest.mjs';
@@ -24,9 +24,8 @@ const benchmark=recipe.timePolicy==='benchmark-time-v1';
 const started=Date.now();const deadline=benchmark?Number(deadlineString):Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
 if(!Number.isFinite(deadline))throw new Error('Explicit finite deadline required');
 const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));
-const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,usage:{},toolCalls:0};
-const budget=budgetGate({deadline,softTokenLimit:Number(process.env.PHYEXP_RUN_TOKEN_LIMIT)||Infinity,
- url:process.env.PHYEXP_ACCOUNTING_URL,token:process.env.PHYEXP_ACCOUNTING_TOKEN,purpose:'solver'});
+const summary={status:'running',recipe,model:recipe.model,provider:recipe.provider,bundleId:bundle.id,toolCalls:0};
+const budget=executionAccess(deadline);
 let gateway,session,credentials,provider,checkpoint,watchdog;let terminating=false;
 const redact=value=>credentials?credentials.redact(value):String(value);
 function save(){
@@ -34,7 +33,7 @@ function save(){
  const events=session?.messages.filter(m=>m.method==='session.event').map(m=>m.params.event)||[];
  summary.toolCalls=events.filter(e=>e.type==='tool/call').length;
  summary.modelResponses=events.filter(e=>e.type==='assistant/message').length;
- summary.usage=summarizeUsage(events);summary.accounting=budget.snapshot();summary.elapsedSeconds=(Date.now()-started)/1000;
+ if(budget.snapshot){summary.usage=summarizeUsage(events);summary.accounting=budget.snapshot();}summary.elapsedSeconds=(Date.now()-started)/1000;
  fs.writeFileSync(path.join(logs,'runtime-summary.json'),redact(JSON.stringify(summary,null,2))+'\n');
  fs.writeFileSync(path.join(logs,'events.json'),redact(JSON.stringify(events))+'\n');return events;
 }

@@ -20,10 +20,10 @@ node install-runner.mjs
 自定义供应商同样从 `recipe.json` 的 `providerConfig` 读取适配器、协议、端点及模型能力，并按 `auth.env` 指定的环境变量读取 API Key；无需原目录配置文件或原仓库。未带路由快照的旧版本仍按其原实现运行。GPT 订阅继续使用 Codex 登录，不因配置其他 API Key 改变。
 
 ```sh
-.venv/bin/python run.py --quantum-harbor /path/to/Quantum-Harbor --task <任务名称> --output /path/to/new-run --timeout 3600 --soft-token-limit 3000000
+.venv/bin/python run.py --quantum-harbor /path/to/Quantum-Harbor --task <任务名称> --output /path/to/new-run --timeout 3600
 ```
 
-将 `<任务名称>` 替换为外部 Quantum-Harbor 的 harbor_tasks/ 中实际任务目录名；工作台的「查看运行说明」提供与导出活动匹配的命令。可用 `--soft-token-limit none` 不单独限制 token，仍受时间上限约束。
+将 `<任务名称>` 替换为外部 Quantum-Harbor 的 harbor_tasks/ 中实际任务目录名；工作台的「查看运行说明」提供与导出活动匹配的命令。新导出项目不统计 token 或设置 token 总量限制，运行仍受时间上限约束。
 
 输出必须是尚不存在的新目录。单次执行 1 Trial、无自动重试；启动失败也留下证据。时间上限涵盖环境准备、模型、评分和收尾；用量阈值是软停止阈值，订阅 provider 不提供经过验证的输出硬上限。运行期固定模型配置不能由插件更换。终止或连接故障的未知用量单独保留。
 

@@ -1,12 +1,13 @@
 import {api,key} from './transport.mjs';
-import {createAttempt} from './create-attempt.mjs';
-import {configError,numericConfig,numericFields} from './form.mjs';
+import {createAttempt,sameCreateConfig} from './create-attempt.mjs';
+import {configError,numericConfig,numericFields,withoutUsageLimits} from './form.mjs';
 export function createCommands({store,request=api,makeKey=key}){
  return {
   async create(config,modelCatalogRevision){
    const problem=configError(config);if(problem)throw Error(problem);
-   const values=numericConfig(config),attempt=createAttempt(values,store.read().attempt,makeKey);
-   store.update({config,attempt});
+   const previous=store.read().attempt,normalized=numericConfig(config);
+   const values=sameCreateConfig(normalized,previous)?normalized:withoutUsageLimits(normalized),attempt=createAttempt(values,previous,makeKey);
+   store.update({config:values,attempt});
    const result=await request('/campaigns',{config:values,idempotencyKey:attempt.key,modelCatalogRevision});
    // Persist completion before allowing another intentional creation.
    store.update({attempt:null});return result;

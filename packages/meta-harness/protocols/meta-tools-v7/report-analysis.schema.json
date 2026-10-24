@@ -1,0 +1,174 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decision": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "uniqueItems": true
+    },
+    "process": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "unresolved"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "status",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginContributions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "string"
+          },
+          "comparison": {
+            "type": "string"
+          },
+          "assessment": {
+            "type": "string"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "plugin",
+          "expected",
+          "observed",
+          "comparison",
+          "assessment"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "researchRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "recordId",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    }
+  },
+  "required": [
+    "summary",
+    "observations",
+    "hypotheses",
+    "limitations",
+    "decision",
+    "evidenceRefs",
+    "brief",
+    "researchRefs"
+  ],
+  "additionalProperties": false,
+  "$id": "meta-report-analysis-v2",
+  "examples": [
+    {
+      "summary": "说明本轮观察。",
+      "observations": [],
+      "hypotheses": [],
+      "limitations": [],
+      "decision": "说明后续决定。",
+      "evidenceRefs": [],
+      "brief": "说明本轮观察。",
+      "researchRefs": []
+    }
+  ]
+}

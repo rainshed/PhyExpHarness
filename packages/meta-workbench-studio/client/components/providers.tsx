@@ -98,11 +98,11 @@ export function ProviderSettings({api,onCatalogChanged,onClose}:any){
      </fieldset>
     </form>
     {!newProvider&&<section aria-label="供应商测试" className="mh-provider-test">
-     <h3>测试调用</h3><p className="mh-muted">使用已保存配置，最多 2 次真实模型请求、总时限 45 秒；每次输出参数上限 512 token，可能产生少量费用。单独记录用量，不计入实验活动。</p>
+     <h3>测试调用</h3><p className="mh-muted">使用已保存配置，最多 2 次真实模型请求、总时限 45 秒；每次输出参数上限 512 token，可能产生少量费用。不计入实验次数。</p>
      <div className="mh-grid"><label>测试模型<select disabled={!!busy||test?.state==='running'||leavingBlocked} value={testModel} onChange={e=>{setTestModel(e.target.value);setEffort(current.route.models.find((m:any)=>m.id===e.target.value)?.defaultReasoningEffort)}}>{current.route.models.map((m:any)=><option key={m.id} value={m.id}>{m.name||m.id}</option>)}</select></label>
      {current.route.models.find((m:any)=>m.id===testModel)?.reasoningEfforts!==false&&<label>测试推理强度<select disabled={!!busy||test?.state==='running'||leavingBlocked} value={effort||''} onChange={e=>setEffort(e.target.value)}>{Object.keys(current.route.models.find((m:any)=>m.id===testModel)?.reasoningEfforts||{}).map(e=><option key={e}>{e}</option>)}</select></label>}</div>
      <button type="button" disabled={!!busy||test?.state==='running'||leavingBlocked||current.credential.state!=='configured'} onClick={runTest}>{test?.state==='running'?'正在测试…':leavingBlocked?'保存后测试':'测试调用'}</button>
-     {test&&<div role="status" className="mh-notice"><strong>{testStates[test.state]}</strong>{test.configurationRevision!==snapshot.revision&&<p>设置版本已变化，此结果属于先前配置。</p>}{test.checks&&<div className="mh-provider-checks">{Object.entries({response:'模型响应',stream:'流式输出',toolCall:'工具参数',toolResult:'工具回传',usage:'用量回执'}).map(([id,label])=><span key={id}>{test.checks[id]?'✓':'—'} {label}</span>)}</div>}{test.error&&<p>{test.error}</p>}<p>已确认用量：{test.confirmedTokens==null?'无可靠回执':test.confirmedTokens+' token'} · {test.usageStatus==='reported'?'用量已报告':test.usageStatus==='not_started'?'未发起调用':test.usageStatus==='pending'?'等待回执':'仍有用量待核实'}{test.durationMs!=null?' · '+(test.durationMs/1000).toFixed(1)+' 秒':''}</p></div>}
+     {test&&<div role="status" className="mh-notice"><strong>{testStates[test.state]}</strong>{test.configurationRevision!==snapshot.revision&&<p>设置版本已变化，此结果属于先前配置。</p>}{test.checks&&<div className="mh-provider-checks">{Object.entries({response:'模型响应',stream:'流式输出',toolCall:'工具参数',toolResult:'工具回传'}).map(([id,label])=><span key={id}>{test.checks[id]?'✓':'—'} {label}</span>)}</div>}{test.error&&<p>{test.error}</p>}<p>{test.durationMs!=null?'耗时 '+(test.durationMs/1000).toFixed(1)+' 秒':''}</p></div>}
     </section>}
    </>}
   </>}
