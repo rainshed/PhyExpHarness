@@ -34,7 +34,7 @@ export function comparison(c, id, reference) {
       const actual = budget?.timePolicy==='benchmark-time-v1' || budget?.solverTimeSeconds!=null ? limit : budget?.actualTimeSeconds ?? (finite(t.deadline) && finite(t.startedAt) ? t.deadline-t.startedAt : null);
       if (!p?.taskSourcesDigest || !(p?.runContract==='harbor-process-v1' ? p.adapter && p.brokerImageId && p.resources && p.solver : proof ? p.runnerExecutionManifest : p?.runnerImageId) || !(p?.verifierImageId || p?.taskImageIds?.length) || !finite(limit)) missing = true;
       // Rounded receipt durations avoid false differences from sub-second launch timing.
-      return {source:p?.taskSourcesDigest, contract:p?.runContract??'legacy', platform:p?.runContract==='harbor-process-v1'?{adapter:p.adapter,broker:p.brokerImageId,resources:p.resources,solver:p.solver}:null, runner:proof?p?.runnerExecutionManifest:p?.runnerImageId, verifier:p?.verifierImageId, images:p?.taskImageIds,
+      return {source:p?.taskSourcesDigest, contract:p?.runContract??'legacy', platform:p?.runContract==='harbor-process-v1'?{adapter:p.adapter,broker:p.brokerImageId,resources:p.resources,taskResources:p.taskResources,solver:p.solver}:null, runner:proof?p?.runnerExecutionManifest:p?.runnerImageId, verifier:p?.verifierImageId, images:p?.taskImageIds,
         limit, actual:finite(actual)?Math.round(actual):null, ceiling:budget?.frozenTrialCeilingSeconds};
     });
     for (const key of ['source','contract','platform','runner','verifier','images','limit','actual','ceiling']) {

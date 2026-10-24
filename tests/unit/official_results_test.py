@@ -32,6 +32,10 @@ class OfficialResultsTests(unittest.TestCase):
         self.assertEqual(result['officialReward'], 1)
         self.assertEqual(result['execution']['exitCode'], 7)
         self.assertEqual(result['evidenceStatus']['status'], 'partial')
+        from src.control.result_collection import projection
+        refreshed=projection(result)
+        for key in ('execution','officialResult','evidenceStatus','comparison'):
+            self.assertEqual(refreshed[key],result[key])
 
     def test_archive_diagnostic_corruption_is_separate_from_official_tampering(self):
         archive_manifest(self.root)

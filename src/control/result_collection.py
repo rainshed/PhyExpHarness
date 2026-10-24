@@ -93,4 +93,5 @@ def projection(summary):
         'scoringStatus': summary.get('scoringStatus', 'completed' if summary.get('officialReward') is not None else 'unknown'),
         'summary': summary, 'taskAssessment': None, 'lastCollectionError': None,
         'resultCollection': summary.get('resultCollection'),
+        **{key:summary[key] for key in ('execution','officialResult','evidenceStatus','comparison') if key in summary},
     }

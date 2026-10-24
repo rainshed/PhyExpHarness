@@ -50,6 +50,11 @@ class ProcessHarborAgent(BaseAgent):
             if len(ids)!=1: raise RuntimeError('Expected one task '+role+' container')
             containers[role]=ids[0]
         self.main=containers['main'];self.qsim=containers['qsim']
+        self.task_resources={}
+        for role,container in containers.items():
+            host=json.loads(await docker('inspect',container))[0]['HostConfig']
+            self.task_resources[role]={key:host.get(key) for key in ('Memory','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','CapDrop','SecurityOpt','PidMode')}
+        self.save('task-resources.json',self.task_resources)
         info=json.loads(await docker('inspect',self.main))[0]
         if info['HostConfig'].get('PidMode')=='host': raise RuntimeError('Candidate requires a private PID namespace')
         self.network=await asyncio.to_thread(restrict_main,self.main,self.qsim,os.environ.get('PHYEXP_LAUNCH_ID'))
@@ -111,7 +116,7 @@ class ProcessHarborAgent(BaseAgent):
                     'solver':{k:self.recipe[k] for k in ('provider','model','reasoningEffort','maxTokens') if k in self.recipe},
                     'modelChannel':{'url':'http://'+address+':8080','protocol':credentials['protocol'],
                                     'codexSubscription':credentials.get('codexSubscription',False)},
-                    'resources':resources,'config':self.bundle['project'].get('runtimeConfig',{})}
+                    'resources':{**resources,'task':self.task_resources},'config':self.bundle['project'].get('runtimeConfig',{})}
                 self.save('environment.json',public)
                 # Only the short Trial token enters main. Its host copy is ephemeral.
                 public['modelChannel']['token']=token

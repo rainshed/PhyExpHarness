@@ -449,6 +449,8 @@ class ControlService:
                 changes['comparisonContext'].update(runContract=provenance.get('runContract'),adapter=selected['adapter'],
                     brokerImageId=provenance.get('brokerImageId'),resources=provenance.get('processResources'),
                     solver={k:provenance.get('recipe',{}).get(k) for k in ('provider','model','reasoningEffort','maxTokens','providerConfig')})
+                for resource_file in output.glob('harbor/*/phyexp/task-resources.json'):
+                    changes['comparisonContext']['taskResources']=json.loads(resource_file.read_text())
             if trial.get('effectiveConditions'):
                 changes['comparisonContext']['executionConditions']={k:trial['effectiveConditions'].get(k) for k in ('trialTimeSeconds','actualTimeSeconds','frozenTrialCeilingSeconds')}
                 if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
