@@ -18,6 +18,7 @@ class ContainerBridge:
         self.deadline = deadline
         self.clock = clock
         self.tasks = set()
+        self.closed = False
         self.issues = []
         self.lock = asyncio.Lock()
 
@@ -49,17 +50,30 @@ class ContainerBridge:
     def issue(self, call_id, stage, execution, error):
         # A lost reply cannot undo a recorded command result. An exec failure or
         # missing audit leaves the outcome uncertain even if a later call works.
-        blocked = execution == 'running' or stage in ('audit_start', 'audit_end')
+        blocked = (stage == 'execute' and execution == 'running') or stage in ('audit_start', 'audit_end')
         self.issues.append({'callId': call_id, 'stage': stage, 'executionState': execution,
                             'blocksVerification': blocked, 'message': str(error),
                             'type': type(error).__name__, 'time': self.clock()})
 
-    async def handle(self, reader, writer):
-        task = asyncio.current_task()
+    def handle(self, reader, writer):
+        # Register before scheduling so shutdown also sees accepted callbacks
+        # whose coroutine has not started yet.
+        task = asyncio.create_task(self._handle(reader, writer))
         self.tasks.add(task)
+        def completed(task):
+            self.tasks.discard(task)
+            # Cancellation before the coroutine's first step skips its finally.
+            # Close that accepted socket as well, so Server.wait_closed can finish.
+            try:writer.close()
+            except Exception:pass  # No new command is executing in this callback.
+        task.add_done_callback(completed)
+        return task
+
+    async def _handle(self, reader, writer):
         call_id = uuid.uuid4().hex
         stage, execution = 'read_request', 'not_started'
         try:
+            if self.closed:return
             request = json.loads(await asyncio.wait_for(reader.readline(), 10))
             async with self.lock:
                 stage = 'audit_start'
@@ -93,17 +107,16 @@ class ContainerBridge:
                 writer.write((json.dumps({'error': f'Harbor container transport: {error}'}) + '\n').encode())
                 await writer.drain()
             except Exception as delivery_error:
-                self.issue(call_id, 'deliver_error', 'not_started', delivery_error)
+                self.issue(call_id, 'deliver_error', execution, delivery_error)
         finally:
             try:
                 writer.close()
                 await asyncio.wait_for(writer.wait_closed(), 1)
             except Exception as error:
-                self.issue(call_id, 'close', 'not_started', error)
-            finally:
-                self.tasks.discard(task)
+                self.issue(call_id, 'close', execution, error)
 
     async def close(self):
+        self.closed = True
         tasks = list(self.tasks)
         for task in tasks:
             task.cancel()

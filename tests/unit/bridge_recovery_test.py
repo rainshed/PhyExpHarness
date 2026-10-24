@@ -35,6 +35,7 @@ class BridgeRecoveryTests(unittest.IsolatedAsyncioTestCase):
         issues = self.bridge.diagnostics()['issues']
         self.assertTrue(issues)
         self.assertTrue(all(not r['blocksVerification'] and r.get('recoveredBy') for r in issues))
+        self.assertTrue(all(r['executionState']=='completed' for r in issues))
         records = [json.loads(line) for line in self.bridge.audit_path.read_text().splitlines()]
         self.assertEqual([r['phase'] for r in records], ['start', 'end', 'start', 'end'])
         self.assertEqual(records[0]['callId'], records[1]['callId'])
@@ -81,6 +82,21 @@ class BridgeRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.bridge.check_verification()
         self.assertEqual(self.bridge.issues[0]['executionState'], 'rejected')
 
+    async def test_late_connection_after_shutdown_never_executes_a_command(self):
+        await self.bridge.close()
+        await self.call()
+        self.environment.exec.assert_not_awaited()
+        self.bridge.check_verification()
+
+    async def test_shutdown_closes_accepted_socket_before_handler_first_step(self):
+        reader=AsyncMock();writer=SimpleNamespace(close=Mock(),wait_closed=AsyncMock())
+        task=self.bridge.handle(reader,writer)
+        await self.bridge.close()
+        self.assertTrue(task.cancelled())
+        writer.close.assert_called()
+        self.environment.exec.assert_not_awaited()
+        self.assertFalse(self.bridge.tasks)
+
     async def test_agent_gate_archives_transport_receipt_and_allows_only_known_outcome(self):
         try:
             from src.execution.adapters.quantum_harbor.agent import DeepSeekHarborAgent
@@ -88,8 +104,9 @@ class BridgeRecoveryTests(unittest.IsolatedAsyncioTestCase):
             if error.name.startswith('harbor'):
                 self.skipTest('Harbor Python environment required for adapter integration')
             raise
-        for fatal in (False, True):
-            with self.subTest(fatal=fatal):
+        for scenario in ('reply_lost', 'exec_unknown', 'inflight'):
+            fatal=scenario!='reply_lost'
+            with self.subTest(scenario=scenario):
                 self.bridge = ContainerBridge(self.environment, self.root / 'container-exec.jsonl')
                 self.environment.exec.side_effect = ConnectionError('exec unknown') if fatal else None
                 agent = object.__new__(DeepSeekHarborAgent)
@@ -103,18 +120,28 @@ class BridgeRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 agent.main_container = 'main'
                 agent.qsim_container = 'qsim'
                 agent.connect_mcp = AsyncMock()
-                async def completed():
-                    await self.call(lost_reply=not fatal)
-                    return 0
-                process = SimpleNamespace(returncode=0, wait=completed)
+                entered=asyncio.Event();client=[]
+                async def pending(**kwargs):
+                    entered.set();await asyncio.Future()
+                if scenario=='inflight':self.environment.exec.side_effect=pending
+                async def create_worker(*args,**kwargs):
+                    async def completed():
+                        if scenario=='inflight':
+                            reader,writer=await asyncio.open_unix_connection(args[4]);client.append(writer)
+                            writer.write(b'{"command":"pending command"}\n');await writer.drain()
+                            await asyncio.wait_for(entered.wait(),2)
+                        else:await self.call(lost_reply=not fatal)
+                        return 0
+                    return SimpleNamespace(returncode=0,wait=completed)
                 with patch('src.execution.adapters.quantum_harbor.agent.ContainerBridge', return_value=self.bridge), \
-                     patch('src.execution.adapters.quantum_harbor.agent.asyncio.create_subprocess_exec', AsyncMock(return_value=process)), \
+                     patch('src.execution.adapters.quantum_harbor.agent.asyncio.create_subprocess_exec', create_worker), \
                      patch('src.execution.adapters.quantum_harbor.agent.release'):
                     if fatal:
-                        with self.assertRaisesRegex(RuntimeError, 'exec unknown'):
-                            await agent.run('fixture', self.environment, SimpleNamespace())
+                        with self.assertRaisesRegex(RuntimeError, 'Container transport failed'):
+                            await asyncio.wait_for(agent.run('fixture', self.environment, SimpleNamespace()),3)
                     else:
                         await agent.run('fixture', self.environment, SimpleNamespace())
+                for writer in client:writer.close();await writer.wait_closed()
                 receipt = json.loads((self.root / 'container-transport.json').read_text())
                 self.assertEqual(receipt['verificationBlocked'], fatal)
                 self.assertTrue(receipt['issues'])

@@ -167,8 +167,8 @@ asyncio.run(main())
                 # Close admission and account for unfinished commands before the
                 # verifier gate; connection cleanup must not hide late failures.
                 server.close()
-                await server.wait_closed()
                 await bridge.close()
+                await server.wait_closed()
                 bridge.check_verification()
             finally:
                 if proc and proc.returncode is None:
@@ -179,8 +179,8 @@ asyncio.run(main())
                         os.killpg(proc.pid, signal.SIGKILL)
                         await proc.wait()
                 server.close()
-                await server.wait_closed()
                 await bridge.close()
+                await server.wait_closed()
                 (self.host_logs / 'container-transport.json').write_text(json.dumps(bridge.diagnostics(), indent=2))
                 for tunnel in tunnels:
                     await tunnel.close()
