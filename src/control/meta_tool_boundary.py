@@ -1,6 +1,8 @@
 """v5 model-facing boundary. Full results live in files, including replay/errors."""
 import hashlib
 import traceback
+import sqlite3
+from .database import busy as database_busy
 from .store import Refused,Conflict,encoded
 from .meta_receipts import receipt,compact
 
@@ -44,6 +46,12 @@ class ToolBoundary:
     def error(self,campaign,operation,error,*,write=False):
         refused=isinstance(error,(Refused,Conflict))
         status='rejected' if refused else 'outcome_unknown' if write else 'failed'
+        if isinstance(error,sqlite3.OperationalError):
+            busy=database_busy(error)
+            # Database outages may also prevent diagnostic-file publication. The
+            # receipt itself must still identify the layer and preserve unknown writes.
+            return receipt('控制数据库暂时繁忙；稍后使用原参数和幂等键核对结果，避免重复提交。' if busy else '控制数据库异常；保留原请求身份并核对后台结果。',
+                status=status,code='control_database_busy' if busy else 'control_database_error',reconciliationRequired=write)
         file=self.publish(campaign,operation,{'operation':operation,'status':status,'error':str(error),'type':type(error).__name__,'traceback':traceback.format_exc()})
         return receipt('请求未获接受；详见诊断文件。' if refused else '请求未完成；核对文件及后台状态后再决定重试。',file,
             status=status,code='request_refused' if refused else 'tool_failed',**({'committed':False} if refused else {'reconciliationRequired':write}))

@@ -51,7 +51,11 @@ class ControlTests(unittest.TestCase):
         for _ in range(2):self.assertEqual(self.client.post(route+'/settle',json=receipt).status_code,200)
         self.assertEqual(self.service.store.usage(self.c)['confirmedTokens'],12)
         with patch.object(self.service,'authenticate',side_effect=busy):
-            self.assertEqual(self.client.get('/health').status_code,503)
+            response=self.client.get('/health')
+            self.assertEqual(response.status_code,503)
+            self.assertEqual(response.json()['code'],'control_database_busy')
+            self.assertNotIn('ledger',response.text)
+            self.assertEqual(response.json()['retryAfterMs'],500)
     def test_database_fault_response_does_not_leak_internal_details(self):
         with patch.object(self.service.store,'list',side_effect=sqlite3.OperationalError('private database path')):
             response=self.client.get('/health')

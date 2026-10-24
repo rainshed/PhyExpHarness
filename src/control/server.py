@@ -11,6 +11,7 @@ from fastapi import FastAPI,Request,HTTPException
 from fastapi.responses import JSONResponse,FileResponse,Response
 from .service import ControlService
 from .store import Refused,Conflict
+from .database import busy as database_busy
 from .paths import data_dir
 from src.execution.host.models import load_model_config
 from .inspection import plugin_source,open_folder,export_folder,export_guide
@@ -42,14 +43,15 @@ def make_app(service,supervise=True):
     async def invalid(_request,error):return JSONResponse({'error':str(error)},status_code=400)
     @app.exception_handler(TypeError)
     async def invalid_type(_request,error):return JSONResponse({'error':'Invalid operation arguments: '+str(error)},status_code=400)
-    def database_error(error):
-        code=getattr(error,'sqlite_errorcode',0)
-        busy=(code & 0xff) in (sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED)
-        return JSONResponse({'error':'Control ledger temporarily busy' if busy else 'Control database error',
-            **({'code':'accounting_unavailable','retryAfterMs':500} if busy else {})},
+    def database_error(error,request):
+        busy=database_busy(error)
+        legacy=request.url.path.startswith('/accounting/')
+        return JSONResponse({'error':'控制数据库暂时繁忙；请稍后用原请求核对结果。' if busy else '控制数据库异常',
+            'code':('accounting_unavailable' if legacy else 'control_database_busy') if busy else 'control_database_error',
+            'source':'control-database',**({'retryAfterMs':500} if busy else {})},
             status_code=503 if busy else 500,headers={'Cache-Control':'no-store'})
     @app.exception_handler(sqlite3.OperationalError)
-    async def database_unavailable(_request,error):return database_error(error)
+    async def database_unavailable(request,error):return database_error(error,request)
     @app.middleware('http')
     async def boundary(request,call_next):
         try:length=int(request.headers.get('content-length','0'))
@@ -60,7 +62,7 @@ def make_app(service,supervise=True):
             modern=request.url.path.startswith('/model-access/')
             code=('request_lease_expired' if modern else 'accounting_lease_expired') if 'expired' in str(error).lower() else ('request_auth_failed' if modern else 'accounting_auth_failed')
             return JSONResponse({'error':str(error),'code':code},status_code=401)
-        except sqlite3.OperationalError as error:return database_error(error)
+        except sqlite3.OperationalError as error:return database_error(error,request)
         try:
             service.deletions.guard_route(request.url.path)
             response=await call_next(request)

@@ -26,6 +26,21 @@ def trial_diagnostics(trials, data=None, config=None):
         elif state in ['reserved', 'queued', 'launching', 'running']: label = '等待启动' if state in ['reserved','queued'] else '运行中，等待评分'; scoring = 'pending'
         else: label = '未评分'
         t['scoringStatus'] = scoring
+        summary=t.get('summary') or {}
+        recovery=t.get('requestRecovery') or summary.get('requestRecovery') or {}
+        if recovery:t['requestRecovery']={**recovery,'failures':[{**public_failure(r),
+            **({'recoveredBy':r['recoveredBy']} if r.get('recoveredBy') else {})} for r in recovery.get('failures',[])]}
+        bridge=t.get('containerTransport') or summary.get('containerTransport')
+        if bridge:t['containerTransport']=bridge
+        if failure:
+            diagnosis={k:t['failure'][k] for k in ('category','categoryLabel','causeNote')}
+        elif finite(t.get('score')) and t['score']==0:
+            diagnosis={'category':'task_result','categoryLabel':'正式评分未通过','causeNote':'已取得官方评分，结果未满足任务要求；具体失败条件见评分报告。'}
+        else:diagnosis={'category':'none','categoryLabel':'无已确认的最终故障','causeNote':''}
+        has_score=scoring=='completed'
+        diagnosis['impact']='official_score_recorded' if has_score else scoring
+        diagnosis['impactLabel']='已有官方评分，历史故障不会替换该分数' if has_score else '尚无官方评分；任务完成分按活动绑定规则计算'
+        t['diagnosis']={'version':'failure-attribution-v1',**diagnosis}
         t['resultLabel'] = label + (' · '+t['failure']['message'] if failure and scoring != 'pending' else '')
         # Report projections may already contain a versioned assessment but omit the raw summary.
         if (t.get('taskAssessment') or {}).get('rule') != rule_for(config):

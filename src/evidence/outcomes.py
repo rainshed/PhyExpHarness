@@ -32,7 +32,8 @@ OUTPUT_FAILURES = {'invalid_tool_arguments', 'stream_whitespace', 'stream_repeti
                    'user_stop_invalid_tool_argument_stream'}
 EXTERNAL_FAILURES = {'model_service_overloaded', 'model_transport_error', 'model_response_error', 'model_stream_incomplete',
                      'stream_idle_timeout', 'startup_failure', 'verifier_failed', 'archive_invalid',
-                     'supervisor_lost_start_not_repeated', 'result_collection_failed', 'container_transport_error'}
+                     'supervisor_lost_start_not_repeated', 'result_collection_failed', 'container_transport_error',
+                     'control_database_busy','control_database_error','control_unavailable','request_auth_failed','request_lease_expired'}
 PENDING = {'reserved', 'queued', 'launching', 'running'}
 
 
@@ -60,6 +61,8 @@ def failure_label(reason):
         'supervisor_lost_start_not_repeated':'执行监督中断，结果缺失','runtime_failed':'执行异常',
         'trial_deadline':'实验时限耗尽','campaign_deadline':'活动时限耗尽','budget_admission_denied':'执行额度不足',
         'accounting_unavailable':'用量账本异常','accounting_lease_expired':'执行凭证到期或撤销',
+        'control_database_busy':'控制数据库繁忙','control_database_error':'控制数据库异常',
+        'control_unavailable':'模型访问控制不可用','request_auth_failed':'执行凭证异常','request_lease_expired':'执行凭证到期或撤销',
         'accounting_auth_failed':'执行凭证异常','accounting_protocol_error':'准入接口异常',
         'no_submission':'未提交结果','invalid_submission':'提交无效','request_cancelled':'执行请求取消',
         'invalid_official_result':'官方结果无效'}.get(reason,'结果缺失（原因待查）')

@@ -9,6 +9,11 @@ from pathlib import Path
 MESSAGES = {
     'budget_admission_denied': '当前额度不足以准入下一次模型请求',
     'accounting_unavailable': '平台用量账本暂时不可用',
+    'control_database_busy': '平台控制数据库暂时繁忙',
+    'control_database_error': '平台控制数据库异常',
+    'control_unavailable': '平台模型访问控制暂时不可用',
+    'request_auth_failed': '平台请求凭证验证失败',
+    'request_lease_expired': '平台请求凭证到期或撤销',
     'accounting_lease_expired': '平台请求凭证已到期或被撤销',
     'accounting_auth_failed': '平台请求凭证验证失败',
     'accounting_protocol_error': '平台准入接口返回异常',
@@ -21,7 +26,7 @@ MESSAGES = {
     'stream_idle_timeout': '模型连接长时间没有返回数据',
     'model_output_limit': '模型输出达到提供方上限，执行未正常完成',
     'model_transport_error': '模型请求传输失败',
-    'model_service_overloaded': '模型服务过载，任务未能恢复',
+    'model_service_overloaded': '模型服务暂时不可用或过载',
     'model_response_error': '模型提供方返回错误',
     'model_stream_incomplete': '模型响应缺少完整结束回执',
     'request_cancelled': '模型请求已取消',
@@ -47,6 +52,38 @@ MESSAGES = {
 }
 
 
+def failure_attribution(code):
+    """Observed layer only; output symptoms do not prove a model-weight defect."""
+    if code in {'invalid_tool_arguments','stream_whitespace','stream_repetition','response_size_limit',
+                'tool_argument_size_limit','model_output_limit','user_stop_invalid_tool_argument_stream'}:
+        return {'category':'model_output','categoryLabel':'模型输出链路',
+                'causeNote':'输出格式、内容或大小触发保护；模型与适配器的具体责任仍需原始证据确认。'}
+    if code in {'model_transport_error','model_service_overloaded','model_response_error','model_stream_incomplete','stream_idle_timeout'}:
+        return {'category':'model_service','categoryLabel':'模型服务或连接',
+                'causeNote':'请求服务或传输异常，不作为模型解题能力的直接证据。'}
+    if code in {'startup_failure','verifier_failed','archive_invalid','supervisor_lost_start_not_repeated',
+                'result_collection_failed','container_transport_error','control_database_busy','control_database_error','control_unavailable',
+                'request_auth_failed','request_lease_expired','storage_capacity','storage_capacity_wait'} or code.startswith(('environment_','accounting_')):
+        return {'category':'platform','categoryLabel':'平台执行或控制',
+                'causeNote':'平台、执行环境或评分流程出现异常。'}
+    if code in {'request_timeout','trial_deadline','campaign_deadline','budget_admission_denied','request_cancelled','user_stop'}:
+        return {'category':'execution_limit','categoryLabel':'运行限额或停止',
+                'causeNote':'按约定时间、资源或停止请求结束。'}
+    return {'category':'unknown','categoryLabel':'原因待确认','causeNote':'现有记录不足以确定故障层。'}
+
+
+def container_transport(root):
+    files=list(Path(root).glob('harbor/*/phyexp/container-transport.json'))
+    if len(files)!=1:return None
+    value=read(files[0])
+    if value.get('schemaVersion')!=1:return None
+    # Raw exception messages remain in the archive, not public diagnostics.
+    keys=('callId','stage','executionState','blocksVerification','time','recoveredBy')
+    return {'schemaVersion':1,'verificationBlocked':value.get('verificationBlocked',True),
+            'issues':[{k:item[k] for k in keys if k in item} for item in value.get('issues',[])],
+            'evidence':str(files[0].relative_to(root))}
+
+
 def read(path):
     try: return json.loads(Path(path).read_text())
     except (OSError, ValueError): return {}
@@ -56,7 +93,7 @@ def public_failure(value):
     code = value.get('code', 'unknown_failure')
     if code not in MESSAGES: code = 'unknown_failure'
     result = {'schemaVersion': 1, 'code': code, 'stage': value.get('stage', 'execution'),
-              'message': MESSAGES[code], 'source': value.get('source', 'execution-artifacts')}
+              'message': MESSAGES[code], 'source': value.get('source', 'execution-artifacts'),**failure_attribution(code)}
     if code == 'model_response_error' and (value.get('observed') or {}).get('providerCode') == 'CONTEXT_WINDOW_EXCEEDED':
         result['message'] = '模型适配器判定上下文容量超限，请检查上下文压缩'
     for key in ['requestId', 'detectedAt', 'policyVersion', 'termination', 'evidence', 'observed', 'limits', 'secondaryCodes']:
@@ -163,5 +200,6 @@ def failed_result(run_dir, error, stop_reason=None):
     return {'status': 'infrastructure_error', 'pipelineStatus': 'failed', 'officialReward': None,
             'sciencePassed': None, 'error': str(error), 'stopReason': stop_reason or failure['code'],
             'failure': failure, 'scoringStatus': failure['scoringStatus'],
+            'containerTransport':container_transport(run_dir),
             **({k:runtime.get(k) for k in ['failureContract','requestRecovery']} if runtime.get('failureContract') else {}),
             'usage': runtime.get('usage', {}), 'accounting': runtime.get('accounting', {})}

@@ -23,7 +23,8 @@ const summary={status:'starting',model,startedAt:new Date().toISOString(),turns:
 async function api(route,body){
  const response=await fetch(base+route,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},
   body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
- const result=await response.json();if(!response.ok)throw new Error(result.error||'Control interface unavailable');return result;
+ const result=await response.json();if(!response.ok)throw Object.assign(new Error(result.error||'Control interface unavailable'),{controlFailure:{
+  code:result.code,status:response.status,...(Number.isFinite(result.retryAfterMs)?{retryAfterMs:result.retryAfterMs}:{})}});return result;
 }
 const unmetered=config.modelAccessPolicy==='control-only-v1';
 const budget=unmetered?modelAccess({deadline:config.deadline*1000,url:base+'/model-access/'+config.leaseId,token}):budgetGate({deadline:config.deadline*1000,softTokenLimit:config.softTokenLimit,

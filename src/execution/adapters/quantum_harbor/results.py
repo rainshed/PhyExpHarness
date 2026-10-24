@@ -3,6 +3,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
+from ...host.failure import container_transport
 
 
 def read_json(path):
@@ -84,6 +85,7 @@ def collect(run_dir):
         'recipeId': runtime.get('recipe',{}).get('id'), 'bundleId': runtime.get('bundleId'),
         'model': runtime['model'], 'provider': runtime['provider'],
         'scoringStatus': 'completed',
+        'containerTransport': container_transport(run_dir),
         'officialReward': reward, 'sciencePassed': reward == 1,
         'submissionPresent': submitted, 'scientificAssessmentPresent': assessed,
         'qsimActions': sorted({e['action'] for e in experiment_events if 'action' in e}),

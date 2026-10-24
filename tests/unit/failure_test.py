@@ -6,6 +6,43 @@ from src.execution.host.failure import diagnose, failed_result, public_failure
 from src.evidence.diagnostics import trial_diagnostics
 
 class FailureTests(unittest.TestCase):
+    def test_observed_layers_and_score_impact_do_not_rewrite_original_records(self):
+        rows=[{'id':code,'state':'failed','startedAt':1,'finishedAt':2,'score':None,'failure':{'code':code}}
+              for code in ['stream_whitespace','model_service_overloaded','control_database_busy','runtime_failed']]
+        rows.append({'id':'official-zero','state':'finished','startedAt':1,'score':0})
+        before=json.dumps(rows)
+        projected=trial_diagnostics(rows,config={'taskEvaluationRule':'task-completion-v4'})
+        self.assertEqual([t['diagnosis']['category'] for t in projected],['model_output','model_service','platform','unknown','task_result'])
+        self.assertEqual([t['score'] for t in projected],[None,None,None,None,0])
+        self.assertTrue(all(t['taskAssessment']['score']==0 for t in projected))
+        self.assertEqual(projected[-1]['diagnosis']['impact'],'official_score_recorded')
+        self.assertEqual(json.dumps(rows),before)
+
+    def test_recovered_failures_are_history_and_bridge_receipts_omit_raw_errors(self):
+        from src.execution.host.failure import container_transport
+        self.runtime.with_name('container-transport.json').write_text(json.dumps({'schemaVersion':1,'verificationBlocked':False,
+            'issues':[{'callId':'one','stage':'deliver_response','executionState':'completed','blocksVerification':False,'message':'SECRET','recoveredBy':'two'}]}))
+        bridge=container_transport(self.root)
+        row={'id':'one','state':'finished','score':1,'failureContract':'request-failure-v2',
+             'summary':{'containerTransport':bridge,'requestRecovery':{'failedRequests':1,'recoveredRequests':1,
+                 'failures':[{'code':'model_service_overloaded','requestId':'old','recoveredBy':'new'}]}}}
+        out=trial_diagnostics([row])[0]
+        self.assertEqual(out['diagnosis']['category'],'none')
+        self.assertNotIn('failure',out)
+        self.assertEqual(out['requestRecovery']['failures'][0]['recoveredBy'],'new')
+        self.assertNotIn('未能恢复',out['requestRecovery']['failures'][0]['message'])
+        self.assertNotIn('SECRET',str(out));self.assertEqual(out['score'],1)
+
+    def test_database_tool_receipt_survives_unavailable_publication_and_preserves_unknown_writes(self):
+        import sqlite3
+        from src.control.meta_tool_boundary import ToolBoundary
+        boundary=ToolBoundary(None)
+        for write in (False,True):
+            result=boundary.error('fixture','report_save',sqlite3.OperationalError('database is locked'),write=write)
+            self.assertEqual(result['code'],'control_database_busy')
+            self.assertEqual(result['status'],'outcome_unknown' if write else 'failed')
+            self.assertEqual(result['reconciliationRequired'],write)
+
     def test_context_overflow_has_specific_safe_message_without_changing_failure_category(self):
         value={'code':'model_response_error','observed':{'providerCode':'CONTEXT_WINDOW_EXCEEDED'},'message':'PRIVATE raw error'}
         result=public_failure(value)

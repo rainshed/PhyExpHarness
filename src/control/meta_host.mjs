@@ -43,9 +43,9 @@ export class MetaHost{
   try{yield* this.dispatch(binding,operation,payload,signal);}
   catch(error){
    let file;
-   try{file=binding.outputs.tool({name:payload.action,error:String(error),stack:error.stack});}
+   try{file=binding.outputs.tool({name:payload.action,error:String(error),stack:error.stack,controlFailure:error.controlFailure});}
    catch{file={path:'/outputs/index.json',completeness:'partial'};}
-   throw new Error(JSON.stringify({status:payload.action==='call'?'outcome_unknown':'failed',summary:error.message?.length<=200?error.message:'Host action failed; read the diagnostic file.',file}));
+   throw new Error(JSON.stringify({...error.controlFailure,status:payload.action==='call'&&!READ.has(payload.input?.operation)?'outcome_unknown':'failed',summary:error.message?.length<=200?error.message:'Host action failed; read the diagnostic file.',file}));
   }
  }
  async *dispatch(binding,operation,payload,signal){
