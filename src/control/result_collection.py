@@ -12,6 +12,14 @@ VERSION = 'result-collection-v2'
 
 def read_summary(trial, candidate):
     root = Path(trial['output'])
+    bundle = verify(candidate['bundlePath'])
+    if bundle.get('schemaVersion') == 3:
+        from src.execution.adapters.quantum_harbor.official import collect
+        if bundle['id'] != candidate['bundleId']:
+            raise ValueError('Candidate identity mismatch')
+        summary = collect(root, bundle_id=bundle['id'], task=trial['task'], archived=True)
+        summary.update(runId=root.name, runDir=str(root))
+        return summary
     results.verify_manifest(root)
     original = results.read_json(root / 'summary.json')
     if original.get('pipelineStatus') != 'failed' or original.get('officialReward') is not None:
