@@ -30,8 +30,9 @@ export function apply(ctx){
    // Control can verify many frozen images and provider endpoints before it
    // commits. A UI timeout does not cancel that controller-side operation.
    const control=req.method==='POST'&&/^\/campaigns\/[-a-zA-Z0-9_]+\/control$/.test(route);
+   const deletion=/^\/campaigns\/[-a-zA-Z0-9_]+\/deletion$/.test(route);
    const response=await fetch(base+route+parsed.search,{method:req.method,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-    body:req.method==='POST'?body:undefined,signal:AbortSignal.timeout(control?120000:20000)});
+    body:req.method==='POST'?body:undefined,signal:AbortSignal.timeout(control||deletion?120000:20000)});
    const headers={'content-type':response.headers.get('content-type')||'application/json','cache-control':'no-store'};
    if(response.headers.has('content-disposition'))headers['content-disposition']=response.headers.get('content-disposition');
    const contents=Buffer.from(await response.arrayBuffer());

@@ -110,7 +110,7 @@ def supervised_command(argv,log,seconds,cancel):
         if process.poll() is None:process.kill();process.wait()
 
 
-def build(contents, spec, cache, log, resources, *, cancel=None):
+def build(contents, spec, cache, log, resources, *, cancel=None, on_publish=None):
     """Content cache holds tar files, never imports generated code into the host."""
     cache = Path(cache); cache.mkdir(parents=True, exist_ok=True)
     check_cancel(cancel)
@@ -123,6 +123,8 @@ def build(contents, spec, cache, log, resources, *, cancel=None):
     inputs = {'sources': {k: digest(v) for k, v in contents.items()}, 'image': image,
               'build': spec['build'], 'resources': resources, 'sourceModes':getattr(contents,'modes',{})}
     key = digest(canonical(inputs)); record = cache / (key + '.json'); artifact = cache / (key + '.tar')
+    if on_publish:
+        for path in (record,artifact,cache/(key+'.lock')):on_publish(path,'project_build')
     with (cache / (key + '.lock')).open('a') as mutex:
         while True:
             check_cancel(cancel)
@@ -136,8 +138,10 @@ def build(contents, spec, cache, log, resources, *, cancel=None):
         log.write('Build container '+name+'\n');log.flush()
         with tempfile.TemporaryDirectory(dir=cache) as temporary:
             stage = Path(temporary)
+            if on_publish:on_publish(stage,'project_build_temp')
             (stage / 'source.tar').write_bytes(source_tar(contents, 'candidate/'))
-            command = ['docker', 'create', '--name', name, '--cap-drop=ALL', '--security-opt=no-new-privileges',
+            command = ['docker', 'create', '--name', name, '--label', 'phyexp.build.stage='+str(stage),
+                       '--cap-drop=ALL', '--security-opt=no-new-privileges',
                        '--user', '0:0', '--cpus', str(resources['cpus']), '--memory', str(resources['memoryBytes']),
                        '--pids-limit', str(resources['pids']), '--workdir', '/candidate', '--entrypoint', spec['build']['argv'][0],
                        image, *spec['build']['argv'][1:]]
@@ -182,7 +186,8 @@ def build(contents, spec, cache, log, resources, *, cancel=None):
 def freeze_project(source_root, store, directory, recipe, cache, log, resources, *, on_publish=None, cancel=None):
     from .freeze import _object, _publish
     contents, spec = snapshot(directory)
-    artifact, receipt = build(contents, spec, cache, log, resources,**({'cancel':cancel} if cancel else {}))
+    artifact, receipt = build(contents, spec, cache, log, resources,
+                              **({'cancel':cancel} if cancel else {}),**({'on_publish':on_publish} if on_publish else {}))
     check_cancel(cancel)
     store = Path(store); store.mkdir(parents=True, exist_ok=True)
     source_ref, _ = _object(store, 'harness-sources', contents, on_publish)

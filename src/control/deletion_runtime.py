@@ -73,22 +73,41 @@ def docker(*args):
         raise Refused('无法确认或清理活动容器资源，请恢复容器引擎后重试：' + str(error)) from error
 
 
+def engine_inventory(kind):
+    listing=('ps','-aq') if kind=='container' else (kind,'ls','-q')
+    inspect=('inspect',) if kind=='container' else (kind,'inspect')
+    ids=docker(*listing).split()
+    for attempt in range(3):
+        if not ids:return []
+        try:return json.loads(docker(*inspect,*ids))
+        except Refused:
+            # Unrelated activities can remove resources between ls and inspect.
+            # Retry reads only after proving an enumerated resource disappeared;
+            # engine/permission failures with the same set remain failures.
+            current=docker(*listing).split()
+            if attempt==2 or not set(ids)-set(current):raise
+            ids=current
+
+
 def cleanup_resources(service, campaign, plan):
     """Engine mount/label ownership is required; arbitrary archived names cannot authorize rm."""
     root = service.data / 'campaigns' / campaign
     runs = service.store.runs(campaign)
     sessions = service.store.list('meta_sessions',campaign)
+    build_stages = set()
+    for row in service.store.list('owned_artifacts',campaign):
+        if row['kind']=='project_build_temp':
+            build_stages.update((str(safe_path(service.data,row['path'])),row['path']))
     roots = [safe_path(service.data,root)]
     roots += [safe_path(service.data,r['output']) for r in runs if r.get('output')]
     # A draft with no executed work can be removed on a machine without Docker.
     used = any(r.get('pid') or r.get('executionEntry') for r in runs + sessions)
-    used |= any((p/'provenance.json').exists() for p in roots)
-    used |= any(f.name == 'runner-identity.json' for p in roots for f in walk(p))
+    if not used:used = any((p/'provenance.json').exists() for p in roots)
+    if not used:used = any(f.name == 'runner-identity.json' for p in roots for f in walk(p))
     export_checks = [r for r in service.store.list('exports',campaign) if r.get('relocationValidation') in ('passed','failed')]
-    used |= bool(export_checks)
+    used |= bool(export_checks) or bool(build_stages)
     if not used:return
-    ids = docker('ps','-aq').split()
-    containers = json.loads(docker('inspect',*ids)) if ids else []
+    containers = engine_inventory('container')
     launches = {r['launchId'] for r in runs if r.get('launchId')}
     projects = set()
     for path in roots[1:]:
@@ -100,16 +119,15 @@ def cleanup_resources(service, campaign, plan):
                 if not re.match('^[a-z0-9]',project):project='0'+project
                 project = re.sub('[^a-z0-9_-]','-',project)
                 projects.update([project,project+'-verifier'])
-    networks = []
-    for launch in launches:
-        ids = docker('network','ls','-q','--filter','label=phyexp.launch='+launch).split()
-        if ids:networks.extend(json.loads(docker('network','inspect',*ids)))
+    all_networks = engine_inventory('network')
+    networks = [n for n in all_networks if (n.get('Labels') or {}).get('phyexp.launch') in launches]
     network_containers = {cid for n in networks for cid in (n.get('Containers') or {})}
     selected = set()
     for c in containers:
         labels = c.get('Config',{}).get('Labels') or {}
         mounts = [Path(m['Source']) for m in c.get('Mounts',[]) if m.get('Type') == 'bind']
-        if c['Id'] in network_containers or any(p == r or p.is_relative_to(r) for p in mounts for r in roots):
+        if (c['Id'] in network_containers or labels.get('phyexp.build.stage') in build_stages or
+                any(p == r or p.is_relative_to(r) for p in mounts for r in roots)):
             selected.add(c['Id'])
             if labels.get('com.docker.compose.project'):projects.add(labels['com.docker.compose.project'])
     # Project labels also cover a separate verifier and leftover named volumes.
@@ -122,13 +140,15 @@ def cleanup_resources(service, campaign, plan):
             if mount.get('Type') == 'bind' and any(Path(mount['Source']) == service.data/p or Path(mount['Source']).is_relative_to(service.data/p) for p in plan['paths']):
                 raise Refused('待删除内容仍被其他容器使用：' + c.get('Name',c['Id']))
     if selected:docker('rm','-f','-v',*sorted(selected))
-    for project in sorted(projects):
-        for kind in ('volume','network'):
-            ids = docker(kind,'ls','-q','--filter','label=com.docker.compose.project='+project).split()
-            if ids:docker(kind,'rm',*ids)
-    for launch in launches:
-        ids = docker('network','ls','-q','--filter','label=phyexp.launch='+launch).split()
-        if ids:docker('network','rm',*ids)
+    # Enumerate once rather than spawning engine clients for every historical
+    # Trial. This also bounds the time spent in the exclusive cleanup phase.
+    if projects:
+        volumes=engine_inventory('volume')
+        selected_volumes=[v['Name'] for v in volumes if (v.get('Labels') or {}).get('com.docker.compose.project') in projects]
+        if selected_volumes:docker('volume','rm',*selected_volumes)
+    selected_networks=[n['Id'] for n in all_networks if (n.get('Labels') or {}).get('phyexp.launch') in launches or
+                       (n.get('Labels') or {}).get('com.docker.compose.project') in projects]
+    if selected_networks:docker('network','rm',*selected_networks)
     # Relocation validation images contain the exported plugin sources. Common
     # task/Runner images and dependency/build caches are not activity history.
     tags = set(docker('image','ls','--format','{{.Repository}}:{{.Tag}}').splitlines()) if export_checks else set()
@@ -138,7 +158,9 @@ def cleanup_resources(service, campaign, plan):
 
 
 def ensure_unused(data, plan):
+    paths=[str(data/p) for p in plan['paths']]
     for process in processes().values():
         if process['pid'] == os.getpid() or process['state'].startswith('Z'):continue
-        if any(str(data/p) in process['command'] for p in plan['paths']):
+        if str(data) not in process['command']:continue
+        if any(path in process['command'] for path in paths):
             raise Refused('待删除目录仍被进程使用（PID ' + str(process['pid']) + '），请结束该进程后重试。')

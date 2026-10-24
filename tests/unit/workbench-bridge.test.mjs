@@ -59,6 +59,18 @@ test('a timed-out command reports an unknown outcome without retrying',async t=>
  assert.equal(response.body.code,'control_response_timeout');assert.equal(calls,1);
 });
 
+test('deletion inventory and acceptance wait for ownership checks without repeating requests',async t=>{
+ const deadlines=[],requests=[];
+ t.mock.method(AbortSignal,'timeout',ms=>{deadlines.push(ms);return new AbortController().signal});
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  requests.push({url,method:options.method});return new Response(JSON.stringify({state:options.method==='GET'?'preview':'running'}));
+ });
+ const invoke=bridge();
+ assert.equal((await invoke('/campaigns/campaign-fixture/deletion')).body.state,'preview');
+ assert.equal((await invoke('/campaigns/campaign-fixture/deletion',{expectedRevision:1,idempotencyKey:'delete-once'})).body.state,'running');
+ assert.deepEqual(deadlines,[120000,120000]);assert.equal(requests.length,2);
+});
+
 test('timeout while reading a response body sends one complete error response',async t=>{
  t.mock.method(globalThis,'fetch',async()=>({status:200,headers:new Headers(),arrayBuffer:async()=>{throw new DOMException('timeout','TimeoutError')}}));
  const response=await bridge()('/campaigns/campaign-fixture');

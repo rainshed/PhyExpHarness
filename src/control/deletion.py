@@ -164,11 +164,16 @@ class Deletions:
             plan = job['plan']
             ensure_unused(self.service.data,plan)
             inventory=Inventory(self.service,campaign,db)
-            keep=set()
-            for c in inventory.rows['campaigns']:
-                if c['id']!=campaign:keep.update(inventory.shared_for(c['id'])[0])
+            keep=inventory.retained({self.service.data/p for p in plan['paths']})
             from src.evidence.objects import Objects
-            with Objects(self.service.data).locked():
+            with contextlib.ExitStack() as locks, Objects(self.service.data).locked():
+                for path in plan['paths']:
+                    if not (path.startswith('cache/project-builds/') and path.endswith('.lock')):continue
+                    target=safe_path(self.service.data,path)
+                    if target not in keep and target.exists():
+                        stream=locks.enter_context(target.open('r'))
+                        try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                        except BlockingIOError:raise Refused('构建缓存仍在使用，请结束构建后重试：'+str(target))
                 for entry in plan['rewrites']:rewrite(self.service.data,entry)
                 # Local hard-link views go first. A surviving unexplained link is
                 # an ownership conflict, never permission to unlink another view.

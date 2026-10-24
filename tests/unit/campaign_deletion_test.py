@@ -1,6 +1,8 @@
 """Deletion against isolated persistence, real local processes and fake engine facts."""
 import asyncio
+import fcntl
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -16,11 +18,13 @@ from fastapi.testclient import TestClient
 from fastapi.responses import StreamingResponse
 from src.control.service import ControlService
 from src.control.server import make_app
-from src.control.store import TABLES, Conflict
-from src.control.deletion_storage import remove_path
+from src.control.store import TABLES, Conflict, Refused
+from src.control.deletion_runtime import engine_inventory
+from src.control.deletion_storage import Inventory, remove_path
 from src.evidence.objects import Objects, POLICY
 from src.execution.bundle.freeze import freeze
-from src.execution.bundle.manifest import verify
+from src.execution.bundle.manifest import verify, canonical, digest
+from src.execution.bundle.project import freeze_project, source_tar
 from src.exporting.project import export_project
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -150,6 +154,144 @@ class CampaignDeletionTests(unittest.TestCase):
         self.request(other,key='second-delete');self.finish(other)
         self.assertFalse(Path(a['path']).exists())
         self.assertFalse(any((self.data/'objects/sha256').iterdir()))
+
+    def test_v3_shared_sources_artifact_and_build_cache_survive_until_last_activity(self):
+        other=self.store.create(self.config,'v3-other')['id']
+        legacy=self.store.create(self.config,'v2-other')['id']
+        old=freeze(ROOT,self.data/'objects/sha256',json.loads((ROOT/'recipes/h0-sol.json').read_text()),[])
+        self.store.candidate(legacy,old,'old fixture',check={'status':'passed'})
+        project=self.data/'campaigns'/self.c/'project';project.mkdir(parents=True)
+        spec={'runContract':'harbor-process-v1','entrypoint':['run.sh'],
+              'build':{'image':'fixture','argv':['sh','-c','true'],'locks':[]}}
+        (project/'harness.json').write_text(json.dumps(spec));(project/'run.sh').write_text('#!/bin/sh\nexit 0\n')
+        cache=self.data/'cache/project-builds';cache.mkdir(parents=True)
+        def built(contents,*args,**kwargs):
+            inputs={'sources':{k:digest(v) for k,v in contents.items()},'image':'sha256:'+'a'*64}
+            key=digest(canonical(inputs));artifact=cache/(key+'.tar');artifact.write_bytes(source_tar(contents))
+            receipt={'inputs':inputs,'artifactSha256':digest(artifact.read_bytes()),'status':'passed'}
+            (cache/(key+'.json')).write_text(json.dumps(receipt));(cache/(key+'.lock')).touch()
+            return artifact,receipt
+        bundles=[]
+        with patch('src.execution.bundle.project.build',side_effect=built):
+            for campaign in (self.c,other):
+                b=freeze_project(ROOT,self.data/'objects/sha256',project,{'fixture':campaign},cache,io.StringIO(),{},
+                    on_publish=lambda path,kind,c=campaign:self.store.track_artifact(c,path,kind))
+                bundles.append(b);self.store.candidate(campaign,b,'v3 fixture',check={'status':'passed'})
+        self.assertNotEqual(bundles[0]['id'],bundles[1]['id'])
+        unrelated=self.file('cache/project-builds/'+'f'*64+'.tar','unrelated')
+        dependency=self.file('cache/dependencies/common/keep.txt','shared installation')
+        # A v3 activity must not prevent deleting an unrelated v2 activity.
+        self.request(legacy);self.finish(legacy)
+        self.request();self.finish()
+        second=bundles[1];self.assertEqual(verify(second['path'])['id'],second['id'])
+        key=digest(canonical(second['manifest']['buildReceipt']['inputs']))
+        for suffix in ('.json','.tar','.lock'):self.assertTrue((cache/(key+suffix)).exists())
+        self.assertEqual(verify(export_project(second['path'],self.data/'external-test-output')['path'])['id'],second['id'])
+        self.request(other,key='last-v3');self.finish(other)
+        for suffix in ('.json','.tar','.lock'):self.assertFalse((cache/(key+suffix)).exists())
+        self.assertFalse(any((self.data/'objects/sha256').iterdir()))
+        self.assertTrue(unrelated.exists());self.assertTrue(dependency.exists())
+
+    def test_legacy_v1_and_all_activity_states_can_be_deleted(self):
+        old=freeze(ROOT,self.data/'objects/sha256',json.loads((ROOT/'recipes/h0-sol.json').read_text()),[],legacy=True)
+        self.store.candidate(self.c,old,'v1 fixture',check={'status':'passed'})
+        self.request();self.finish();self.assertFalse(Path(old['path']).exists())
+        for state in ('draft','running','paused','closing','finished','failed'):
+            with self.subTest(state=state):
+                c=self.store.create(self.config,'state-'+state);c['state']=state;self.store.put('campaigns',c)
+                preview=self.service.deletions.preview(c['id'])
+                self.assertEqual(preview['blockers'],[])
+                self.assertEqual(preview['requiresStop'],state not in ('draft','finished','failed'))
+                self.request(c['id'],key=state);self.finish(c['id'])
+
+    def test_inventory_excludes_large_bodies_and_revalidates_links_before_removal(self):
+        self.store.put('reports',{'id':'large','campaignId':self.c,'body':'body must not be loaded'*10000})
+        file=self.file('campaigns/'+self.c+'/history')
+        with self.store.connection() as db:
+            inventory=Inventory(self.service,self.c,db)
+            self.assertNotIn('body',inventory.rows['reports'][0])
+            self.assertFalse(inventory.build()['blockers'])
+        self.request();directory=file.parent
+        file.unlink();directory.rmdir();directory.symlink_to(self.data/'reports',target_is_directory=True)
+        self.service.deletions.advance(self.c)
+        self.assertEqual(self.store.deletion(self.c)['state'],'failed')
+        self.assertIn('符号链接',self.store.deletion(self.c)['error'])
+
+    def test_failed_build_staging_and_only_its_labeled_container_are_cleaned(self):
+        stage=self.file('cache/project-builds/tmp-fixture/source.tar','private source').parent
+        self.store.track_artifact(self.c,stage,'project_build_temp')
+        artifact=self.file('cache/project-builds/'+'c'*64+'.tar','private artifact')
+        self.store.track_artifact(self.c,artifact,'project_build')
+        containers=[{'Id':'owned','Config':{'Labels':{'phyexp.build.stage':str(stage)}}},
+                    {'Id':'unrelated','Config':{'Labels':{'phyexp.build.stage':str(stage)+'-other'}}}]
+        calls=[]
+        def engine(*args):
+            calls.append(args)
+            if args==('ps','-aq'):return 'owned unrelated'
+            if args[0]=='inspect':return json.dumps(containers)
+            return ''
+        self.request()
+        with patch('src.control.deletion_runtime.docker',side_effect=engine):self.finish()
+        self.assertIn(('rm','-f','-v','owned'),calls)
+        self.assertFalse(stage.exists());self.assertFalse(artifact.exists())
+
+    def test_engine_inventory_tolerates_unrelated_resource_removal_but_not_engine_failure(self):
+        for kind in ('container','network','volume'):
+            with self.subTest(kind=kind):
+                with patch('src.control.deletion_runtime.docker',side_effect=[
+                    'owned transient',Refused('transient disappeared'),'owned',json.dumps([{'Id':'owned'}])]):
+                    self.assertEqual(engine_inventory(kind),[{'Id':'owned'}])
+                with patch('src.control.deletion_runtime.docker',side_effect=['owned',Refused('engine unavailable'),'owned']):
+                    with self.assertRaisesRegex(Refused,'engine unavailable'):engine_inventory(kind)
+
+    def test_unknown_hardlink_cannot_be_silently_left_after_success(self):
+        body=Objects(self.data).put(b'private history')
+        owned=self.data/'campaigns'/self.c/'view';owned.parent.mkdir(parents=True);os.link(body,owned)
+        unknown=self.data/'unknown-view';os.link(body,unknown)
+        self.request();self.service.deletions.advance(self.c)
+        self.assertEqual(self.store.deletion(self.c)['state'],'failed')
+        self.assertIn('未登记',self.store.deletion(self.c)['error'])
+        self.assertTrue(unknown.exists());self.assertTrue(body.exists())
+        unknown.unlink();self.service.deletions.request(self.c,None,'retry-links',True);self.finish()
+
+    def test_busy_build_cache_is_not_removed_and_can_be_retried(self):
+        paths=[self.file('cache/project-builds/'+'d'*64+suffix) for suffix in ('.tar','.json','.lock')]
+        for path in paths:self.store.track_artifact(self.c,path,'project_build')
+        self.request()
+        with paths[-1].open() as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.service.deletions.advance(self.c)
+            self.assertEqual(self.store.deletion(self.c)['state'],'failed')
+            self.assertIn('缓存仍在使用',self.store.deletion(self.c)['error'])
+            self.assertTrue(all(p.exists() for p in paths))
+        self.service.deletions.request(self.c,None,'retry-build',True);self.finish()
+        self.assertFalse(any(p.exists() for p in paths))
+
+    def test_build_crash_registers_cache_and_staging_before_writing_sources(self):
+        script='''
+import io,os,subprocess,sys,types
+from pathlib import Path
+from src.control.store import Store
+from src.execution.bundle.project import build
+data,campaign=Path(sys.argv[1]),sys.argv[2];store=Store(data/'control.sqlite');write=Path.write_bytes
+subprocess.run=lambda *a,**k:types.SimpleNamespace(returncode=0,stdout='sha256:'+'a'*64)
+def crash(path,content):
+    result=write(path,content)
+    if path.name=='source.tar':os._exit(91)
+    return result
+Path.write_bytes=crash
+build({'run.sh':b'exit 0'}, {'build':{'image':'fixture','argv':['sh','-c','true']}},
+      data/'cache/project-builds',io.StringIO(),{},on_publish=lambda p,k:store.track_artifact(campaign,p,k))
+'''
+        result=subprocess.run([sys.executable,'-c',script,str(self.data),self.c],cwd=ROOT,timeout=10)
+        self.assertEqual(result.returncode,91)
+        rows=self.store.list('owned_artifacts',self.c)
+        self.assertEqual(sum(r['kind']=='project_build' for r in rows),3)
+        stage=Path(next(r['path'] for r in rows if r['kind']=='project_build_temp'))
+        self.assertTrue((stage/'source.tar').exists())
+        self.request()
+        with patch('src.control.deletion_runtime.docker',return_value=''):self.finish()
+        self.assertFalse(any((self.data/'cache/project-builds').iterdir()))
 
     def test_native_archive_and_file_view_hardlinks_are_collected_only_on_last_reference(self):
         for id in (self.c,):

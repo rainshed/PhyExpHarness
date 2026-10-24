@@ -771,6 +771,8 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 活动详情的「更多操作 → 删除活动…」提供永久删除。确认框显示活动名称、实验、候选、报告修订及导出数量。有在途工作时使用「停止并永久删除」；后台停止所属 Meta、子会话、主线与参考实验，等待构建、导出和下载结束后，删除配置、会话、研究记录、证据、轨迹、用量、报告全部修订和平台内导出。不会为删除启动新的总结或模型请求。
 
+支持草稿、运行中、暂停、收尾、失败和已结束活动，兼容 v1/v2/v3 冻结组合。新版候选的专属源码、构建产物、构建回执及缓存也随最后引用删除；仍被其他活动引用的内容保留。预检查会核对整个数据目录的共享归属，历史较多时需要等待，工作台允许核对和提交各等待最多 120 秒；超时后先查看状态，不能将超时当作删除成功或自动重复提交。
+
 删除受理后不能恢复运行。页面显示停止、清理或失败原因；关闭页面不取消后台任务，重启后台继续尚在执行的删除任务。失败时活动保持可见，处理错误后点击「重试删除」。只有完整清理成功才从列表移除，并清空当前选择及活动阅读缓存。
 
 其他活动通过历史来源功能纳入了此活动的证据或报告时，会列出依赖并禁止删除，包括「仅用户阅读」的副本。当前版本不自动改写其他活动的研究依据，也不提供解除引用功能。共用的执行插件、Meta 对象、资料包及归档正文按剩余引用保留，最后引用删除后回收；公共依赖、任务与 Runner 镜像、供应商凭据保持可用。用户另行下载或复制的文件、外部备份不随之删除。
@@ -779,7 +781,7 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 接口仅接受用户凭证：`GET /campaigns/{id}/deletion` 返回预检查或当前任务；首次 `POST` 提交 `{expectedRevision, idempotencyKey}`，失败后以新键及 `retry: true` 重试。活动修订变化会拒绝旧预检查，重新核对后再确认。完成后只保留活动 ID 和旧创建请求摘要等防重标记，不保留历史正文。
 
-源码更新后运行 `npm run build`，在无在途任务的维护窗口更新后台及工作台；数据库启动时自动创建版本 6 的删除任务与文件归属表。没有对现有活动执行自动删除。隔离验收入口：`python -m unittest tests.unit.campaign_deletion_test`、`python tests/smoke/campaign_deletion.py`（需要本地 Runner 镜像及 Docker）；浏览器夹具为 `tests/fixtures/deletion_workbench.py --data-dir <空的测试目录> --port <端口>`。这些检查均不调用真实模型，完整实现与边界见[删除设计](../design/campaign-deletion.md)。
+源码更新后运行 `npm run build`，在无在途任务的维护窗口更新后台及工作台；数据库启动时自动创建版本 6 的删除任务与文件归属表。没有对现有活动执行自动删除。隔离验收入口：`python -m unittest tests.unit.campaign_deletion_test`、`python tests/smoke/campaign_deletion.py`（需要本地 Runner 镜像及 Docker）；追加 `--build-image <已有的 shell 镜像>` 可验证真实 v3 构建、缓存登记和最后引用清理；浏览器夹具为 `tests/fixtures/deletion_workbench.py --data-dir <空的测试目录> --port <端口>`。这些检查均不调用真实模型，完整实现与边界见[删除设计](../design/campaign-deletion.md)。
 
 ### 控制数据库并发与报告发布
 
