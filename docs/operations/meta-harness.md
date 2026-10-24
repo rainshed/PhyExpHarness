@@ -125,6 +125,8 @@ tailscale serve --bg --https=18443 http://127.0.0.1:18401
 - Podman 的 `conmon_env_vars` 必须包含这些用户目录二进制需要的 PATH、动态库路径、容器配置路径及运行目录。缺失时清理子进程可能无法加载库，造成约 20 秒的退出等待；不能靠延长实验时限掩盖这个问题。
 - Podman 4 的 systemd 健康检查只继承 PATH。用户目录安装需让其定时任务调用同一 Podman 启动入口，带回依赖库和存储配置；只对本部署的 `healthcheck run` 转换命令，保留原健康检查内容及间隔，并验证定时重复执行。
 - Compose 启动等待由适配器读取真实运行状态：未定义健康检查的服务必须处于运行中，定义了健康检查的服务必须为 healthy；unhealthy、提前退出或等待超时均失败。此处理兼容 Podman 4 对 `HEALTHCHECK NONE` 返回空 Health 状态的差异。
+- 新冻结适配器把任务 `environment.build_timeout_sec` 的剩余时间传给 Compose；创建、发现容器和健康等待共用此时间，不再另设 180 秒截断。未传时间的旧入口仍保留原默认值。Solver 与独立评分阶段的时间配置不变。
+- `phyexp/environment-startup-agent.json` 和独立评分环境的 `environment-startup-verifier.json` 保存启动预算、耗时和阶段。Podman 等待期间持续保存状态变化及最近三次健康检查输出，即使外层超时取消也保留最后观测；未取得容器状态时不推测原因。环境超时、健康检查失败、提前退出和其他准备失败分别显示，原始官方评分不被覆盖。
 - 控制后台选择此策略时，会验证原生 Podman 的 rootless 状态，并核对 Docker 兼容客户端与它使用同一个存储目录。服务和临时目录要保持当前用户独占；共享 home 上的用户服务应限制启动主机。
 
 ### 镜像与隔离
@@ -136,6 +138,8 @@ Podman 4 不支持 Dockerfile 的逐条 `RUN --network=none`。对所有 RUN 都
 任务镜像锁保存 `containerRuntime` 和实际不可变镜像 ID，Runner/Meta 缓存也按运行策略区分。Docker 与单 UID Podman 的镜像不是同一个执行环境，不直接混合比较结果。实验期间依然禁止重建或拉取冻结镜像。
 
 Runner 保留无网络、只读根文件系统、精确挂载、清空 capabilities、禁止提权、系统调用过滤及 CPU/内存/进程数限制。main、qsim、独立 verifier 也清空 capabilities 并禁止提权；main/verifier 保留 Harbor 的有效 CPU、内存配置，未设置时限制为 2 CPU、4 GiB，qsim 为 4 CPU、8 GiB，均最多 256 个进程。具体而言，Shadow 的 main 保留 4 CPU，逻辑 CNOT 的 main 保留 6 GiB，不能被统一安全配置覆盖成较低额度。评分私有文件只进入 verifier，模型凭据仍由宿主网关持有。
+
+qsim 在 Compose 覆盖层设置 `OPENBLAS_NUM_THREADS=4`、`OMP_NUM_THREADS=4`、`MKL_NUM_THREADS=4`，与 4 CPU 配额对应；任务原有环境变量继续合并，main/verifier 不注入这些值。此修改随新冻结执行版本生效；线程调度变化可能带来浮点舍入差异，需要数值容差检查，不承诺逐位一致。
 
 Podman 4 的内部网络仍可能转发外部 DNS。此策略显式关闭该网络的 DNS，仅在 main 的 hosts 文件中固定本次 qsim 地址；移除 main 的其他网络后才提供任务工具。需要实测内部服务可达、外网 IP/宿主服务/外部 DNS 均不可达，不能只检查网络名称或配置标志。
 
@@ -155,6 +159,8 @@ python tests/smoke/harbor/public_tasks.py \
 ```
 
 该检查使用新输出目录，最多并发 2 个任务，不调用模型。它通过正式 MCP 运行探针、提交固定测试答案，核对独立评分、冻结镜像、main 的网络与文件隔离、任务间容器/数据卷分离和清理；Shadow 还经过封存挑战与文件提交，H₂O 经过锁定方案的生产测量。测试答案用于验证链路，得分不代表 Solver 能力，技术验收通过也不要求科学得分为 1。原始失败和后续复查保存在各自输出目录，不能覆盖失败记录。
+
+可单独用 `tests/smoke/harbor/environment_startup.py --quantum-harbor /absolute/Quantum-Harbor --lock /absolute/one-task-image-lock.json --output /absolute/new-startup-check --concurrency 3` 检查同一 Hamlearn 任务的三个并发环境。此入口消费已有镜像，验证健康状态、线程配置、镜像身份、容器/数据卷独立性和清理，不运行模型或评分器。该并发检查不能证明更高并发或长时间活动均稳定。
 
 Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid argument`：宿主文件属主不在容器的单 UID 映射内。Harbor 原有的 tar 流后备上传可完成该操作，无需改写 Harbor；验收要核对后备上传成功、最终 Trial 无异常及独立评分原件，不能只忽略日志中的错误。
 

@@ -35,6 +35,11 @@ MESSAGES = {
     'runtime_failed': '执行进程未正常完成，具体原因尚未确认',
     'result_collection_failed': '官方评分已完成，但平台收集结果失败',
     'container_transport_error': '容器工具桥接异常，官方评分未完成',
+    'environment_start_timeout': '容器环境未在任务启动时限内就绪',
+    'environment_healthcheck_failed': '容器环境健康检查失败',
+    'environment_container_exited': '容器在环境准备期间提前退出',
+    'environment_start_failed': '容器环境准备失败',
+    'environment_start_interrupted': '容器环境准备被中断',
     'storage_capacity': '存储空间达到保护线，已保留捕获内容并停止生产者',
     'storage_capacity_wait': '正在等待存储空间恢复',
     'archive_invalid': '结果或归档未通过完整性检查',
@@ -57,6 +62,38 @@ def public_failure(value):
     for key in ['requestId', 'detectedAt', 'policyVersion', 'termination', 'evidence', 'observed', 'limits', 'secondaryCodes']:
         if key in value: result[key] = value[key]
     return result
+
+
+def environment_failure(root, trial, trial_file):
+    if trial.get('verifier_result'):
+        return None  # A startup receipt cannot invalidate an official score.
+    exception = trial.get('exception_info') or {}
+    records = sorted(root.glob('harbor/*/phyexp/environment-startup-*.json'))
+    for file in records:
+        record = read(file)
+        code = record.get('code', '')
+        if record.get('status') == 'failed' and code.startswith('environment_') and code in MESSAGES:
+            if exception.get('exception_type') == 'EnvironmentStartTimeoutError':
+                code = 'environment_start_timeout'  # Harbor's outer timer cancels start().
+            return {'code': code, 'stage': 'environment', 'evidence': str(file.relative_to(root)),
+                    'scoringStatus': 'failed' if record.get('role') == 'verifier' else 'not_run'}
+    # Compatibility with Harbor's typed timeout and old wrapper receipts, without
+    # rewriting archives or treating every pre-agent collector error as startup.
+    code = None
+    if exception.get('exception_type') == 'EnvironmentStartTimeoutError':
+        code = 'environment_start_timeout'
+    elif trial.get('environment_setup') and not trial.get('agent_execution'):
+        message = exception.get('exception_message', '')
+        for text, cause in [('Compose containers did not become ready', 'environment_start_timeout'),
+                            ('Container failed its healthcheck:', 'environment_healthcheck_failed'),
+                            ('Container exited during startup:', 'environment_container_exited')]:
+            if text in message:
+                code = cause
+                break
+    if code:
+        return {'code': code, 'stage': 'environment', 'evidence': str(trial_file.relative_to(root)),
+                'scoringStatus': 'failed' if trial.get('agent_execution') else 'not_run'}
+    return None
 
 
 def diagnose(run_dir, stop_reason=None):
@@ -94,6 +131,11 @@ def diagnose(run_dir, stop_reason=None):
         scoring = 'not_run'
     if result and result['code'] in ['request_cancelled', 'runtime_failed'] and stop in MESSAGES:
         result = {**result, **public_failure({**result, 'code': stop})}
+    if not result and (stop not in MESSAGES or stop == 'runtime_failed'):
+        environment = environment_failure(root, trial, trial_files[0] if len(trial_files) == 1 else None)
+        if environment:
+            result = public_failure(environment)
+            scoring = environment['scoringStatus']
     if not result:
         bridge_error = (exception.get('exception_type') == 'RuntimeError'
                         and exception.get('exception_message', '').startswith('Container transport failed: '))

@@ -144,31 +144,82 @@ def startup_ready(container):
     return state.get('Running', False) and health == 'healthy'
 
 
+def startup_snapshot(containers):
+    snapshot = []
+    for container in containers:
+        state = container.get('State') or {}
+        health = state.get('Health') or {}
+        snapshot.append({'id': container.get('Id'), 'name': container.get('Name'),
+            'status': state.get('Status'), 'running': state.get('Running'),
+            'exitCode': state.get('ExitCode'), 'oomKilled': state.get('OOMKilled'),
+            'health': health.get('Status'), 'failingStreak': health.get('FailingStreak'),
+            'healthLog': [{k: str(entry[k])[-2048:] if k == 'Output' else entry[k]
+                           for k in ('Start', 'End', 'ExitCode', 'Output') if k in entry}
+                          for entry in (health.get('Log') or [])[-3:]]})
+    return snapshot
+
+
 def compose_wait(argv, config, environment):
     index = argv.index('up')
     prefix = [config['dockerClient'], *argv[:index]]
     arguments = argv[index:]
     if '--detach' not in arguments and '-d' not in arguments:
         raise ValueError('Pilot compose wait requires detached startup')
-    timeout = 180
+    timeout = 180  # Legacy callers; new frozen adapters pass the remaining task budget.
     if '--wait-timeout' in arguments:
         offset = arguments.index('--wait-timeout')
         timeout = int(arguments[offset+1]); del arguments[offset:offset+2]
+    if timeout <= 0:
+        raise ValueError('Compose startup timeout must be positive')
     arguments.remove('--wait')
-    result = subprocess.run([*prefix, *arguments], env=environment)
-    if result.returncode:
-        return result.returncode
-    ids = subprocess.check_output([*prefix, 'ps', '--all', '--quiet'], env=environment, text=True).split()
-    if not ids:
-        raise RuntimeError('Compose did not create any containers')
-    deadline = time.monotonic()+timeout
-    while True:
-        containers = json.loads(subprocess.check_output([config['podman'], 'inspect', *ids], text=True, timeout=30))
-        if all(startup_ready(container) for container in containers):
-            return 0
-        if time.monotonic() >= deadline:
+    started = time.monotonic()
+    deadline = started+timeout
+    containers, phase = [], 'compose-up'
+
+    def report(code=None):
+        # No Config.Env, mounts or hidden task configuration in this receipt.
+        print('PHYEXP_ENVIRONMENT_STARTUP='+json.dumps({'code': code, 'phase': phase,
+              'elapsedSeconds': time.monotonic()-started, 'budgetSeconds': timeout,
+              'containers': startup_snapshot(containers)}), file=sys.stderr, flush=True)
+
+    def remaining():
+        value = deadline-time.monotonic()
+        if value <= 0:
             raise TimeoutError('Compose containers did not become ready')
-        time.sleep(1)
+        return value
+
+    try:
+        result = subprocess.run([*prefix, *arguments], env=environment, timeout=remaining())
+        if result.returncode:
+            raise RuntimeError('Compose up failed with exit code '+str(result.returncode))
+        phase = 'container-discovery'
+        ids = subprocess.check_output([*prefix, 'ps', '--all', '--quiet'], env=environment,
+                                      text=True, timeout=remaining()).split()
+        if not ids:
+            raise RuntimeError('Compose did not create any containers')
+        phase = 'healthcheck'
+        previous = None
+        while True:
+            containers = json.loads(subprocess.check_output([config['podman'], 'inspect', *ids],
+                                                            text=True, timeout=remaining()))
+            snapshot = startup_snapshot(containers)
+            if snapshot != previous:
+                report()  # Preserve observations even if Harbor's outer timer cancels us.
+                previous = snapshot
+            # Evaluate every service: a starting first service must not hide a
+            # failed later service until the entire budget expires.
+            ready = [startup_ready(container) for container in containers]
+            remaining()
+            if len(containers) == len(ids) and all(ready):
+                return 0
+            time.sleep(min(1, remaining()))
+    except Exception as error:
+        code = ('environment_start_timeout' if isinstance(error, (TimeoutError, subprocess.TimeoutExpired))
+                else 'environment_healthcheck_failed' if str(error).startswith('Container failed its healthcheck:')
+                else 'environment_container_exited' if str(error).startswith('Container exited during startup:')
+                else 'environment_start_failed')
+        report(code)
+        raise
 
 
 def main():

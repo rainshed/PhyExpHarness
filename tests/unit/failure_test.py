@@ -55,6 +55,39 @@ class FailureTests(unittest.TestCase):
         self.assertEqual(diagnose(self.root)['scoringStatus'],'unknown')
         self.runtime.with_name('failure.json').write_text(json.dumps({'code':'request_cancelled','stage':'model'}))
         self.assertEqual(diagnose(self.root,'user_stop')['code'],'user_stop')
+
+    def test_environment_timeout_is_not_masked_by_collector_value_error(self):
+        result_path = self.root/'harbor/trial/result.json'
+        for exception in [{'exception_type':'EnvironmentStartTimeoutError'},
+                          {'exception_type':'RuntimeError','exception_message':'Compose containers did not become ready PRIVATE'}]:
+            result_path.write_text(json.dumps({'environment_setup':{'started_at':'fixture'}, 'exception_info':exception}))
+            original = result_path.read_bytes()
+            result = failed_result(self.root, ValueError('missing runtime summary'))
+            self.assertEqual(result['failure']['code'], 'environment_start_timeout')
+            self.assertEqual(result['failure']['stage'], 'environment')
+            self.assertEqual(result['scoringStatus'], 'not_run')
+            self.assertNotIn('PRIVATE', str(result['failure']))
+            self.assertEqual(result_path.read_bytes(), original)
+
+    def test_environment_receipt_preserves_role_and_never_overrides_scientific_score(self):
+        receipt = self.runtime.with_name('environment-startup-verifier.json')
+        receipt.write_text(json.dumps({'status':'failed','code':'environment_healthcheck_failed','role':'verifier'}))
+        self.write({'status':'completed'})
+        failure = diagnose(self.root)
+        self.assertEqual(failure['code'], 'environment_healthcheck_failed')
+        self.assertEqual(failure['scoringStatus'], 'failed')
+        result_path = self.root/'harbor/trial/result.json'
+        result_path.write_text(json.dumps({'verifier_result':{'rewards':{'reward':0}}}))
+        self.assertEqual(diagnose(self.root)['code'], 'result_collection_failed')
+        self.assertEqual(diagnose(self.root)['scoringStatus'], 'completed')
+
+    def test_outer_timeout_explains_cancellation_but_user_stop_keeps_its_cause(self):
+        self.runtime.with_name('environment-startup-agent.json').write_text(json.dumps(
+            {'status':'failed','code':'environment_start_interrupted','role':'agent'}))
+        (self.root/'harbor/trial/result.json').write_text(json.dumps(
+            {'exception_info':{'exception_type':'EnvironmentStartTimeoutError'}}))
+        self.assertEqual(diagnose(self.root)['code'], 'environment_start_timeout')
+        self.assertEqual(diagnose(self.root,'user_stop')['code'], 'user_stop')
     def test_history_projection_preserves_source_and_distinguishes_running_zero_missing(self):
         rows=[{'id':'running','state':'running','score':None},{'id':'zero','state':'finished','score':0},{'id':'old','state':'failed','score':None}]
         original=json.dumps(rows)

@@ -4,6 +4,7 @@ import os
 import subprocess
 
 PODMAN_SINGLE_UID = 'podman-single-uid-v1'
+QSIM_CPUS = 4
 # These tasks use data submissions and separate verifier containers. None
 # enables syndrome_feedback_control, whose submitted Python requires UID 65534.
 # Keep an explicit allowlist: new tasks do not inherit this compatibility claim.
@@ -37,11 +38,11 @@ def preflight(tasks):
             raise ValueError('Docker compatibility client and rootless Podman use different stores')
 
 
-def verify_image(image):
+def verify_image(image, *, timeout=30):
     if policy() != PODMAN_SINGLE_UID:
         return
     labels = json.loads(subprocess.check_output(
-        ['docker', 'image', 'inspect', image, '--format', '{{json .Config.Labels}}'], text=True, timeout=30)) or {}
+        ['docker', 'image', 'inspect', image, '--format', '{{json .Config.Labels}}'], text=True, timeout=timeout)) or {}
     if labels.get('org.phyexp.container-runtime') != PODMAN_SINGLE_UID:
         raise ValueError('Image was not provisioned for the single-UID runtime: '+image)
 
@@ -57,6 +58,12 @@ def compose_security(role, *, cpus=None, memory_mb=None):
         return {}
     # UID 0 maps to the ordinary host user. No container receives capabilities,
     # privilege escalation, host networking, or the engine's control socket.
-    return {'user': '0:0', 'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
-            'pids_limit': 256, 'cpus': 4 if role == 'qsim' else (cpus or 2),
-            'mem_limit': '8g' if role == 'qsim' else (str(memory_mb)+'m' if memory_mb else '4g')}
+    result = {'user': '0:0', 'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
+              'pids_limit': 256, 'cpus': QSIM_CPUS if role == 'qsim' else (cpus or 2),
+              'mem_limit': '8g' if role == 'qsim' else (str(memory_mb)+'m' if memory_mb else '4g')}
+    if role == 'qsim':
+        # BLAS sees host CPUs rather than the cgroup quota. Oversubscription can
+        # stall the Hamiltonian eigendecomposition before its HTTP server starts.
+        result['environment'] = {key: str(QSIM_CPUS) for key in
+                                 ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS')}
+    return result
