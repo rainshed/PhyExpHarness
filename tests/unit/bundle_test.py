@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 import shutil
+import subprocess
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from jsonschema import ValidationError
@@ -46,6 +47,20 @@ class BundleTests(unittest.TestCase):
         catalog=json.loads((project/'src/execution/host/model-catalog.json').read_text())
         self.assertEqual(catalog['providers']['deepseek-official']['models'][0]['versionPolicy'],'rolling-alias')
         self.assertFalse(list(project.rglob('credentials.json')))
+
+    def test_exported_gateway_loads_without_repository_sources(self):
+        bundle=self.freeze()
+        project=Path(export_project(bundle['path'],self.base/'standalone')['path'])
+        shutil.rmtree(self.base/'store')
+        # Only third-party dependencies are shared; every local module must ship.
+        (project/'node_modules').symlink_to(ROOT/'node_modules',target_is_directory=True)
+        result=subprocess.run(['node','--input-type=module','-e',
+            "import {ModelGateway} from './src/execution/host/model_gateway.mjs';"
+            "import {modelAccess} from './src/execution/host/model_access.mjs';"
+            "if(typeof ModelGateway!=='function')throw Error('Gateway unavailable');"
+            "await modelAccess({deadline:Date.now()+1000}).reserve('standalone',{});"],
+            cwd=project,capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
 
     def test_freeze_rejects_workspace_changes_before_publication(self):
         read=Path.read_bytes;changed=False

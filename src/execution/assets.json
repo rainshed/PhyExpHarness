@@ -43,9 +43,10 @@
       },
       {
         "role": "fixed-host-supervision",
-        "purpose": "Credential boundary, fixed model, request protection, accounting, task network and one-Trial supervision required by the existing execution contract.",
+        "purpose": "Credential boundary, fixed model, request protection, model access, legacy accounting compatibility, task network and one-Trial supervision.",
         "files": [
           "src/execution/host/model_gateway.mjs",
+          "src/execution/host/model_access.mjs",
           "src/execution/host/task_network.py",
           "src/execution/host/container_runtime.py",
           "src/execution/host/capabilities.mjs",
