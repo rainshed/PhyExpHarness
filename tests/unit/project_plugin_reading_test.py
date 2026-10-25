@@ -108,10 +108,12 @@ class ProjectPluginReadingTests(unittest.TestCase):
 
     def test_meta_materials_read_sources_without_scanning_built_artifact(self):
         from src.evidence.materials import Materials
+        from src.control.service import ControlService
         frozen=self.frozen();candidate=self.candidate(frozen)
         exported=export_project(frozen['path'],self.root/'exports')
-        store=SimpleNamespace(get=lambda *_:{'id':'campaign'},list=lambda *_:[candidate])
-        materials=Materials(SimpleNamespace(store=store))
+        store=SimpleNamespace(get=lambda *_:{'id':'campaign','config':{'executionResources':{}}},list=lambda *_:[candidate])
+        service=ControlService.__new__(ControlService);service.store=store
+        materials=Materials(service)
         original=Path.read_bytes
         def read(path):
             self.assertNotEqual(path.name,'candidate.tar','Reading navigation must not revalidate the executable artifact')
@@ -119,6 +121,7 @@ class ProjectPluginReadingTests(unittest.TestCase):
         for location in (frozen['path'],exported['path']):
             candidate['bundlePath']=location
             with patch.object(Path,'read_bytes',read):
+                self.assertEqual(service.execution_policy('campaign')['version'],'harbor-process-v1')
                 self.assertEqual(json.loads(materials._version(candidate))['bundleId'],frozen['id'])
                 records=list(materials._records('campaign','plugin'))
                 source=next(r for r in records if r['source']['asset']=='candidate/plugins/clock/index.mjs')

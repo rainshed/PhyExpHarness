@@ -274,9 +274,11 @@ class ControlService:
         candidates=self.store.list('candidates',campaign)
         baseline=candidates[0] if candidates else {}
         if not baseline or not (Path(baseline['bundlePath'])/'bundle.json').is_file():return None
-        resolved=resolve_bundle(baseline['bundlePath'])
-        if resolved.manifest.get('schemaVersion')==3:
+        if json.loads((Path(baseline['bundlePath'])/'bundle.json').read_text()).get('schemaVersion')==3:
+            from src.execution.bundle.plugin_reading import project_sources
+            project_sources(baseline['bundlePath'],baseline['bundleId'])
             return {'version':'harbor-process-v1','strategyOwner':'candidate','modelChannel':'HTTP/SSE; fixed Solver and original deadline; no semantic guard or automatic retry','resources':self.store.get('campaigns',campaign)['config']['executionResources']}
+        resolved=resolve_bundle(baseline['bundlePath'])
         policy=resolved.assets.get('src/execution/host/stream-policy.json')
         result=json.loads(policy.read_text()) if policy else None
         if result and benchmark_time(self.store.get('campaigns',campaign)['config']):
