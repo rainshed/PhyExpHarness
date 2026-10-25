@@ -4,6 +4,7 @@ import http from 'node:http';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import {bridgeStream} from './bridge_stream.mjs';
 const config = JSON.parse(fs.readFileSync('/config/runner.json', 'utf8'));
 const pending = new Map();
 const send = row => process.stdout.write(JSON.stringify(row) + '\n');
@@ -15,7 +16,7 @@ const server = http.createServer(async (req, res) => {
   try {
     for await (const part of req) { data += part; if (Buffer.byteLength(data) > 32 * 1024 * 1024) throw new Error('Request too large'); }
     const payload = mcpName ? {name:mcpName,method:req.method,headers:req.headers,body:data} : JSON.parse(data);
-    if(!mcpName)res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+    if(!mcpName)bridgeStream(res);
     pending.set(id, row => {
       if (row.error) { if(mcpName&&!res.headersSent) res.writeHead(502); res.write(JSON.stringify({ error: row.error, ...(row.failure?{failure:row.failure}:{}) }) + '\n'); }
       if (row.result !== undefined) {

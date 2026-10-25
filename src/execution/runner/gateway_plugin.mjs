@@ -15,6 +15,7 @@ export async function* requestHost(operation, payload, signal) {
     let end;
     while ((end = buffer.indexOf('\n')) >= 0) {
       const row = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
+      if (row.heartbeat === true) continue;
       if (row.error) throw row.failure?Object.assign(new LlmError(row.failure.message,row.failure.code,row.failure),{gatewayFailure:row.failure}):new Error(row.error);
       yield row.result;
     }
