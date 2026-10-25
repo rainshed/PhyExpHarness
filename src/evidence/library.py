@@ -131,12 +131,17 @@ class EvidenceLibrary:
             if retain_items:items.append(item)
             if progress and (index%100==0 or index==len(files)):progress(rel,index,len(files))
         return items
+    def body(self,row):
+        from .cold import ColdArchive
+        data=ColdArchive(self.objects.root.parent.parent).read(row['sha256']) if Path(row['path'])==self.objects.path(row['sha256']) else Path(row['path']).read_bytes()
+        if hashlib.sha256(data).hexdigest()!=row['sha256']:raise Refused('Evidence integrity mismatch')
+        return data
+
     def read(self,campaign,id,offset=0,limit=16000):
         row=self.store.get('evidence',id)
         if row['campaignId']!=campaign:raise Refused('Evidence belongs to another Campaign')
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=32000:raise Refused('Invalid evidence range')
-        data=Path(row['path']).read_bytes()
-        if hashlib.sha256(data).hexdigest()!=row['sha256']:raise Refused('Evidence integrity mismatch')
+        data=self.body(row)
         try:text=(gzip.decompress(data) if row.get('source',{}).get('archive','').endswith('.gz') else data).decode('utf-8')
         except UnicodeDecodeError:return {k:v for k,v in row.items() if k!='path'}|{'encoding':'binary','previewAvailable':False}
         return {k:v for k,v in row.items() if k!='path'}|{'offset':offset,'offsetUnit':'characters','total':len(text),'text':text[offset:offset+limit],
@@ -150,8 +155,9 @@ class EvidenceLibrary:
         if row['campaignId']!=campaign:return {**result,'availability':'unauthorized','reason':'证据未纳入当前活动'}
         result.update(evidence={k:v for k,v in row.items() if k!='path'})
         if anchor.get('unit')!='characters':return {**result,'availability':'unsupported','reason':'此定位格式尚不支持；需要 Unicode 字符范围'}
-        try:data=Path(row['path']).read_bytes()
-        except OSError:return {**result,'reason':'原始文件缺失'}
+        try:data=self.body(row)
+        except OSError:return {**result,'reason':'原始文件暂不可读'}
+        except Refused:return {**result,'availability':'stale','reason':'证据内容摘要不匹配'}
         if hashlib.sha256(data).hexdigest()!=row['sha256'] or anchor.get('sha256')!=row['sha256']:
             return {**result,'availability':'stale','reason':'证据内容摘要不匹配'}
         try:text=(gzip.decompress(data) if row.get('source',{}).get('archive','').endswith('.gz') else data).decode('utf-8')

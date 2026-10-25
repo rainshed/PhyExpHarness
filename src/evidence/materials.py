@@ -192,7 +192,7 @@ class Materials:
                 t = trials.get(e['trialId'], {})
                 yield self._record('evidence:' + e['id'], 'evidence', e['kind'],
                     {'evidenceId':e['id'],'archive':e['source'].get('archive'),'policy':e['policy'],**({'adoption':e['source']['adoption']} if e['source'].get('adoption') else {})},
-                    lambda r=e: checked_text(Path(r['path']).parent, Path(r['path']).name, r['sha256']),
+                    lambda r=e: self.service.evidence.body(r).decode('utf-8'),
                     evidenceId=e['id'], trialId=e['trialId'], batchId=t.get('batchId'), task=t.get('task'),
                     candidateId=t.get('candidateId'), version=e['sha256'], sha256=e['sha256'])
         if include('analysis'):

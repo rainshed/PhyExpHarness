@@ -93,6 +93,9 @@ class StopRuntime:
     def __init__(self,service):self.service=service;self.store=service.store
     def dispatch(self,session_id,action,data):
         store=self.store
+        if action in ('review_request','review_result'):
+            from src.evidence.cold import ColdArchive
+            ColdArchive(store.path.parent).prepare_references(store,store.get('meta_sessions',session_id)['campaignId'],data)
         with store.connection(action not in ('call','review_status'),operation='meta_runtime.'+action) as db:
             session=store._get(db,'meta_sessions',session_id);campaign=session['campaignId'];c=store._get(db,'campaigns',campaign)
             if c['config'].get('stopPolicy') not in CONTROLLED_POLICIES or session['state'] not in ['starting','running','waiting']:raise Refused('Active composed Meta session required')

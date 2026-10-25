@@ -767,7 +767,30 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 后台仅回收宽限期外、无数据库/归档引用且无硬链接视图的对象，以及已过期的对象发布临时文件。依赖/适配缓存只清理非当前代际，且须无活动任务、无进程引用、无文件视图引用并取得构建锁。冻结镜像、当前依赖、会话、研究证据不按年龄或分数删除；无法判断使用状态则跳过。自动整理异常在活动存储面板显示。容器存储监测实际空闲容量，不按镜像累计虚拟大小估算，也不自动执行镜像 prune。
 
-增长预测至少需要一小时观测，重启重新积累；没有有效正增长时不提供剩余时长。有限磁盘不能保证任意一周活动持续产出，等待存储是保护状态。外部归档、历史迁移及历史清空不属于本次更新。
+增长预测至少需要一小时观测，重启重新积累；没有有效正增长时不提供剩余时长。有限磁盘不能保证任意一周活动持续产出，等待存储是保护状态。可选外部归档见下文；部署不自动清空历史。
+
+### 可选 NFS 证据归档
+
+宿主可通过 `scripts/archive-evidence.py` 管理独立归档策略。执行前确认本地数据与远端目录权限、共享空间预算、生产者状态，并备份活动配置和数据库。不要把活跃 SQLite WAL、Podman 镜像或整个 `data/` 移到 NFS。配置文件保存在仓库外；例如：
+
+```json
+{"version":1,"enabled":true,"evict":false,"root":"/your-writable-nfs/PhyExpHarness/archive","instance":"node-2","bytesPerSecond":33554432,"maxBytes":214748364800,"minFreeBytes":10737418240,"localReserveBytes":2147483648,"cacheSeconds":3600,"minObjectBytes":65536,"lockTimeoutSeconds":5,"restoreTimeoutSeconds":30}
+```
+
+```bash
+python scripts/archive-evidence.py --data /local/data configure /private/archive-policy.json
+python scripts/archive-evidence.py --data /local/data run
+python scripts/archive-evidence.py --data /local/data status
+python scripts/archive-evidence.py --data /local/data restore trials/launch-id
+```
+
+首次先使用 `evict:false` 复制、读回验证，确认跨盘恢复和原始摘要一致后改为 `evict:true`。后台每分钟尝试一轮；已有归档任务时不重复启动。配置由后台每轮重新读取，无需再次重启。每个对象保存为 `<root>/<instance>/objects/<前两位>/<sha>.gz`，同名 `.json` 是路径和归属回执。本地 `archive-index.sqlite` 保存定位；维护备份须同时保存控制数据库、归档索引和策略，整库备份置于受管数据目录之外。归档及独立维护备份是两个范围，单活动删除不会同步删除独立备份。
+
+`GET /storage` 和活动存储面板显示归档对象数、压缩后大小、状态和最近错误。原始证据的 API、材料、历史来源纳入和文件视图会按需恢复；归集重放恢复原始路径后核验。恢复有本地容量预留及超时，失败不会提供部分正文。完整清单与官方结果留在本地；运行中的写入、会话文件、活动会话已获得的文件视图不回收。原生脚本直接读主机历史目录前，先使用 `restore`。已发布的活动内路径继续可用。
+
+需要回退时先将策略设为 `enabled:false`、`evict:false`，确认后台归档进程结束，再执行 `restore-all` 并核验原路径/摘要，之后才可切回不支持归档的旧程序。禁用归档本身不会自动恢复正文。不可直接修改既有策略的 `root/instance`；远端故障时保留定位与本地有效文件并修复连接。NFS 共享空闲量不等于个人配额，本方案也不保证持续增长的数据能无限运行。
+
+容量等待的本机 NDJSON 网关在新冻结运行时中立即发送响应头，并每 15 秒发送一次保活帧；消费者忽略保活帧。该行为避免等待期间被 HTTP 响应头/空闲超时误取消，不改变截止时间、实际取消或模型设置。
 
 ### 单次活动永久删除
 

@@ -65,6 +65,26 @@ class CampaignDeletionTests(unittest.TestCase):
         preview=self.service.deletions.preview(campaign)
         return self.service.deletions.request(campaign,preview.get('expectedRevision'),key,**args)
 
+    def test_external_archive_cleanup_is_required_and_retryable(self):
+        from src.evidence.cold import ColdArchive
+        from src.evidence.objects import atomic_json
+        with tempfile.TemporaryDirectory() as remote:
+            policy={'version':1,'enabled':True,'root':remote,'instance':'deletion','bytesPerSecond':0,'minFreeBytes':1}
+            atomic_json(self.data/'archive-policy.json',policy)
+            row=self.store.get('campaigns',self.c);row['config']['storagePolicy']=POLICY;self.store.put('campaigns',row)
+            evidence=self.service.evidence.add(self.c,None,'raw','archived result',{})
+            cold=ColdArchive(self.data);cold.publish(evidence['sha256'],[],[self.c])
+            target=next(Path(remote).rglob('*.gz'))
+            self.request()
+            with patch.object(ColdArchive,'delete_campaign',side_effect=OSError('remote unavailable')):
+                self.service.deletions.advance(self.c)
+            self.assertNotEqual(self.store.deletion(self.c)['state'],'deleted')
+            self.assertTrue(target.exists())
+            self.service.deletions.request(self.c,None,'retry-remote',retry=True)
+            self.finish()
+            self.assertFalse(target.exists())
+            self.assertFalse(target.with_suffix('.json').exists())
+
     def finish(self,campaign=None,service=None):
         service=service or self.service;campaign=campaign or self.c
         service.deletions.advance(campaign)

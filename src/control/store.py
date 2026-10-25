@@ -372,6 +372,13 @@ class Store:
                 c['selectionDecision']=self._get(db,'selection_decisions',c['selectionDecisionId'])
             return c
     def control(self,id,action,key,expected_revision=None,changes=None):
+        if action=='finish':
+            from src.evidence.cold import ColdArchive
+            payload=changes or {}
+            if payload.get('reviewId'):
+                review=self.get('stop_reviews',payload['reviewId'])
+                if review['campaignId']==id:payload={**payload,'review':review}
+            ColdArchive(self.path.parent).prepare_references(self,id,payload)
         payload={'action':action,'expectedRevision':expected_revision,'changes':changes}
         with self.connection(True) as db:
             prior=self._idem(db,id,'control',key,payload)
@@ -754,6 +761,8 @@ class Store:
             if job:self._save(db,'collection_jobs',job)
             self._event(db,campaign,'finished',reason=c['stopReason']);return c
     def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None,summary=None,alternatives=None,researchRefs=None):
+        from src.evidence.cold import ColdArchive
+        ColdArchive(self.path.parent).prepare_references(self,campaign,{'evidenceRefs':refs,'alternatives':alternatives})
         rejection=None
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)

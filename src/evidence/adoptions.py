@@ -22,7 +22,7 @@ class Adoptions:
                 trial=self.store.get('trials',row['trialId'])
                 if trial['campaignId']!=sourceCampaignId:raise Refused('Source Trial identity mismatch')
             tasks=[trial['task']] if trial else source['config']['tasks']
-            data=Path(row['path']).read_bytes()
+            data=self.service.evidence.body(row)
             if hashlib.sha256(data).hexdigest()!=row['sha256']:raise Refused('Historical evidence integrity mismatch')
         else:
             tasks=source['config']['tasks']
