@@ -1,3 +1,4 @@
+import contextlib
 import gzip
 import hashlib
 import json
@@ -85,6 +86,28 @@ class ColdTests(unittest.TestCase):
         self.cold.delete_campaign('c',self.store);self.assertTrue(remote.exists())
         with self.store.connection(True) as db:db.execute('DELETE FROM evidence WHERE campaign=?',('c',))
         self.cold.delete_campaign('other',self.store);self.assertFalse(remote.exists())
+    def test_deletion_reference_lookup_is_bounded_with_unrelated_history(self):
+        self.cycle();remote=next(self.remote.rglob('*.gz'))
+        with self.store.connection(True) as db:
+            for table in ('evidence','source_adoptions'):
+                db.executemany(f'INSERT INTO {table} VALUES(?,?,?)',[
+                    (f'unrelated-{i}','other',json.dumps({'sha256':hashlib.sha256(str(i).encode()).hexdigest()}))
+                    for i in range(3000)])
+        connection=self.store.connection
+        steps=0
+        def progress():
+            nonlocal steps
+            steps+=100
+            return int(steps>5000)
+        @contextlib.contextmanager
+        def bounded_connection(*args,**kwargs):
+            with connection(*args,**kwargs) as db:
+                db.set_progress_handler(progress,100)
+                yield db
+        with patch.object(self.store,'connection',bounded_connection):
+            self.cold.delete_campaign('c',self.store)
+        self.assertFalse(remote.exists())
+        self.assertLess(steps,5000,'Deleting one body must not scan unrelated history')
     def test_locator_reopens_and_traversal_is_rejected(self):
         self.cycle();self.assertEqual(ColdArchive(self.data).read(self.sha),self.content)
         with self.assertRaises(ValueError):self.cold.safe('../outside')

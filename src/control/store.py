@@ -205,6 +205,10 @@ class Store:
                 row='old' if event=='DELETE' else 'new'
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS evidence_version_{event.lower()} AFTER {event} ON evidence BEGIN INSERT INTO evidence_versions VALUES({row}.campaign,1) ON CONFLICT(campaign) DO UPDATE SET version=version+1; END")
             db.execute("CREATE INDEX IF NOT EXISTS evidence_identity ON evidence(campaign,json_extract(data,'$.trialId'),json_extract(data,'$.kind'),json_extract(data,'$.sha256'))")
+            # Archive deletion checks other campaigns by digest for every body.
+            # Campaign-first indexes otherwise scan all historical evidence.
+            for table in ('evidence','source_adoptions'):
+                db.execute(f"CREATE INDEX IF NOT EXISTS {table}_digest_campaign ON {table}(json_extract(data,'$.sha256'),campaign)")
             db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
             db.execute('CREATE TABLE IF NOT EXISTS deletions(campaign TEXT PRIMARY KEY,data TEXT NOT NULL)')
