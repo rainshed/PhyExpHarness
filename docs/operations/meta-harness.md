@@ -827,3 +827,5 @@ Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评�
 `python scripts/project-candidate-diagnostics.py --data <data> --campaign <id>` 仅检查历史候选错误；加 `--write` 追加 failure-diagnoses.json 阅读投影。它记录输入摘要，不改官方结果、原事件或历史报告。
 
 TensorTrain 2 于 2026-10-25 发布 `936d39a`，control/workbench 均使用独立 release；规模验证、历史完整性核对和已知性能边界见[发布验收](../plans/control-plane-scalability.md#7-tensortrain-2-发布验收)。候选诊断包含运行中可能已恢复的错误，读取时须结合最终结果，不能将上报错误数量当作失败次数。
+
+同日按用户授权暂停并永久删除本次测试活动后，control/workbench 已切换至 `2d60358`，补齐原生 Meta 材料与执行策略说明的读取性能修复。两个服务验收正常；没有自动创建或启动新活动。
