@@ -29,6 +29,7 @@
 | 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
 | Meta 执行策略自主权、全链路限制取舍与 Harbor 接入重构 | [职责设计](docs/design/execution-harness-boundary.md)、[实施计划](docs/plans/execution-harness-refactor.md) |
 | 长活动存储共享、快照、压缩与容量保护 | [存储管理设计](docs/design/storage-management.md) |
+| 长活动归集阻塞、证据规模与调度诊断 | [修复计划](docs/plans/control-plane-scalability.md) |
 | 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
 | 单次活动永久删除、停止与共享数据清理 | [删除设计](docs/design/campaign-deletion.md) |
 | Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
