@@ -106,6 +106,30 @@ class ProjectPluginReadingTests(unittest.TestCase):
         source.unlink()
         self.assertEqual(candidate_plugins(candidate)[0]['readingStatus'], 'unavailable')
 
+    def test_meta_materials_read_sources_without_scanning_built_artifact(self):
+        from src.evidence.materials import Materials
+        frozen=self.frozen();candidate=self.candidate(frozen)
+        exported=export_project(frozen['path'],self.root/'exports')
+        store=SimpleNamespace(get=lambda *_:{'id':'campaign'},list=lambda *_:[candidate])
+        materials=Materials(SimpleNamespace(store=store))
+        original=Path.read_bytes
+        def read(path):
+            self.assertNotEqual(path.name,'candidate.tar','Reading navigation must not revalidate the executable artifact')
+            return original(path)
+        for location in (frozen['path'],exported['path']):
+            candidate['bundlePath']=location
+            with patch.object(Path,'read_bytes',read):
+                self.assertEqual(json.loads(materials._version(candidate))['bundleId'],frozen['id'])
+                records=list(materials._records('campaign','plugin'))
+                source=next(r for r in records if r['source']['asset']=='candidate/plugins/clock/index.mjs')
+                self.assertEqual(source['_load'](),'export const clock = 1;')
+        candidate['bundlePath']=frozen['path']
+        resolved=resolve(frozen['path']);source=resolved.asset('candidate/plugins/clock/index.mjs')
+        source.chmod(0o644);source.write_text('tampered')
+        with self.assertRaisesRegex(ValueError,'mismatch'):
+            materials._plugin(candidate,'candidate/plugins/clock/index.mjs')
+        with self.assertRaises(Refused):materials._plugin(candidate,'candidate/../recipe.json')
+
     def test_missing_metadata_and_undeclared_path_remain_readable(self):
         (self.plugin / 'plugin.json').unlink()
         a = self.candidate(self.frozen())

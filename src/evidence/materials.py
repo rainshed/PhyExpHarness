@@ -6,9 +6,9 @@ from pathlib import Path
 from src.control.store import Refused, encoded
 from src.control.operations import workspace_path
 from src.control.meta_context import activity_state
-from src.execution.bundle.manifest import verify,resolve
+from src.execution.bundle.manifest import resolve,checked_path
 from src.reporting.tables import plugin_changes
-from src.execution.bundle.plugin_reading import candidate_plugins
+from src.execution.bundle.plugin_reading import candidate_plugins,project_sources,read_asset
 
 KINDS = ('activity', 'task', 'sdk', 'version', 'plugin', 'experiment', 'evidence', 'analysis', 'guide')
 GUIDES = {
@@ -98,9 +98,18 @@ class Materials:
                 yield self._record('task:' + task, 'task', task + ' · 任务原文', '历史归档',
                     lambda: '', task=task, availability='unavailable', reason='没有可核对的历史任务原文；未替换为当前文件')
 
+    def _source_materials(self, candidate):
+        root=Path(candidate['bundlePath'])
+        header=json.loads(read_asset(checked_path(root,'bundle.json')))
+        if header.get('schemaVersion')==3:
+            manifest,files,asset=project_sources(root,candidate['bundleId'])
+            return manifest,{'candidate/'+name:sha for name,sha in files.items()},lambda name:asset(name.removeprefix('candidate/'))
+        resolved=resolve(root)
+        return resolved.manifest,resolved.manifest['files'],resolved.asset
+
     def _version(self, candidate):
-        manifest = verify(candidate['bundlePath'])
-        recipe = json.loads(checked_text(candidate['bundlePath'], 'recipe.json', manifest['files']['recipe.json']))
+        manifest,files,_ = self._source_materials(candidate)
+        recipe = json.loads(checked_text(candidate['bundlePath'], 'recipe.json', manifest['recipeDigest'] if manifest.get('schemaVersion')==3 else files['recipe.json']))
         parent=self.store.get('candidates',candidate['parentId']) if candidate.get('parentId') else None
         return encoded({'source': '冻结执行组合', 'candidateId': candidate['id'],
                         'bundleId': manifest['id'], 'parentId': candidate.get('parentId'),
@@ -109,11 +118,10 @@ class Materials:
                         **({k:manifest[k] for k in ('project','sources','artifact','adapter','buildReceipt','infrastructureVersion')} if manifest.get('schemaVersion')==3 else {})})
 
     def _plugin(self, candidate, relative):
-        resolved = resolve(candidate['bundlePath']);manifest = resolved.manifest
-        if not relative.startswith('candidate/' if manifest.get('schemaVersion')==3 else 'plugins/') or relative not in manifest['files']:
+        manifest,files,asset = self._source_materials(candidate)
+        if not relative.startswith('candidate/' if manifest.get('schemaVersion')==3 else 'plugins/') or relative not in files:
             raise Refused('Not a frozen plugin asset')
-        file = resolved.asset(relative)
-        return checked_text(file.parent, file.name, manifest['files'][relative])
+        return read_asset(asset(relative),files[relative]).decode('utf-8')
 
     def _experiment(self, campaign, batch):
         from .diagnostics import trial_diagnostics
@@ -160,12 +168,12 @@ class Materials:
                         lambda r=c: self._version(r), candidateId=c['id'], version=c['bundleId'], createdAt=c.get('createdAt'))
                 if include('plugin'):
                     # Only the frozen manifest's plugin assets are addressable.
-                    try:manifest = verify(c['bundlePath'])
+                    try:manifest,files,_ = self._source_materials(c)
                     except (OSError,ValueError) as error:
                         yield self._record('plugin:'+c['id'],'plugin',title,'冻结执行组合',lambda:'',
                             candidateId=c['id'],availability='unavailable',reason=str(error))
                         continue
-                    for relative, digest in sorted(manifest['files'].items()):
+                    for relative, digest in sorted(files.items()):
                         if relative.startswith('candidate/' if manifest.get('schemaVersion')==3 else 'plugins/'):
                             yield self._record('plugin:' + c['id'] + ':' + relative, 'plugin', title + ' / ' + relative,
                                 {'candidateId': c['id'], 'asset': relative}, lambda r=c, p=relative: self._plugin(r, p),
