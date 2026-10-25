@@ -215,6 +215,8 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(status['retainedCandidateId'],candidate['id'])
         self.assertEqual(len(status['selectionDecisions']),1)
         self.assertIn('缺少有效官方评分',';'.join(status['selectionDecision']['assessment']['comparisonLimitations']))
+        navigation=self.service.status(self.c)['selectionDecision']
+        self.assertNotIn('assessment',navigation);self.assertTrue(navigation['detailsAvailable'])
         summary=self.client.post('/meta/'+self.c,json={'operation':'campaign_status','input':{}}).json()
         self.assertEqual(summary['selectionDecision']['reason'],body['input']['reason'])
         self.assertIn('comparisonLimitations',summary['selectionDecision'])

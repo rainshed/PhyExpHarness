@@ -74,3 +74,11 @@ class ScalabilityTests(unittest.TestCase):
         self.store.put('meta_sessions',{**row,'state':'waiting'})
         with patch.object(self.service,'_process_alive',return_value=False):driver.reconcile_closed(self.cid)
         self.assertEqual(self.store.get('meta_sessions',row['id'])['state'],'failed')
+
+    def test_nested_candidate_turn_failure_is_reported_once_with_exact_pointer(self):
+        failure={'code':'PI_AI_ERROR','message':'no healthy upstream'}
+        self.write('harbor/trial/phyexp/events.json',[
+            {'type':'assistant/attempt','data':{'stream':[{'chunk':'malformed'},None,{'chunk':{'reason':{'failure':failure}}}]}},
+            {'type':'turn/end','data':{'reason':{'error':failure}}}])
+        found=candidate_diagnostics(self.output,{})
+        self.assertEqual(len(found),1);self.assertEqual(found[0]['pointer'],'/1/data/reason/error')

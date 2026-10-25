@@ -232,12 +232,18 @@ class ControlService:
         if config.get('taskImagePolicy')==TASK_IMAGE_POLICY:
             try:verify_locks(self.quantum,config['tasks'],config.get('taskImageLocks',{}))
             except ValueError as error:raise Refused(str(error)) from error
+    @staticmethod
+    def status_navigation(value):
+        if value.get('selectionDecision'):
+            value['selectionDecision']={k:v for k,v in value['selectionDecision'].items() if k in ('id','candidateId','previousCandidateId','createdAt','summary','limitations')}|{'detailsAvailable':True}
+        return value
     def list_status(self):
-        return [{**self.store.status(c['id']), 'metaStatus':meta_status(self.store.list('meta_sessions',c['id'])),
+        return [{**self.status_navigation(self.store.status(c['id'])), 'metaStatus':meta_status(self.store.list('meta_sessions',c['id'])),
                  **({'deletion':self.deletions.public(self.store.deletion(c['id']))} if c['state']=='deleting' else {})}
                 for c in self.store.list('campaigns')]
-    def status(self,campaign):
+    def status(self,campaign,*,navigation=True):
         value=self.store.status(campaign)
+        if navigation:value=self.status_navigation(value)
         if value['state']=='deleting':
             return {**value,'deletion':self.deletions.public(self.store.deletion(campaign)),
                     **{k:[] for k in ['candidates','batches','trials','reports','exports','evidence','operations','metaSessions']},
@@ -249,6 +255,7 @@ class ControlService:
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
             exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
             evidence=evidence['items'],evidenceIndex={k:v for k,v in evidence.items() if k!='items'})
+        for trial in value['trials']:trial.pop('summary',None)
         value['references']=self.references.status(campaign)
         value['metaStatus']=meta_status(value['metaSessions'])
         value['executionProtection']=self.execution_policy(campaign)
@@ -659,7 +666,7 @@ class ControlService:
         if operation=='campaign_status':
             if args.get('view','summary')=='summary':return activity_state(self,campaign)
             if args.get('view')!='full':raise Refused('Unknown status view')
-            status=self.status(campaign)
+            status=self.status(campaign,navigation=False)
             for t in status['trials']:
                 t.pop('summary',None)
                 if 'taskSources' in t.get('comparisonContext',{}):

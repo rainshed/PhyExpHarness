@@ -62,12 +62,31 @@ def candidate_diagnostics(root,summary):
         except (OSError,ValueError):continue
         if not isinstance(events,list):continue
         for index,event in enumerate(events):
-            if not isinstance(event,dict) or event.get('type') not in ('error','request/error'):continue
-            value=event.get('data') or event
-            if isinstance(value,dict):value=value.get('error') or value
-            row=value if isinstance(value,dict) else {'message':str(value)}
-            rows.append({'code':str(row.get('code') or row.get('type') or 'candidate_error')[:120],
-                'message':str(row.get('message') or row.get('error') or row)[:2000],
-                'stage':'candidate-execution','source':'candidate-reported','authority':'diagnostic-only',
-                'evidence':path.relative_to(root).as_posix(),'eventIndex':index})
-    return rows[-20:]
+            if not isinstance(event,dict):continue
+            data=event.get('data') or event;values=[]
+            base='/data' if event.get('data') else ''
+            if event.get('type') in ('error','request/error'):
+                nested=isinstance(data,dict) and bool(data.get('error'))
+                values.append((data['error'] if nested else data,base+'/error' if nested else base))
+            if isinstance(data,dict) and event.get('type') in ('turn/end','step/end','assistant/attempt'):
+                reason=data.get('reason') or {}
+                if isinstance(reason,dict):
+                    for key in ('error','failure'):
+                        if reason.get(key):values.append((reason[key],'/data/reason/'+key))
+                stream=data.get('stream') or []
+                for part_index,part in enumerate(stream if isinstance(stream,list) else []):
+                    chunk=part.get('chunk') if isinstance(part,dict) else None
+                    reason=(chunk.get('reason') or {}) if isinstance(chunk,dict) else {}
+                    if isinstance(reason,dict):
+                        for key in ('error','failure'):
+                            if reason.get(key):values.append((reason[key],f'/data/stream/{part_index}/chunk/reason/'+key))
+            for value,pointer in values:
+                row=value if isinstance(value,dict) else {'message':str(value)}
+                rows.append({'code':str(row.get('code') or row.get('type') or 'candidate_error')[:120],
+                    'message':str(row.get('message') or row.get('error') or row)[:2000],
+                    'stage':'candidate-execution','source':'candidate-reported','authority':'diagnostic-only',
+                    'evidence':path.relative_to(root).as_posix(),'eventIndex':index,'pointer':f'/{index}'+pointer})
+    # The same failed attempt is often repeated in both stream and turn/end.
+    unique={}
+    for row in rows:unique[(row['code'],row['message'])]=row
+    return list(unique.values())[-20:]
