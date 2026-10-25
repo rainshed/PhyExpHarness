@@ -82,8 +82,11 @@ class Receipts:
         base={k:v for k,v in row.items() if k!='path'}
         try:return public({**base,'file':stable(self.files.evidence(campaign,row)),'availability':'available'})
         except (OSError,ValueError):return public({**base,'availability':'unavailable','reason':'Original missing or integrity validation failed'})
+    def evidence_catalog(self,campaign,filters=None):
+        from src.evidence.catalog import EvidenceCatalog
+        return EvidenceCatalog(self).tree(campaign,filters)
     def closeout(self,campaign):
-        reports=self.store.list('reports',campaign);batches=self.store.list('batches',campaign)
+        reports=self.store.report_heads(campaign);batches=self.store.list('batches',campaign)
         missing=[b['id'] for b in batches if not any(r['batchId']==b['id'] and r['status']=='analysis' for r in reports)]
         final=not any(r['kind']=='final' and r['status']=='analysis' for r in reports)
         return {'missingRoundBatchIds':missing,'finalReportRequired':final,'complete':not missing and not final,
@@ -99,8 +102,9 @@ class Receipts:
         full={'closeout':closeout,'state':state,'campaign':c,'operations':operations,'requests':requests,
             'candidates':self.candidates(campaign),'batches':self.store.list('batches',campaign),
             'trials':[{**{k:t.get(k) for k in ['id','revision','batchId','candidateId','task','state','score']},'file':compact(self.publish(campaign,'trial:'+t['id'],t))} for t in self.store.list('trials',campaign)],
-            'reports':[{**{k:r.get(k) for k in ['id','batchId','kind','analysisRevision','factsSha256']},'file':self.report(campaign,r)['file']} for r in self.store.list('reports',campaign)],
-            'evidence': [self.evidence(campaign,e) for e in self.store.list('evidence',campaign)]}
+            'reports':[{**{k:r.get(k) for k in ['id','batchId','kind','analysisRevision','factsSha256']},'file':compact(self.publish(campaign,'report-index:'+r['id'],{**r,'reading':'Use report_get with reportId to read the complete immutable report.'}))} for r in self.store.report_heads(campaign)],
+            'evidence':{'scope':'navigation-only',**self.service.evidence.overview(campaign),
+                'completeDirectory':{'operation':'evidence_list','arguments':{},'reading':'完整不可变证据目录由 evidence_list 返回；这里每次实验只提供一个阅读入口。'}}}
         file=self.snapshot(campaign,'campaign_status',{},full)
         usage=c['usage'];plan=c.get('resourcePlanning') or {}
         unresolved=sum(r['state'] not in ['completed','rejected'] for r in requests)+sum(o['state'] in ['running','outcome_unknown'] for o in operations)
@@ -219,10 +223,10 @@ class Receipts:
         if op=='evidence_list':
             for key,table in [('batchId','batches'),('trialId','trials')]:
                 if key in args and self.store.get(table,args[key])['campaignId']!=campaign:raise Refused('Evidence scope outside Campaign')
-            trials={t['id']:t for t in self.store.list('trials',campaign)}
-            rows=[e for e in self.store.list('evidence',campaign) if (not args.get('trialId') or e['trialId']==args['trialId']) and (not args.get('batchId') or trials.get(e['trialId'],{}).get('batchId')==args['batchId'])]
-            items=[self.evidence(campaign,e) for e in rows];unavailable=sum(e['availability']!='available' for e in items)
-            return receipt(f'找到 {len(items)} 条证据，其中 {unavailable} 条原件不可用；完整目录见文件。',self.snapshot(campaign,op,args,{'total':len(items),'items':items}),total=len(items),unavailableCount=unavailable)
+            catalog=self.evidence_catalog(campaign,args)
+            return receipt(f"找到 {catalog['total']} 条证据，其中 {catalog['unavailableCount']} 条原件不可用；完整不可变目录见文件。",
+                self.snapshot(campaign,op,args,{'total':catalog['total'],'items':catalog['items']}),
+                total=catalog['total'],unavailableCount=catalog['unavailableCount'])
         if op=='sdk_read':
             pack=self.service.knowledge_for(campaign);id=args['id'];text=pack._text(id)
             file=self.files.publish(campaign,'sdk:'+pack.manifest['id']+':'+id,text,kind='sdk',source=pack.manifest['documents'][id]['source'],version=pack.manifest['dshVersion'])

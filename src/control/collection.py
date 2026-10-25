@@ -4,6 +4,7 @@ No model execution. The database row is the queue; a per-job flock is the
 execution lease. A controller restart discovers surviving workers by identity.
 """
 import fcntl
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -24,24 +25,38 @@ class Collections:
         key='collection-'+hashlib.sha256((trial['id']+trial['launchId']).encode()).hexdigest()
         directory=self.service.data/'campaigns'/trial['campaignId']/'collections'
         directory.mkdir(parents=True,exist_ok=True)
+        finished=None
+        try:
+            receipt=json.loads((Path(trial['output'])/'supervisor.json').read_text())
+            if receipt.get('state')=='finished':finished=datetime.fromisoformat(receipt['finishedAt']).timestamp()
+        except (OSError,ValueError,KeyError,TypeError):pass
         with self.store.connection(True) as db:
             existing=db.execute('SELECT data FROM collection_jobs WHERE id=?',(key,)).fetchone()
             if existing:return json.loads(existing['data'])
             current=self.store._get(db,self.store.run_table(trial['id']),trial['id'])
             if current['state'] not in ('running','launching'):return
-            current.update(state='collecting',phase='collection',output=trial['output'],executionFinishedAt=time.time())
+            current.update(state='collecting',phase='collection',output=trial['output'],executionFinishedAt=finished,executionFinishObservedAt=time.time())
             self.store._save_run(db,current)
             return self.store._save(db,'collection_jobs',{'id':key,'campaignId':trial['campaignId'],
                 'trialId':trial['id'],'state':'queued','stage':'verify','attempts':0,'createdAt':time.time(),
                 'lockPath':str(directory/(key+'.lock'))})
 
-    def alive(self, job):
+    def pid(self,job):
         child=self.children.get(job['id'])
-        if child:return child.poll() is None
-        return bool(job.get('pid') and job.get('lockPath') and self.service._process_alive(job['pid'],job['lockPath']))
+        if job['state'] in ('complete','failed') and not(child and child.poll() is None):return None
+        # The lease owner writes its identity before doing any work. This also
+        # closes the controller-crash window between spawn and PID registration.
+        try:owner=json.loads(Path(job['lockPath']).read_text()).get('pid')
+        except (OSError,ValueError,KeyError):owner=None
+        if owner and self.service._process_alive(owner,job['lockPath']):return owner
+        if child and child.poll() is None:return child.pid
+        if job.get('pid') and job.get('lockPath') and self.service._process_alive(job['pid'],job['lockPath']):return job['pid']
+        return None
+
+    def alive(self,job):return self.pid(job) is not None
 
     def tick(self):
-        jobs=self.store.list('collection_jobs');active={'verify':0,'index':0}
+        jobs=self.store.list('collection_jobs');active={'verify':0,'index':0,'report':0}
         for job in jobs:
             if self.alive(job):active[job.get('workerStage',job.get('stage','verify'))]+=1;continue
             child=self.children.pop(job['id'],None)
@@ -66,18 +81,16 @@ class Collections:
                     str(self.service.source),job['id'],job['lockPath']],cwd=self.service.source,
                     stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
             self.children[job['id']]=child
-            with self.store.connection(True) as db:
-                current=self.store._get(db,'collection_jobs',job['id'])
-                self.store._save(db,'collection_jobs',{**current,'pid':child.pid})
             active[stage]+=1
 
     def fail(self, job, error):
         with self.store.connection(True) as db:
             current=self.store._get(db,'collection_jobs',job['id'])
             self.store._save(db,'collection_jobs',{**current,'state':'failed','error':error,'finishedAt':time.time()})
+        if job.get('kind')=='report-summary':return
         trial=self.store.run(job['trialId'])
         if trial['state']=='collecting':
-            self.store.trial_update(trial['id'],state='failed',finishedAt=trial.get('executionFinishedAt',time.time()),
+            self.store.trial_update(trial['id'],state='failed',finishedAt=trial.get('executionFinishedAt') or time.time(),
                 failure={'code':'result_collection_failed','stage':'collection','source':'controller'},
                 lastCollectionError=error,scoringStatus='failed')
         else:self.store.trial_update(trial['id'],evidenceIndex={'state':'failed','error':error,'completed':job.get('completed',0)})
@@ -85,8 +98,9 @@ class Collections:
     def stop(self, campaign):
         alive=False
         for job in self.store.list('collection_jobs',campaign):
-            if self.alive(job):
-                try:os.kill(job.get('pid') or self.children[job['id']].pid,signal.SIGTERM)
+            pid=self.pid(job)
+            if pid:
+                try:os.kill(pid,signal.SIGTERM)
                 except ProcessLookupError:pass
                 alive=True
         return not alive
@@ -104,9 +118,19 @@ def work(data, source, id, lockpath):
     with Path(lockpath).open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
+        lock.seek(0);lock.truncate();json.dump({'pid':os.getpid()},lock);lock.flush();os.fsync(lock.fileno())
         job=store.get('collection_jobs',id)
         if job['state'] in ('complete','failed') or store.deletion(job['campaignId']):return
         try:
+            with store.connection(True) as db:
+                job=store._save(db,'collection_jobs',{**store._get(db,'collection_jobs',id),'pid':os.getpid()})
+            if job.get('kind')=='report-summary':
+                from src.reporting.reports import Reports
+                Reports(store,data).status_summary(job['campaignId'],job['reason'],meta_request={'requestId':job['id'],'payload':job['reason']})
+                with store.connection(True) as db:
+                    current=store._get(db,'collection_jobs',id)
+                    store._save(db,'collection_jobs',{**current,'state':'complete','finishedAt':time.time()})
+                return
             trial=store.run(job['trialId'])
             if job.get('stage','verify')=='verify':
                 if trial['state']=='collecting':trial=service._collect(trial,defer_evidence=True)

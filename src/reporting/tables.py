@@ -144,7 +144,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         previous_candidate = lookup.get(previous['candidateId']) if previous else None
         changes = plugin_changes(previous_candidate, selected) if previous else [
             {'kind': 'initial', 'label': '首轮，无上一轮比较对象', 'pluginKeys': []}]
-        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings', 'execution', 'officialResult', 'evidenceStatus', 'comparison']}
+        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings', 'execution', 'officialResult', 'evidenceStatus', 'comparison', 'evidenceIndex', 'executionFinishedAt', 'resultAvailableAt', 'evidenceIndexedAt', 'candidateDiagnostics', 'scheduling', 'sourceIdentities']}
                    for t in trials if t['batchId'] == b['id']]
         round_rows.append({'id': b['id'], 'round': b['round'], 'candidateId': b['candidateId'],
             'versionName': names.get(b['candidateId'],'版本缺失'), 'testSettings':b.get('testSettings'),

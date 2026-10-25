@@ -100,7 +100,27 @@ def trial_settings(campaign, candidate, execution=None):
             'frozenTrialCeilingSeconds': frozen,'trialCloseoutReserveSeconds':trial_closeout(campaign)}
 
 
-def view(campaign, trials=()):
+def feasibility(campaign,trial,now):
+    """Current wall-clock conditions; never shorten the benchmark or choose a task."""
+    if trial.get('state')!='reserved' or not benchmark_time(campaign['config']):return None
+    timing=trial.get('executionSettings',{}).get('benchmarkTime') or campaign['config']['taskTimeLimits'][trial['task']]
+    required=timing['requiredTimeSeconds'];end=end_time(campaign)
+    latest=min(end-required,campaign['deadline']-reserves(campaign)[0]) if required is not None else None
+    available=max(0,end-now)
+    feasible=latest is not None and now<campaign['deadline']-reserves(campaign)[0] and now<=latest
+    return {'state':'waiting_resources' if feasible else 'currently_infeasible','reason':None if feasible else 'benchmark_time_unavailable',
+        'requiredSeconds':required,'availableSeconds':available,'latestStartAt':latest,'observedAt':now,
+        'solverTimeSeconds':timing['solverTimeSeconds'],'canShorten':False,
+        'nextAction':'等待调度名额' if feasible else '撤回未启动项，或在授权范围内调整活动截止时间'}
+
+
+def pending_view(campaign,trials,now):
+    return [{**t,**({'scheduling':feasibility(campaign,t,now)} if t.get('state')=='reserved' and benchmark_time(campaign['config']) else {})} for t in trials]
+
+
+def view(campaign, trials=(), now=None):
+    import time
+    now=time.time() if now is None else now
     cfg = campaign['config']
     if not enabled(cfg):
         return {'policy': 'legacy', 'configurationSources': {key: {'source': 'legacy_unverified'} for key in LIMITS}}
@@ -116,6 +136,7 @@ def view(campaign, trials=()):
             'taskTimeLimits':cfg.get('taskTimeLimits',{}),
             'effectiveReserves': {'seconds':reserves(campaign)[0],**({} if control_only(cfg) else {'tokens':reserves(campaign)[1]})},
             'schedulingWait':campaign.get('resourcePlanWait'),
+            'pendingTrials':[{'trialId':t['id'],**feasibility(campaign,t,now)} for t in trials if feasibility(campaign,t,now) is not None],
             'runningConditions': [{k: t.get(k) for k in ('id', 'task', 'deadline', 'effectiveConditions', 'launchLimits')}
                                   for t in trials if t['state'] in ('launching', 'running')],
             'updateScope': 'Future batches; accepted conditions remain fixed. Running processes do not receive increased ceilings.'}

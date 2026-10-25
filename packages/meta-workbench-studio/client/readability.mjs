@@ -79,7 +79,7 @@ export function reportCampaign(report) {
 }
 
 export function trialBucket(t) {
-  if (['running','launching'].includes(t.state)) return 'active';
+  if (['running','launching','collecting'].includes(t.state)) return 'active';
   if (['reserved','queued'].includes(t.state)) return 'queued';
   if (t.state==='unknown' && !t.finishedAt) return 'unknown';
   return 'ended';

@@ -19,7 +19,7 @@ from .model_access import control_only, check_config, TOKEN_FIELDS
 from .database import begin_write, diagnostic
 from src.execution.host.task_time import benchmark_time
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts','collection_jobs')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
@@ -33,19 +33,31 @@ class Refused(ValueError): pass
 def identity(prefix): return prefix+'-'+str(uuid.uuid4())
 def encoded(value): return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False)
 
-def comparison_issues(trials):
-    issues=[]
+def comparison_diagnostics(trials):
+    result=[]
     for task in sorted({t['task'] for t in trials}):
-        contexts=[t.get('comparisonContext') for t in trials if t['task']==task]
-        # Build attestations can change the OCI index while executable config and all
-        # layers remain byte-identical. Use this identity only with proofs for every run.
-        if contexts and all(c and c.get('runnerExecutionManifest') for c in contexts):
-            contexts=[{**{k:v for k,v in c.items() if k!='runnerImageId'}} for c in contexts]
-        else:
-            contexts=[{k:v for k,v in c.items() if k!='runnerExecutionManifest'} if c else c for c in contexts]
-        if any(contexts) and (not all(contexts) or any(x!=contexts[0] for x in contexts[1:])):
-            issues.append(task+': task sources or runtime image identities differ or are missing')
-    return issues
+        rows=[t for t in trials if t['task']==task]
+        pending=[t.get('id','unknown') for t in rows if t.get('state') in ('reserved','queued','launching','running','collecting')]
+        if pending:result.append({'task':task,'kind':'pending','trialIds':pending,'fields':[]})
+        rows=[t for t in rows if t.get('state') not in ('reserved','queued','launching','running','collecting') and not(t.get('state')=='cancelled' and not t.get('startedAt'))]
+        missing=[t.get('id','unknown') for t in rows if not t.get('comparisonContext')]
+        if missing:result.append({'task':task,'kind':'missing_metadata','trialIds':missing,'fields':['comparisonContext']})
+        rows=[t for t in rows if t.get('comparisonContext')]
+        contexts=[dict(t['comparisonContext']) for t in rows]
+        proofs=bool(contexts) and all(c.get('runnerExecutionManifest') for c in contexts)
+        for c in contexts:
+            c.pop('runnerImageId' if proofs else 'runnerExecutionManifest',None)
+            if c.get('runContract')=='harbor-process-v1':c.pop('runnerImageId',None);c.pop('runnerExecutionManifest',None)
+        fields=sorted({k for c in contexts for k in c if any(x.get(k)!=c.get(k) for x in contexts)})
+        if fields:result.append({'task':task,'kind':'different','trialIds':[t.get('id','unknown') for t in rows],
+            'fields':fields,'values':[{ 'trialId':t.get('id','unknown'), 'fields':{k:c.get(k) for k in fields}} for t,c in zip(rows,contexts)]})
+    return result
+
+
+def comparison_issues(trials):
+    labels={'missing_metadata':'comparison metadata missing','different':'comparison fields differ'}
+    return [f"{d['task']}: {labels[d['kind']]} ({', '.join(d['fields'])}); trials: {', '.join(d['trialIds'])}"
+        for d in comparison_diagnostics(trials) if d['kind'] in labels]
 
 def retention_rule_description(config):
     rule=config.get('retentionRule',LEGACY_RETENTION_RULE)
@@ -188,6 +200,10 @@ class Store:
             for table in TABLES:
                 db.execute(f'CREATE TABLE IF NOT EXISTS {table}(id TEXT PRIMARY KEY,campaign TEXT NOT NULL,data TEXT NOT NULL)')
                 db.execute(f'CREATE INDEX IF NOT EXISTS {table}_campaign ON {table}(campaign)')
+            db.execute('CREATE TABLE IF NOT EXISTS evidence_versions(campaign TEXT PRIMARY KEY, version INTEGER NOT NULL)')
+            for event in ('INSERT','UPDATE','DELETE'):
+                row='old' if event=='DELETE' else 'new'
+                db.execute(f"CREATE TRIGGER IF NOT EXISTS evidence_version_{event.lower()} AFTER {event} ON evidence BEGIN INSERT INTO evidence_versions VALUES({row}.campaign,1) ON CONFLICT(campaign) DO UPDATE SET version=version+1; END")
             db.execute("CREATE INDEX IF NOT EXISTS evidence_identity ON evidence(campaign,json_extract(data,'$.trialId'),json_extract(data,'$.kind'),json_extract(data,'$.sha256'))")
             db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
@@ -233,13 +249,26 @@ class Store:
         if table not in TABLES:raise ValueError('Unknown table')
         row=db.execute(f'SELECT data FROM {table} WHERE id=?',(id,)).fetchone()
         if row is None:raise KeyError(id)
-        return json.loads(row['data'])
+        return self._decode(table,row['data'])
+    def _decode(self,table,data):
+        value=json.loads(data)
+        if table=='reports' and value.get('reportRef'):
+            ref=value['reportRef'];path=self.path.parent/'reports'/value['id']/'report.json'
+            body=path.read_bytes()
+            if hashlib.sha256(body).hexdigest()!=ref['sha256']:raise Refused('Report snapshot integrity mismatch')
+            return json.loads(body)
+        return value
+    def report_heads(self,campaign):
+        fields=('id','campaignId','kind','batchId','createdAt','analysisRevision','status','factsSha256','author','analysis','metaRequest','reportRef','tasks','candidateIds','revision')
+        projection=','.join("'%s',json_extract(data,'$.%s')"%(key,key) for key in fields)
+        with self.connection() as db:
+            return [json.loads(r[0]) for r in db.execute('SELECT json_object('+projection+') FROM reports WHERE campaign=? ORDER BY rowid',(campaign,))]
     def get(self,table,id):
         with self.connection() as db:return self._get(db,table,id)
     def _list(self,db,table,campaign=None):
         if table not in TABLES:raise ValueError('Unknown table')
         rows=db.execute(f'SELECT data FROM {table}'+(' WHERE campaign=?' if campaign else ''),(campaign,) if campaign else ()).fetchall()
-        return [json.loads(row['data']) for row in rows]
+        return [self._decode(table,row['data']) for row in rows]
     def list(self,table,campaign=None):
         with self.connection() as db:return self._list(db,table,campaign)
     def _save(self,db,table,value):
@@ -338,7 +367,7 @@ class Store:
             c=self._get(db,'campaigns',id);c['counts']=self._counts(db,id);c['usage']=self.usage(id,db)
             c['elapsedSeconds']=max(0,(c.get('finishedAt') or self.clock())-c['startedAt']) if c['startedAt'] else 0
             c['remainingSeconds']=max(0,c['deadline']-self.clock()) if c['deadline'] else c['config']['wallTimeSeconds']
-            c['resourcePlanning']=planning.view(c,self._runs(db,id))
+            c['resourcePlanning']=planning.view(c,self._runs(db,id),self.clock())
             if c.get('selectionDecisionId'):
                 c['selectionDecision']=self._get(db,'selection_decisions',c['selectionDecisionId'])
             return c
@@ -483,7 +512,7 @@ class Store:
                 raise Refused('Exploration token threshold reached')
             extra={'reference':reference} if reference is not None else {}
             batch=self._save(db,'reference_batches' if reference is not None else 'batches',{'id':identity('reference-batch' if reference is not None else 'batch'),'campaignId':campaign,'candidateId':candidate,'round':counts['rounds']+1,
-                'tasks':tasks,'repeats':repeats,'testSettings':settings,'plannedTrials':planned,'state':'accepted','acceptedAt':self.clock(),**extra})
+                'tasks':tasks,'repeats':repeats,'admissionFeasibility':{task:planning.feasibility(c,{'task':task,'state':'reserved'},self.clock()) for task in tasks} if benchmark_time(cfg) else {},'testSettings':settings,'plannedTrials':planned,'state':'accepted','acceptedAt':self.clock(),**extra})
             for task in tasks:
                 task_settings={**settings,'benchmarkTime':cfg['taskTimeLimits'][task]} if benchmark_time(cfg) else settings
                 for repeat in range(repeats):
@@ -564,6 +593,17 @@ class Store:
             t.update(state='launching',startedAt=now,deadline=deadline)
             t['taskTimeLimitSeconds']=seconds
             t=self._save_run(db,t);self._event(db,campaign,'trial_claimed',trialId=t['id'],launchId=t['launchId']);return t
+    def withdraw_trial(self,id,reason,key):
+        if not isinstance(reason,str) or not reason.strip() or len(reason)>4000:raise Refused('Withdrawal reason required')
+        with self.connection(True) as db:
+            t=self._get(db,self.run_table(id),id);campaign=t['campaignId'];payload={'trialId':id,'reason':reason}
+            prior=self._idem(db,campaign,'trial-withdraw',key,payload)
+            if prior:return prior
+            if t['state']!='reserved' or t.get('startedAt') is not None:raise Refused('Only unstarted reserved trials can be withdrawn')
+            t.update(state='cancelled',stopReason='withdrawn_before_start',withdrawal={'reason':reason,'time':self.clock(),'source':'user'})
+            t=self._save_run(db,t);self._finish_batches(db,campaign)
+            self._event(db,campaign,'trial_withdrawn',trialId=id,reason=reason)
+            return self._remember(db,campaign,'trial-withdraw',key,payload,t)
     def trial_update(self,id,**changes):
         with self.connection(True) as db:
             t=self._get(db,self.run_table(id),id);previous=t['state'];t.update(changes);t=self._save_run(db,t)
@@ -696,7 +736,13 @@ class Store:
                     if t['state']=='reserved':t.update(state='cancelled',stopReason=reason);self._save_run(db,t)
             self._finish_batches(db,campaign)
             return c
-    def finalize(self,campaign,reason=None):
+    def finalize(self,campaign,reason=None,summary_reason=None):
+        job=None
+        if summary_reason:
+            directory=self.path.parent/'campaigns'/campaign/'collections';directory.mkdir(parents=True,exist_ok=True)
+            key='collection-report-'+hashlib.sha256(campaign.encode()).hexdigest()
+            job={'id':key,'campaignId':campaign,'kind':'report-summary','stage':'report','state':'queued','attempts':0,
+                'reason':summary_reason,'createdAt':self.clock(),'lockPath':str(directory/(key+'.lock'))}
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
             counts=self._counts(db,campaign)
@@ -704,7 +750,9 @@ class Store:
             if c['state']=='finished':return c
             c.update(state='finished',explorationClosed=True,finishedAt=self.clock(),
                 stopReason=reason or c['stopReason'] or 'completed',finalCandidateId=c['retainedCandidateId'])
-            c=self._save(db,'campaigns',c);self._event(db,campaign,'finished',reason=c['stopReason']);return c
+            c=self._save(db,'campaigns',c)
+            if job:self._save(db,'collection_jobs',job)
+            self._event(db,campaign,'finished',reason=c['stopReason']);return c
     def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None,summary=None,alternatives=None,researchRefs=None):
         rejection=None
         with self.connection(True) as db:
@@ -725,7 +773,7 @@ class Store:
             has_result=any(t['score'] is not None for t in trials) if rule==LEGACY_RETENTION_RULE else any(
                 t['state']=='finished' and type(t.get('score')) in [int,float] and math.isfinite(t['score']) for t in trials)
             if not has_result:raise Refused('Retaining a candidate requires a completed official result')
-            allowed={e['id'] for e in self._list(db,'evidence',campaign)}
+            allowed={r[0] for r in db.execute('SELECT id FROM evidence WHERE campaign=?',(campaign,))}
             if not reason or not refs or set(refs)-allowed:raise Refused('Retain requires a reason and allowed evidence IDs')
             assessment=None
             if c['retainedCandidateId'] and c['retainedCandidateId']!=candidate:
@@ -780,7 +828,7 @@ class Store:
             raise Refused('limitations must be an array of non-empty text (may be empty)')
         if not isinstance(refs,list) or not refs or len(refs)>200 or any(not isinstance(x,str) for x in refs) or len(set(refs))!=len(refs):
             raise Refused('Selection requires unique allowed evidence IDs')
-        allowed={e['id']:e for e in self._list(db,'evidence',c['id'])}
+        allowed={row['id']:json.loads(row['data']) for row in db.execute('SELECT id,data FROM evidence WHERE campaign=? AND id IN ('+','.join('?' for _ in refs)+')',[c['id'],*refs])}
         if set(refs)-allowed.keys():raise Refused('Selection requires allowed evidence IDs from this Campaign')
         checks=[]
         for ref in refs:

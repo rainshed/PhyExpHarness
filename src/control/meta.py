@@ -100,7 +100,7 @@ class MetaDriver:
         c=self.store.status(campaign)
         if c['state']!='closing' or c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials']:return False
         if any(o['state']=='running' for o in self.store.list('operations',campaign)):return False
-        reports=self.store.list('reports',campaign)
+        reports=self.store.report_heads(campaign)
         return any(r['kind']=='final' and r['status']=='analysis' for r in reports) and all(
             any(r['kind']=='round' and r['batchId']==b['id'] and r['status']=='analysis' for r in reports)
             for b in self.store.list('batches',campaign))
@@ -176,7 +176,7 @@ class MetaDriver:
                 if native_config(c):return
                 # Preserve Meta's analysis, refresh system facts after all provider settlements.
                 latest={}
-                for report in self.store.list('reports',campaign):
+                for report in self.store.report_heads(campaign):
                     if report['status']=='analysis':latest[report['batchId']]=report
                 for batch,report in latest.items():self.service.reports.save(campaign,report['analysis'],batch,author='meta')
                 return
@@ -198,8 +198,7 @@ class MetaDriver:
         failed=[s for s in self.store.list('meta_sessions',campaign) if s['state']=='failed']
         if time.time()>=c['deadline'] or failed:
             if not c['counts']['activeTrials'] and not c['counts'].get('collectingTrials',0):
-                self.store.finalize(campaign,c['stopReason'] or 'time_limit')
-                self.service.reports.status_summary(campaign,'Meta 会话未完成完整分析；已保留所有事实、用量与停止原因。')
+                self.store.finalize(campaign,c['stopReason'] or 'time_limit',summary_reason='Meta 会话未完成完整分析；已保留所有事实、用量与停止原因。')
             return
         batches=self.store.list('batches',campaign)
         if any(b['state']=='finished' for b in batches) or (planning.enabled(c['config']) and not batches):self.start(campaign)

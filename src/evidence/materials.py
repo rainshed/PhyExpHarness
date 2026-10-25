@@ -125,7 +125,7 @@ class Materials:
                         'batch': batch, 'previousBatchId':previous['id'] if previous else None,
                         'changesFromPreviousRound':change,'trials': [{k: t.get(k) for k in fields} for t in trials]})
 
-    def _records(self, campaign, kind=None):
+    def _records(self, campaign, kind=None, evidence_rows=None):
         self.store.get('campaigns', campaign)
         include = lambda k: kind is None or kind == k
         if include('activity'):
@@ -180,7 +180,7 @@ class Materials:
                     tasks=b['tasks'], version='live', createdAt=b.get('acceptedAt'))
         if include('evidence'):
             trials = {t['id']: t for t in self.store.runs(campaign)}
-            for e in self.store.list('evidence', campaign):
+            for e in (evidence_rows if evidence_rows is not None else self.evidence_rows(campaign)):
                 t = trials.get(e['trialId'], {})
                 yield self._record('evidence:' + e['id'], 'evidence', e['kind'],
                     {'evidenceId':e['id'],'archive':e['source'].get('archive'),'policy':e['policy'],**({'adoption':e['source']['adoption']} if e['source'].get('adoption') else {})},
@@ -190,13 +190,13 @@ class Materials:
         if include('analysis'):
             for r in self.store.list('research_records',campaign):
                 yield self._record('analysis:research:'+r['id'],'analysis',r['record']['summary'],{'author':r['author'],'classification':'authored-research'},lambda row=r:encoded(row),version=r['revision'])
-            for r in self.store.list('reports', campaign):
+            for r in self.store.report_heads(campaign):
                 trials=r.get('facts',{}).get('trials',[])
                 yield self._record('analysis:' + r['id'], 'analysis', ('总报告' if not r['batchId'] else '每轮报告') + ' · 分析修订 ' + str(r['analysisRevision']),
                     {'author': r['author'], 'classification': 'model-analysis' if r['author'] == 'meta' else 'system-summary'},
                     lambda row=r: encoded({k: row.get(k) for k in ('id', 'kind', 'batchId', 'analysisRevision', 'previousReportId', 'analysis', 'factsSha256')}),
                     batchId=r['batchId'], version=r['analysisRevision'], createdAt=r['createdAt'],
-                    tasks=sorted({t['task'] for t in trials}),candidateIds=sorted({t['candidateId'] for t in trials}))
+                    tasks=r.get('tasks') or self.store.get('campaigns',campaign)['config']['tasks'],candidateIds=r.get('candidateIds') or [c['id'] for c in self.store.list('candidates',campaign)])
 
     def _filtered(self, campaign, kind=None, task=None, candidateId=None, batchId=None):
         if kind is not None and kind not in KINDS:
@@ -224,19 +224,47 @@ class Materials:
     def _public(row):
         return {'schemaVersion':1,**{k: v for k, v in row.items() if k != '_load'}}
 
+    def evidence_rows(self,campaign):
+        with self.store.connection() as db:
+            for row in db.execute('SELECT data FROM evidence WHERE campaign=? ORDER BY rowid',(campaign,)):
+                yield json.loads(row[0])
+
+    def record(self,campaign,ref):
+        kind,id=ref.split(':',1)
+        if kind=='evidence':
+            try:row=self.store.get('evidence',id)
+            except KeyError:raise Refused('Material unavailable in this Campaign')
+            if row['campaignId']!=campaign:raise Refused('Material outside Campaign')
+            return next(self._records(campaign,'evidence',evidence_rows=[row]))
+        row=next((r for r in self._filtered(campaign,kind=kind) if r['ref']==ref),None)
+        if row is None:raise Refused('Material unavailable in this Campaign')
+        return row
+
     def list(self, campaign, offset=0, limit=20, **filters):
-        self._range(offset, limit, 100)
-        rows = list(self._filtered(campaign, **filters))
-        return {'source': '当前活动允许材料目录', 'items': [self._public(r) for r in rows[offset:offset+limit]],
-                'total': len(rows), 'nextOffset': offset+limit if offset+limit < len(rows) else None}
+        self._range(offset,limit,100)
+        kind=filters.pop('kind',None)
+        if kind is not None and kind not in KINDS:raise Refused('Unknown material kind')
+        # Validate all filters through a bounded non-evidence category first.
+        list(self._filtered(campaign,kind='guide',**filters))
+        items=[];total=0
+        for category in ([kind] if kind else KINDS):
+            if category=='evidence':
+                page=self.service.evidence.page(campaign,offset=max(0,offset-total),limit=limit,**filters)
+                count=page['total']
+                if total+count>offset and len(items)<limit:
+                    items.extend(self._public(r) for r in self._records(campaign,'evidence',page['items'][:limit-len(items)]))
+            else:
+                rows=list(self._filtered(campaign,kind=category,**filters));count=len(rows)
+                if total+count>offset and len(items)<limit:items.extend(self._public(r) for r in rows[max(0,offset-total):max(0,offset-total)+limit-len(items)])
+            total+=count
+        return {'source':'当前活动允许材料目录','items':items,'total':total,'nextOffset':offset+limit if offset+limit<total else None}
 
     def read(self, campaign, ref, offset=0, limit=16000):
         self._range(offset, limit, 32000)
         if not isinstance(ref, str) or ':' not in ref:
             raise Refused('Material reference required')
         kind = ref.split(':', 1)[0]
-        for row in self._filtered(campaign, kind=kind):
-            if row['ref'] != ref: continue
+        for row in [self.record(campaign,ref)]:
             result = self._public(row)
             if row['availability'] != 'available': return result
             try:text = row['_load']()

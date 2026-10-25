@@ -133,14 +133,14 @@ class MetaAPI:
             return {**service.evidence.read(campaign,**args),**self.files.evidence(campaign,self.store.get('evidence',args['id']))}
         if op.startswith('materials_'):
             if op=='materials_read':
-                row=next((r for r in service.materials._records(campaign,args['ref'].split(':')[0]) if r['ref']==args['ref']),None)
+                row=service.materials.record(campaign,args['ref'])
                 if row is None:raise Refused('Material unavailable')
                 descriptor=self.files.material(campaign,row)
                 if descriptor.get('encoding')=='binary':return {**descriptor,'previewAvailable':False}
                 return {**service.materials.read(campaign,**args),**descriptor}
             result=service.meta_call(campaign,op,args)
-            rows={r['ref']:r for r in service.materials._records(campaign,args.get('kind'))}
             key='items' if op=='materials_list' else 'matches'
+            rows={r['ref']:service.materials.record(campaign,r['ref']) for r in result[key]}
             result[key]=[{**r,**self.files.material(campaign,rows[r['ref']])} for r in result[key]]
             return result
         if op.startswith('sdk_'):
@@ -163,6 +163,8 @@ class MetaAPI:
             batch=self.store.get('batches',args['batchId'])
             if batch['campaignId']!=campaign:raise Refused('Batch unavailable')
             trials=trial_diagnostics([r for r in self.store.list('trials',campaign) if r['batchId']==batch['id']],service.data,c['config'])
+            from .resource_planning import pending_view
+            trials=pending_view(c,trials,self.store.clock())
             return {'batch':batch,'trials':page(trials,args),'evidenceIndex':'/evidence/index.json'}
         if op=='results_compare':
             candidates=self.store.list('candidates',campaign);trials=self.store.list('trials',campaign)

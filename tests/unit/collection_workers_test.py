@@ -65,3 +65,46 @@ class CollectionWorkersTests(unittest.TestCase):
             self.service.storage.view(self.cid)
         with patch.object(self.store,'list',side_effect=AssertionError('full scan')):
             self.service.evidence.page(self.cid,trialId=self.trial['id'])
+
+    def test_stalled_index_process_leaves_tick_stop_and_meta_supervision_responsive(self):
+        import subprocess,sys
+        from unittest.mock import Mock
+        job=self.job();self.run_job(job)
+        child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)',job['lockPath']])
+        self.addCleanup(lambda:(child.kill() if child.poll() is None else None,child.wait()))
+        self.service.collections.children[job['id']]=child
+        if self.store.get('campaigns',self.cid)['state']!='paused':self.store.control(self.cid,'pause','pause-for-supervision')
+        driver=Mock();self.service.meta_driver=driver
+        started=time.monotonic()
+        with patch.object(self.service.storage,'schedule'):self.service._tick()
+        self.assertLess(time.monotonic()-started,1)
+        driver.tick.assert_called_once_with(self.cid)
+        self.assertFalse(self.service.collections.stop(self.cid));child.wait(timeout=5)
+        self.assertTrue(self.service.collections.stop(self.cid))
+    def test_object_published_before_registration_can_be_replayed(self):
+        from src.evidence.objects import POLICY
+        c=self.store.get('campaigns',self.cid);c['config']['storagePolicy']=POLICY;self.store.put('campaigns',c)
+        library=self.service.evidence;publish=library.objects._publish
+        def crash(*args,**kwargs):publish(*args,**kwargs);raise OSError('crash before reference commit')
+        with patch.object(library.objects,'_publish',crash),self.assertRaises(OSError):library.add(self.cid,None,'raw','orphan',{'archive':'orphan'})
+        self.assertEqual(self.store.list('evidence',self.cid),[])
+        row=library.add(self.cid,None,'raw','orphan',{'archive':'orphan'})
+        self.assertEqual(library.add(self.cid,None,'raw','orphan',{'archive':'orphan'})['id'],row['id'])
+
+    def test_restart_discovers_lease_owner_without_controller_pid_registration(self):
+        import subprocess,sys,json
+        from src.control.collection import Collections
+        job=self.job();self.run_job(job)
+        child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)',job['lockPath']])
+        self.addCleanup(lambda:(child.kill() if child.poll() is None else None,child.wait()))
+        Path(job['lockPath']).write_text(json.dumps({'pid':child.pid}))
+        fresh=Collections(self.service);current=self.store.get('collection_jobs',job['id']);current['pid']=None;self.store.put('collection_jobs',current)
+        self.assertTrue(fresh.alive(current))
+        fresh.tick();self.assertEqual(fresh.children,{})
+        self.assertFalse(fresh.stop(self.cid));child.wait(timeout=5)
+    def test_system_report_job_replays_without_duplicate_revision(self):
+        self.store.finalize(self.cid,summary_reason='background fixture')
+        job=next(j for j in self.store.list('collection_jobs',self.cid) if j.get('kind')=='report-summary')
+        self.run_job(job);self.run_job(job)
+        self.assertEqual(len(self.store.report_heads(self.cid)),1)
+        self.assertEqual(self.store.get('collection_jobs',job['id'])['state'],'complete')

@@ -14,7 +14,7 @@ import time
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from .store import Store,Refused,Conflict,identity,encoded,comparison_issues,retention_rule_description,META_RETENTION_RULE
+from .store import Store,Refused,Conflict,identity,encoded,comparison_issues,comparison_diagnostics,retention_rule_description,META_RETENTION_RULE
 from .knowledge import KnowledgePack
 from .image_identity import resolve as resolve_image_identity
 from .operations import workspace_path,read_workspace,write_workspace,execute_workspace
@@ -242,20 +242,23 @@ class ControlService:
             return {**value,'deletion':self.deletions.public(self.store.deletion(campaign)),
                     **{k:[] for k in ['candidates','batches','trials','reports','exports','evidence','operations','metaSessions']},
                     'tables':{'versions':[],'plugins':[],'trials':[]}}
+        evidence=self.evidence.overview(campaign)
         value.update(candidates=self.store.list('candidates',campaign),batches=self.store.list('batches',campaign),
-            trials=trial_diagnostics(self.store.list('trials',campaign),self.data,value['config']),operations=self.store.list('operations',campaign),
-            reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.list('reports',campaign)],
+            trials=planning.pending_view(value,trial_diagnostics(self.store.list('trials',campaign),self.data,value['config']),self.store.clock()),operations=self.store.list('operations',campaign),
+            reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.report_heads(campaign)],
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
             exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
-            evidence=[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign)])
+            evidence=evidence['items'],evidenceIndex={k:v for k,v in evidence.items() if k!='items'})
         value['references']=self.references.status(campaign)
         value['metaStatus']=meta_status(value['metaSessions'])
         value['executionProtection']=self.execution_policy(campaign)
         value['comparisonIssues']=comparison_issues(value['trials'])
+        value['comparisonDiagnostics']=comparison_diagnostics(value['trials'])
         value['retentionRuleDescription']=retention_rule_description(value['config'])
         value['selectionDecisions']=[{k:r.get(k) for k in ['id','candidateId','previousCandidateId','createdAt','summary','limitations']}|{'detailsAvailable':True} for r in self.store.list('selection_decisions',campaign)]
         value['researchRevision']=[len(self.store.list(t,campaign)) for t in ['research_records','research_links','source_adoptions']]
         if value['config'].get('storagePolicy')==STORAGE_POLICY:value['storage']=self.storage.view(campaign)
+        value['backgroundWork']=[{k:j.get(k) for k in ('id','trialId','stage','state','completed','total','error')} for j in self.store.list('collection_jobs',campaign) if j['state']!='complete']
         value['observedAt']=self.store.clock()
         value['taskEvaluation']=evaluation(value['trials'],value['config']['tasks'],value['candidates'],value['config'])
         value['tables']=self.reports.tables(campaign,context=value)
@@ -444,8 +447,12 @@ class ControlService:
             images=[]
             for file in output.glob('harbor/*/phyexp/container-images.txt'):
                 images.extend(sorted(line.split(' ',1)[1] for line in file.read_text().splitlines() if ' ' in line))
+            changes['sourceIdentities']={'executionSources':{'version':'source-hashes-v1','scope':['src','configs','docker','harbor_tasks']},
+                'imageBuildSources':{'version':'task-image-sources-v'+str(provenance.get('taskImageLock',{}).get('schemaVersion',1)),'digest':provenance.get('taskImageLock',{}).get('taskSourcesDigest'),'scope':['src','configs','docker','harbor_tasks','.dockerignore','README.md','pyproject.toml','uv.lock']}}
             changes['comparisonContext']={'taskSourcesDigest':hashlib.sha256(encoded(provenance.get('quantumHarbor',{}).get('sourceHashes')).encode()).hexdigest(),
                 'runnerImageId':provenance.get('runnerImageId'),'taskImageIds':images}
+            if provenance.get('taskImageLock',{}).get('schemaVersion',1)==1:changes['sourceIdentities']['imageBuildSources']['scope']=['src','configs','docker','harbor_tasks']
+            changes['sourceIdentities']['executionSources']['digest']=changes['comparisonContext']['taskSourcesDigest']
             if summary.get('resultContract')=='official-result-v3':
                 selected=verify(self.store.get('candidates',trial['candidateId'])['bundlePath'])
                 changes['comparisonContext'].update(runContract=provenance.get('runContract'),adapter=selected['adapter'],
@@ -465,6 +472,8 @@ class ControlService:
                 changes['runnerImageProof']=proof
             except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
                 pass # Keep strict raw-image comparison when proof is unavailable.
+        from src.evidence.diagnostics import candidate_diagnostics
+        changes['candidateDiagnostics']=candidate_diagnostics(output,summary)
         if defer_evidence:
             changes.update(resultAvailableAt=time.time(),finishedAt=trial.get('executionFinishedAt') or changes['finishedAt'],
                 evidenceIndex={'state':'pending','completed':0})
@@ -600,7 +609,7 @@ class ControlService:
                     if self.meta_driver:self.meta_driver.interrupt(id,'storage_capacity')
                 if self.meta_driver:self.meta_driver.tick(id)
                 elif c['state']=='closing' and c['counts']['activeTrials']==0 and c['counts']['collectingTrials']==0:
-                    self.store.finalize(id);self.reports.status_summary(id,'达到活动上限；Meta 分析尚未完成。')
+                    self.store.finalize(id,summary_reason='达到活动上限；Meta 分析尚未完成。')
         finally:self.tick_lock.release()
     def export(self,campaign,candidate):
         self.store.writable(campaign)
@@ -609,7 +618,7 @@ class ControlService:
         prior=next((x for x in self.store.list('exports',campaign) if x['candidateId']==candidate),None)
         if prior:return prior
         export_id=identity('export');self.store.track_artifact(campaign,self.data/'exports'/export_id,'export')
-        result=export_project(c['bundlePath'],self.data/'exports',export_id=export_id);result.update(campaignId=campaign,candidateId=candidate)
+        result=export_project(c['bundlePath'],self.data/'exports',export_id=export_id);result.update(campaignId=campaign,candidateId=candidate,evidenceCompleteness={t['id']:t.get('evidenceIndex',{'state':'legacy_unknown'}) for t in self.store.list('trials',campaign) if t['candidateId']==candidate})
         return self.store.put('exports',result)
     def validate_export(self,id):
         with self.operation_lock:

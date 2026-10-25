@@ -39,7 +39,7 @@ class EvidenceLibrary:
                 if not file.exists():file.write_bytes(data);file.chmod(0o444)
             with self.store.connection(True) as db:
                 self.store.writable(campaign,db)
-                matches=db.execute("SELECT data FROM evidence WHERE campaign=? AND json_extract(data,'$.trialId')=? AND json_extract(data,'$.kind')=? AND json_extract(data,'$.sha256')=?",(campaign,trial,kind,sha))
+                matches=db.execute("SELECT data FROM evidence WHERE campaign=? AND json_extract(data,'$.trialId') IS ? AND json_extract(data,'$.kind')=? AND json_extract(data,'$.sha256')=?",(campaign,trial,kind,sha))
                 for match in matches:
                     existing=json.loads(match['data'])
                     if existing.get('source',{}).get('archive')==source.get('archive'):return existing
@@ -47,18 +47,33 @@ class EvidenceLibrary:
                      'bytes':len(data),'source':source,'policy':policy,'encoding':'utf-8' if self._utf8(data) else 'binary'}
                 return self.store._save(db,'evidence',row)
 
-    def page(self,campaign,*,trialId=None,batchId=None,offset=0,limit=50):
+    def page(self,campaign,*,trialId=None,batchId=None,offset=0,limit=50,query=None,kind=None,task=None,candidateId=None):
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=100:raise Refused('Invalid evidence page')
         where=['campaign=?'];values=[campaign]
         if trialId:where.append("json_extract(data,'$.trialId')=?");values.append(trialId)
         if batchId:
-            where.append("json_extract(data,'$.trialId') IN (SELECT id FROM trials WHERE campaign=? AND json_extract(data,'$.batchId')=?)")
-            values.extend([campaign,batchId])
+            where.append("json_extract(data,'$.trialId') IN (SELECT id FROM trials WHERE campaign=? AND json_extract(data,'$.batchId')=? UNION SELECT id FROM reference_runs WHERE campaign=? AND json_extract(data,'$.batchId')=?)")
+            values.extend([campaign,batchId,campaign,batchId])
+        if kind:where.append("json_extract(data,'$.kind')=?");values.append(kind)
+        if task or candidateId:
+            conditions=['campaign=?'];args=[campaign]
+            for field,value in [('task',task),('candidateId',candidateId)]:
+                if value:conditions.append(f"json_extract(data,'$.{field}')=?");args.append(value)
+            where.append("json_extract(data,'$.trialId') IN (SELECT id FROM trials WHERE "+' AND '.join(conditions)+" UNION SELECT id FROM reference_runs WHERE "+' AND '.join(conditions)+")");values.extend(args+args)
+        if query:
+            where.append("(id LIKE ? OR json_extract(data,'$.trialId') LIKE ? OR json_extract(data,'$.source.archive') LIKE ?)")
+            values.extend(['%'+query+'%']*3)
         clause=' AND '.join(where)
         with self.store.read_snapshot(),self.store.connection() as db:
             total=db.execute('SELECT count(*) FROM evidence WHERE '+clause,values).fetchone()[0]
             rows=[json.loads(x['data']) for x in db.execute('SELECT data FROM evidence WHERE '+clause+' ORDER BY rowid LIMIT ? OFFSET ?',[*values,limit,offset])]
         return {'items':rows,'offset':offset,'total':total,'nextOffset':offset+len(rows) if offset+len(rows)<total else None}
+    def overview(self,campaign):
+        # One navigation anchor per attempt; the full directory is paged separately.
+        with self.store.connection() as db:
+            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM evidence WHERE rowid IN (SELECT min(rowid) FROM evidence WHERE campaign=? GROUP BY json_extract(data,'$.trialId')) ORDER BY rowid",(campaign,))]
+            total=db.execute('SELECT count(*) FROM evidence WHERE campaign=?',(campaign,)).fetchone()[0]
+        return {'items':[{k:v for k,v in r.items() if k!='path'} for r in rows],'total':total,'complete':total==len(rows)}
     @staticmethod
     def _utf8(data):
         try:data.decode('utf-8');return True

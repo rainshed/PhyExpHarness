@@ -1,8 +1,9 @@
 // Read-only presentation. Pending assessments are not evidence of active grading.
 const finite = n => typeof n === 'number' && Number.isFinite(n);
-export const isPending = t => ['reserved','queued','launching','running'].includes(t.state);
+export const isPending = t => ['reserved','queued','launching','running','collecting'].includes(t.state);
 export function trialStage(t) {
   if (['reserved','queued'].includes(t.state)) return {key:'queued',label:'排队'};
+  if (t.state === 'collecting') return {key:'collecting',label:'结果归集中'};
   if (t.state === 'launching') return {key:'launching',label:'启动中'};
   if (t.state === 'running') {
     // Optional explicit phase receipts only; the current controller does not emit these.
@@ -26,6 +27,7 @@ export function waitingReason(t,c={}) {
   if (c.state === 'paused') return '活动已暂停，等待恢复后调度';
   if (c.state === 'draft') return '活动尚未启动';
   if (['closing','finished','failed'].includes(c.state)) return '活动已收尾或结束，不再启动新实验';
+  if (t.scheduling?.state === 'currently_infeasible' || t.conditionsRequired?.canShorten === false) return `当前剩余时间无法容纳完整任务（需要 ${Math.ceil(t.scheduling?.requiredSeconds??t.conditionsRequired?.requiredSeconds??0)} 秒，可用 ${Math.floor(t.scheduling?.availableSeconds??t.conditionsRequired?.availableSeconds??0)} 秒）；可撤回未启动项或调整活动截止时间` ;
   if (t.conditionsRequired) return '剩余可用时长不足，等待确认缩短本次实验或调整计划';
   if (c.config?.resourcePolicy === 'meta-resource-planning-v1' && !c.resourcePlanning?.plan)
     return '等待 Meta 提交运行计划';

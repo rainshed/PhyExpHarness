@@ -29,6 +29,9 @@ class Storage:
         self.policy_file=self.data/'storage-policy.json'
         self.policy={**DEFAULTS,**(json.loads(self.policy_file.read_text()) if self.policy_file.exists() else {})}
         self.validate(self.policy)
+        # Bootstrap an empty installation before it admits its first activity.
+        # Existing installations are scanned by the background maintenance loop.
+        if not self.store.list('campaigns'):self.inventory(force=True)
 
     def validate(self,p):
         if set(p)!=set(DEFAULTS) or p['version']!=1:raise ValueError('Unknown storage policy fields/version')
@@ -108,7 +111,6 @@ class Storage:
 
     def permit(self,campaign,kind='request'):
         if not enabled(self.store.get('campaigns',campaign)['config']):return True
-        self.schedule()
         with self.lock:
             extra=self.policy['trialReserveBytes'] if kind=='trial' else self.policy['metaReserveBytes'] if kind in ('meta','build') else 0
             result=self.pressure(campaign,extra);waiting=result['waiting'];old=self.waiting.get(campaign)
@@ -128,11 +130,12 @@ class Storage:
     def snapshot(self):return {'policy':self.policy,'usage':self.view(None)}
 
     def schedule(self):
-        if time.time()-self.last_maintenance<self.policy['scanSeconds'] or self.worker and self.worker.is_alive():return
-        def run():
-            try:self.maintain()
-            except Exception as error:self.errors.append({'operation':'maintenance','error':str(error)[:250]})
-        self.worker=threading.Thread(target=run,name='phyexp-storage',daemon=True);self.worker.start()
+        with self.lock:
+            if time.time()-self.last_maintenance<self.policy['scanSeconds'] or self.worker and self.worker.is_alive():return
+            def run():
+                try:self.maintain()
+                except Exception as error:self.errors.append({'operation':'maintenance','error':str(error)[:250]})
+            self.worker=threading.Thread(target=run,name='phyexp-storage',daemon=True);self.worker.start()
 
     def maintain(self,force=False):
         self._maintain(force)

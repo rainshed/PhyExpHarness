@@ -13,6 +13,8 @@ def trial_diagnostics(trials, data=None, config=None):
     results = []
     for original in trials:
         t = dict(original)
+        for field in ('candidateDiagnostics','sourceIdentities'):
+            if field not in t and index.get(t['id'],{}).get(field):t[field]=index[t['id']][field]
         failure = t.get('failure') or (t.get('summary') or {}).get('failure')
         if not failure and t.get('failureContract') != 'request-failure-v2':
             failure = index.get(t['id'], {}).get('failure')
@@ -23,6 +25,7 @@ def trial_diagnostics(trials, data=None, config=None):
         if (rule_for(config)==END_TO_END_RULE and t.get('score') is not None
                 and not (finite(t['score']) and t['score'] in (0,1))):label='结果无效，未采信';scoring='unknown'
         elif t.get('score') is not None: label = '评分 '+str(t['score']); scoring = 'completed'
+        elif state=='collecting': label='结果归集中';scoring='pending'
         elif state in ['reserved', 'queued', 'launching', 'running']: label = '等待启动' if state in ['reserved','queued'] else '运行中，等待评分'; scoring = 'pending'
         else: label = '未评分'
         t['scoringStatus'] = scoring
@@ -48,3 +51,23 @@ def trial_diagnostics(trials, data=None, config=None):
         t['completionLabel'] = t['taskAssessment']['label'] + ('' if rule_for(config)==END_TO_END_RULE else '；官方' + t['resultLabel'])
         results.append(t)
     return results
+
+
+def candidate_diagnostics(root,summary):
+    """Candidate messages are evidence of a report, never official score authority."""
+    rows=[]
+    for path in sorted(Path(root).glob('harbor/*/phyexp/events.json')):
+        if path.is_symlink() or not path.resolve().is_relative_to(Path(root).resolve()):continue
+        try:events=json.loads(path.read_text())
+        except (OSError,ValueError):continue
+        if not isinstance(events,list):continue
+        for index,event in enumerate(events):
+            if not isinstance(event,dict) or event.get('type') not in ('error','request/error'):continue
+            value=event.get('data') or event
+            if isinstance(value,dict):value=value.get('error') or value
+            row=value if isinstance(value,dict) else {'message':str(value)}
+            rows.append({'code':str(row.get('code') or row.get('type') or 'candidate_error')[:120],
+                'message':str(row.get('message') or row.get('error') or row)[:2000],
+                'stage':'candidate-execution','source':'candidate-reported','authority':'diagnostic-only',
+                'evidence':path.relative_to(root).as_posix(),'eventIndex':index})
+    return rows[-20:]

@@ -30,6 +30,7 @@ export function FailureDetail({trial:t}:any){
  const official=<p>官方评分：{t.score==null?'未评分':String(t.score)}。{scoring[t.scoringStatus]||scoring.unknown}；任务完成分：{t.taskAssessment?.score??'不计入'}。</p>;
  const attribution=a?.category&&a.category!=='none'?<p><strong>{a.categoryLabel}</strong>。{a.causeNote} {a.impactLabel}。</p>:d?.categoryLabel?<p><strong>{d.categoryLabel}</strong>。{d.causeNote}</p>:null;
  return <>{attribution}<RecoveryDetail trial={t}/>
+ {t.candidateDiagnostics?.length>0&&<details><summary>候选上报的错误 · {t.candidateDiagnostics.length} 条</summary><p>以下来自候选日志，用于排查；官方评分保持独立。</p>{t.candidateDiagnostics.map((d:any,i:number)=><div key={i}><strong>{d.code}</strong><pre>{d.message}</pre><small>{d.stage} · {d.source} · {d.evidence} · 事件 {d.eventIndex}</small></div>)}</details>}
   {d?<details><summary>查看失败原因与依据</summary><p>{d.message}。</p>{official}
    <p>发生阶段：{stages[d.stage]||'尚未确认'}</p>
    <p>诊断来源：{d.source==='historical-artifact-analysis'?'根据历史归档追加的系统诊断；原始记录与分析保留':d.source==='controller'?'后台监督记录':'执行宿主记录'}</p>

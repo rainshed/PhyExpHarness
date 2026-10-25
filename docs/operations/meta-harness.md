@@ -812,3 +812,16 @@ Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评�
 实验详情增加独立的故障层与评分影响：模型输出链路、模型服务或连接、平台执行/控制、运行限额/停止、正式评分未通过，以及原因待确认。输出异常仅说明模型/适配器链路的观测现象，不直接断定模型权重有问题；连接异常不作为解题能力的直接证据。请求恢复记录与最终故障分开，容器连接警告保留调用阶段和是否阻断评分。已取得官方分数的记录继续使用该分数，未评分保留空值；任务完成分沿用活动绑定规则，历史 v1–v4 不升级、不回填。
 
 一般控制 API 的数据库忙错误使用 HTTP 503、`control_database_busy` 和 `retryAfterMs: 500`；其他数据库异常为 `control_database_error`。Meta 工具即使无法发布诊断文件，也可返回这一故障码。写请求结果不确定时仍要求以原参数、原幂等键核对，不能换键重复提交。仅旧 `/accounting/` 兼容接口保留 `accounting_unavailable` 错误码；一般控制故障不再称为用量账本故障。
+
+
+### 大规模证据归集与发布（2026-10-25）
+
+实现与验收见[长活动控制面计划](../plans/control-plane-scalability.md)。process Trial 执行进程退出后进入 `collecting`，不占执行并发；官方结果核验完成即发布，`evidenceIndex` 单独显示 pending/running/complete/failed。索引每 100 项保存进度。后台 `collection_jobs` 可跨服务重启恢复；租约文件记录实际工作进程，不能因 UI 断开而清空任务。系统最终状态摘要也由独立工作进程生成。
+
+活动状态的 `backgroundWork` 显示未结束/失败工作，`resourcePlanning.pendingTrials` 显示实时可行性。证据总览是阅读入口，完整索引使用工作台证据分页或 Meta `evidence_list`。首次生成大目录和报告快照可能耗时；不会阻塞调度和其他活动的请求。新报告的 SQLite 行引用不可变报告文件，备份必须同时保护数据库、reports 和活动材料目录；不要只复制数据库迁移实例。
+
+容量统计由后台巡检更新，`observedAt` 表示测量时间；已有活动的数据首次巡检前暂缓新增执行，已有请求与收尾保留即时磁盘检查。空安装初始化一次统计。旧历史材料不补造阶段时间。
+
+部署先构建独立 release，在无 Trial、Meta、构建及归集工作的窗口切换 control/workbench 两个用户服务。维护备份放在 data 同级的私有 maintenance-backups，保存数据库一致性备份和服务配置；保留旧 release。冻结候选与协议不替换。Schema 9 的报告引用不能由旧代码直接读取：无新业务写入时可同时恢复本次数据库备份和旧服务；已有新业务数据时应先验证兼容导出/展开报告引用，不能只切回旧代码。
+
+`python scripts/project-candidate-diagnostics.py --data <data> --campaign <id>` 仅检查历史候选错误；加 `--write` 追加 failure-diagnoses.json 阅读投影。它记录输入摘要，不改官方结果、原事件或历史报告。

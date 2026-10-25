@@ -157,6 +157,13 @@ def make_app(service,supervise=True):
     @app.post('/campaigns/{id}/sources')
     def adopt_source(id:str,request:Request,body:dict):
         user(request);return service.adoptions.adopt(id,**body)
+    @app.get('/campaigns/{id}/evidence')
+    def evidence_page(id:str,request:Request,offset:int=0,limit:int=50,trialId:str|None=None,
+                      query:str|None=None,kind:str|None=None,task:str|None=None,candidateId:str|None=None):
+        user(request);service.store.get('campaigns',id)
+        result=service.evidence.page(id,offset=offset,limit=limit,trialId=trialId,query=query,kind=kind,task=task,candidateId=candidateId)
+        result['items']=[{k:v for k,v in e.items() if k!='path'} for e in result['items']]
+        return result
     @app.get('/campaigns/{id}/research')
     def research(id:str,request:Request,offset:int=0,limit:int=20,pluginKey:str|None=None,relation:str|None=None):
         user(request);return service.research.overview(id,offset,limit,pluginKey,relation)
@@ -185,6 +192,9 @@ def make_app(service,supervise=True):
         user(request);trial=service.store.run(id)
         if trial['state'] in ['launching','running']:service.stop_trial(trial,'user_stop')
         return service.store.run(id)
+    @app.post('/trials/{id}/withdraw')
+    def withdraw_trial(id:str,request:Request,body:dict):
+        user(request);return service.store.withdraw_trial(id,body['reason'],body['idempotencyKey'])
     @app.post('/trials/{id}/recollect')
     def recollect(id:str,request:Request):
         user(request);return service.recollect(id)
@@ -213,7 +223,7 @@ def make_app(service,supervise=True):
         row=service.store.get('candidates',id);row['displayName']=name.strip();service.store.put('candidates',row)
         if service.store.get('campaigns',row['campaignId'])['state'] in ['finished','failed']:
             latest={}
-            for r in service.store.list('reports',row['campaignId']):latest[(r['kind'],r['batchId'])]=r
+            for r in service.store.report_heads(row['campaignId']):latest[(r['kind'],r['batchId'])]=r
             for r in latest.values():service.reports.refresh_presentation(r['id'])
         return {'renamed':True}
     @app.post('/exports/{id}/open')

@@ -41,6 +41,8 @@ class ProcessLifecycleTests(unittest.TestCase):
             process.stdin.close()
             process.stdout.close()
         self.service.pool.shutdown(wait=True)
+        if self.service.storage.worker:self.service.storage.worker.join(timeout=10)
+        for child in self.service.collections.children.values():child.wait(timeout=10)
         self.temp.cleanup()
 
     def child(self):

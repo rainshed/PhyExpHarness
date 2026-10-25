@@ -8,7 +8,10 @@ export function TrialStatus({trial:t,campaign:c={}}:any) {
  const stage=trialStage(t),timing=trialTiming(t,c),reason=waitingReason(t,c);
  return <div className="mh-trial-status"><strong className={'mh-phase '+stage.key}>{c.historical?'当时 · ':''}{stage.label}</strong>
  <div className="mh-trial-time">{t.taskAssessment?.category==='not_started'?'未启动，无执行耗时':timing.seconds==null?(stage.key==='queued'?'排队起点未记录':'耗时未完整记录'):`${timing.label} ${duration(timing.seconds)}`}{timing.start!=null&&<small>{stage.key==='queued'?'本轮受理于 ':'启动于 '}{date(timing.start)}</small>}</div>
- {official&&<p>官方评分：{official.status==='available'?String(t.score??t.summary?.officialReward):'尚无可信评分'}；执行：{executionLabels[execution?.status]||execution?.status||'状态未确认'}{execution?.exitCode!=null?'（退出码 '+execution.exitCode+'）':''}；证据：{evidence?.status==='complete'?'完整':'部分缺失'}</p>}
+ {official&&<p>官方评分：{official.status==='available'?String(t.score??t.summary?.officialReward):'尚无可信评分'}；执行：{executionLabels[execution?.status]||execution?.status||'状态未确认'}{execution?.exitCode!=null?'（退出码 '+execution.exitCode+'）':''}；核验所需证据：{evidence?.status==='complete'?'齐全':'部分缺失'}</p>}
+ {t.evidenceIndex&&<p>证据索引：{({pending:'待归档',running:'归档中',complete:'已完成',failed:'归档失败'} as any)[t.evidenceIndex.state]||t.evidenceIndex.state}{t.evidenceIndex.total!=null?` · ${t.evidenceIndex.completed??0}/${t.evidenceIndex.total}`:''}{t.evidenceIndex.error?' · '+t.evidenceIndex.error:''}</p>}
+ {(t.executionFinishedAt||t.resultAvailableAt||t.evidenceIndexedAt)&&<small>执行结束：{date(t.executionFinishedAt)} · 结果可用：{date(t.resultAvailableAt)} · 索引完成：{date(t.evidenceIndexedAt)}</small>}
+ {t.scheduling?.latestStartAt!=null&&<p>最晚启动时间：{date(t.scheduling.latestStartAt)}</p>}
  {reason&&<p className="mh-wait-reason">{c.historical?'当时等待原因：':'等待原因：'}{reason}</p>}</div>;
 }
 export function SnapshotNotice({campaign:c,recordedAt}:any) {

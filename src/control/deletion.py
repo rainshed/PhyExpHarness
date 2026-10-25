@@ -73,6 +73,15 @@ class Deletions:
             raise Refused('Idempotency key required')
         if type(retry) is not bool:raise Refused('Invalid retry flag')
         key = hashlib.sha256(idempotencyKey.encode()).hexdigest()
+        # Filesystem inventory can be large. Only acceptance is serialized with
+        # scheduling; validate the campaign revision again inside that window.
+        with self.store.connection() as db:
+            existing=self.store.deletion(campaign,db)
+            if not existing:
+                c=self.store._get(db,'campaigns',campaign)
+                if type(expectedRevision) is not int or expectedRevision!=c['revision']:raise Conflict('活动已变化，请重新查看删除范围后确认。')
+                plan=Inventory(self.service,campaign,db).build()
+                if plan['blockers']:raise Conflict('；'.join(b['message'] for b in plan['blockers']))
         # Scheduling/launch and deletion acceptance share the same admission window.
         with self.service.tick_lock, self.store.connection(True) as db:
             job = self.store.deletion(campaign,db)
@@ -86,8 +95,7 @@ class Deletions:
             c = self.store._get(db,'campaigns',campaign)
             if type(expectedRevision) is not int or expectedRevision != c['revision']:
                 raise Conflict('活动已变化，请重新查看删除范围后确认。')
-            plan = Inventory(self.service,campaign,db).build()
-            if plan['blockers']:raise Conflict('；'.join(b['message'] for b in plan['blockers']))
+            if db.execute("SELECT 1 FROM source_adoptions WHERE campaign!=? AND json_extract(data,'$.source.sourceCampaignId')=? LIMIT 1",(campaign,campaign)).fetchone():raise Conflict('其他活动已纳入此活动的历史材料，请重新核对删除范围。')
             job = {'campaignId':campaign,'state':'running','phase':'stopping','keys':[key],
                    'requestedAt':time.time(),'counts':plan['counts'],'sharedRetained':plan['sharedRetained']}
             c.update(state='deleting',explorationClosed=True,revision=c['revision']+1)
@@ -155,6 +163,16 @@ class Deletions:
             job.update(state='failed',error=str(error))
             self.save(job)
 
+    @staticmethod
+    def reference_stamp(db):
+        # Ignore events, usage and model requests: unrelated live traffic must not
+        # invalidate a cleanup plan. Reference publication still forces a retry.
+        result=[tuple(r) for r in db.execute('SELECT campaign,version FROM evidence_versions ORDER BY campaign')]
+        for table in ('campaigns','candidates','trials','reference_runs','source_adoptions','owned_artifacts','reports','exports'):
+            revision="sum(json_extract(data,'$.revision'))" if table not in ('reports','owned_artifacts') else '0'
+            result.append(tuple(db.execute(f'SELECT count(*),max(rowid),{revision} FROM {table}').fetchone()))
+        return result
+
     def clean(self, job):
         campaign = job['campaignId']
         # Build/inspect/clean engine resources outside SQLite's writer lock.
@@ -172,7 +190,7 @@ class Deletions:
         trash.mkdir(parents=True,exist_ok=True)
         # Object publication always precedes DB registration: use the same lock order.
         with contextlib.ExitStack() as locks, Objects(self.service.data).locked(), self.store.connection() as db:
-            version=db.execute('PRAGMA data_version').fetchone()[0]
+            version=self.reference_stamp(db)
             inventory=Inventory(self.service,campaign,db)
             keep=inventory.retained({self.service.data/p for p in plan['paths']})
             from .deletion_storage import walk_stats
@@ -188,19 +206,26 @@ class Deletions:
                     except BlockingIOError:raise Refused('构建缓存仍在使用，请结束构建后重试：'+str(target))
             begin_write(db)
             # A concurrent publication invalidates the inventory. Retry next tick.
-            if db.execute('PRAGMA data_version').fetchone()[0]!=version:return
+            if self.reference_stamp(db)!=version:return
             for entry in plan['rewrites']:rewrite(self.service.data,entry)
+            db.commit()
             paths=sorted(plan['paths'],key=lambda p:p.startswith('artifacts/'))
-            for path in paths:
-                target=safe_path(self.service.data,path)
-                if target in keep or not target.exists():continue
-                if path.startswith('artifacts/') and target.stat().st_nlink>1:
-                    # Private views are already detached; their links disappear in
-                    # the purge below. Unexplained links were checked by Inventory.
-                    expected=inventory.own_links.get(target,0)+1
-                    if target.stat().st_nlink>expected:
-                        raise Refused('共享归档仍有未登记的文件引用，请先核实：'+str(target))
-                os.replace(target,trash/hashlib.sha256(path.encode()).hexdigest())
+            # Bound detach transactions independently of the activity's file count.
+            # Publication remains locked; unrelated control/model writes can run
+            # between batches. New ownership metadata requires a fresh inventory.
+            for start in range(0,len(paths),100):
+                begin_write(db)
+                if self.reference_stamp(db)!=version:return
+                for path in paths[start:start+100]:
+                    target=safe_path(self.service.data,path)
+                    if target in keep or not target.exists():continue
+                    if path.startswith('artifacts/') and target.stat().st_nlink>1:
+                        expected=inventory.own_links.get(target,0)+1
+                        if target.stat().st_nlink>expected:
+                            raise Refused('共享归档仍有未登记的文件引用，请先核实：'+str(target))
+                    os.replace(target,trash/hashlib.sha256(path.encode()).hexdigest())
+                db.commit()
+                time.sleep(.005)
         # Recursive removal never holds a writer or publication lock. The saved
         # plan and deterministic trash names recover a crash after any rename.
         for path in trash.iterdir():remove_path(self.service.data,str(path))
@@ -212,6 +237,7 @@ class Deletions:
                     db.execute("DELETE FROM commands WHERE campaign='global' AND kind='create' AND key=?",(row['key'],))
             for table in TABLES:
                 db.execute(f'DELETE FROM {table} WHERE campaign=?',(campaign,))
+            db.execute('DELETE FROM evidence_versions WHERE campaign=?',(campaign,))
             db.execute('DELETE FROM events WHERE campaign=?',(campaign,))
             db.execute('DELETE FROM commands WHERE campaign=?',(campaign,))
             result = {'campaignId':campaign,'state':'deleted','phase':'done'}

@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from src.control.store import Refused,identity,encoded,comparison_issues,retention_rule_description
+from src.control.store import Refused,identity,encoded,comparison_issues,comparison_diagnostics,retention_rule_description
 from .tables import build_tables, read_annotations
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation, outcome_summary
@@ -92,7 +92,8 @@ class Reports:
             'metaSessions':self.store.list('meta_sessions',campaign),'metaComposition':c['config'].get('metaComposition'),
             'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,**({} if control_only(c['config']) else {'usageByRole':by_role}),
             'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
-            'comparisonIssues':comparison_issues(self.store.list('trials',campaign)),
+            'comparisonIssues':comparison_issues(trials),'comparisonDiagnostics':comparison_diagnostics(trials),
+            'evidenceCompleteness':{t['id']:t.get('evidenceIndex',{'state':'legacy_unknown'}) for t in trials+references},
             'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials+references)],
             'selectionDecisions':decisions,'researchRecords':research,'researchLinks':self.store.list('research_links',campaign),
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
@@ -125,10 +126,10 @@ class Reports:
             'researchRecords':research,'analysis':{k:analysis[k] for k in fields | ((optional|{'brief'}) & analysis.keys())},'createdAt':self.store.clock(),
             'tables':build_tables(facts['candidates'],facts['batches'],facts['trials'],facts['campaign'],read_annotations(self.root.parent),batch_id)}
         return self._persist(record,expected_revision)
-    def status_summary(self,campaign,reason):
+    def status_summary(self,campaign,reason,meta_request=None):
         facts=self.facts(campaign)
         return self._persist({'id':identity('report'),'campaignId':campaign,'batchId':None,'kind':'status_summary','author':'system',
-            'status':'analysis_incomplete','facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
+            'status':'analysis_incomplete',**({'metaRequest':meta_request} if meta_request else {}),'facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
             'analysis':{'summary':reason,'observations':[],'hypotheses':[],'limitations':['Meta 完整分析尚未完成。'],
                         'decision':'保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
             'tables':self.tables(campaign,context=facts['campaign'])})
@@ -148,9 +149,13 @@ class Reports:
                 result={**record,'analysisRevision':head[0]+1,'previousReportId':head[1],
                         'markdownPath':str(directory/'report.md'),'schemaVersion':1,'revision':record.get('revision',0)+1}
                 # Render, serialize and write all bodies before taking the writer lock.
-                body=encoded(result)
                 (pending/'report.md').write_text(render(result))
-                (pending/'report.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+                report_body=(json.dumps(result,ensure_ascii=False,indent=2)+'\n').encode()
+                (pending/'report.json').write_bytes(report_body)
+                head_record={k:v for k,v in result.items() if k not in ('facts','tables','reading')}
+                head_record.update(reportRef={'version':'immutable-report-v1','sha256':hashlib.sha256(report_body).hexdigest(),'bytes':len(report_body)},
+                    tasks=sorted({t['task'] for t in result['facts']['trials']}),candidateIds=sorted({t['candidateId'] for t in result['facts']['trials']}))
+                body=encoded(head_record)
                 with self.store.connection(True,operation='report.publish') as db:
                     self.store.writable(record['campaignId'],db)
                     previous=self._replay(db,record)
@@ -178,7 +183,7 @@ class Reports:
         row=db.execute("SELECT data FROM reports WHERE campaign=? AND json_extract(data,'$.metaRequest.requestId')=?",
                        (record['campaignId'],request['requestId'])).fetchone()
         if row:
-            previous=json.loads(row['data'])
+            previous=self.store._decode('reports',row['data'])
             if previous['metaRequest']['payload']!=request['payload']:raise Refused('Report request payload changed')
             return previous
 
