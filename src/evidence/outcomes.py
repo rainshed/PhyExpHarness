@@ -35,7 +35,7 @@ EXTERNAL_FAILURES = {'model_service_overloaded', 'model_transport_error', 'model
                      'supervisor_lost_start_not_repeated', 'result_collection_failed', 'container_transport_error',
                      'control_database_busy','control_database_error','control_unavailable','request_auth_failed','request_lease_expired',
                      'log_size_limit','log_record_size_limit','storage_write_error'}
-PENDING = {'reserved', 'queued', 'launching', 'running'}
+PENDING = {'reserved', 'queued', 'launching', 'running', 'collecting'}
 
 
 def finite(value):

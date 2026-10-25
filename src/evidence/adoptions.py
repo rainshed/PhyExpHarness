@@ -44,29 +44,32 @@ class Adoptions:
             prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
             if prior:return prior
         data,origin=self._source(campaign,sourceCampaignId,sourceKind,sourceId)
-        with self.store.connection(True) as db:
-            prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
-            if prior:return prior
-            self.store.writable(sourceCampaignId,db)
-            self.store._get(db,'campaigns',campaign)
+        objects=Objects(self.data)
+        # Keep publication and reference registration in GC-safe lock order.
+        with objects.locked():
             file=self.data/'evidence'/origin['sha256'];file.parent.mkdir(parents=True,exist_ok=True)
-            canonical=Objects(self.data).put(data) if enabled(self.store.get('campaigns',campaign)['config']) else file
+            canonical=objects._publish([data]) if enabled(self.store.get('campaigns',campaign)['config']) else file
             if not file.exists():
                 if canonical!=file:os.link(canonical,file)
                 else:file.write_bytes(data);file.chmod(0o444)
             if file.is_symlink() or hashlib.sha256(file.read_bytes()).hexdigest()!=origin['sha256']:raise Refused('Adopted copy integrity mismatch')
-            id=identity('adoption');now=self.store.clock()
-            provenance={**origin,'targetCampaignId':campaign,'adoptionId':id,'adoptedAt':now,'access':access,
-                'purpose':'design-inspiration','feedbackExposure':{'tasks':origin['tasks'],'purpose':'development','recordedAt':now,'unseenEvaluation':False}}
-            evidence=None
-            if access=='meta-research':
-                evidence=self.store._save(db,'evidence',{'id':identity('evidence'),'campaignId':campaign,'trialId':None,
-                    'kind':'historical-inspiration','sha256':origin['sha256'],'path':str(canonical),'bytes':len(data),
-                    'policy':'explicit-history-adoption-v1','source':{'archive':'historical-source.txt','adoption':provenance}})
-            row=self.store._save(db,'source_adoptions',{'id':id,'campaignId':campaign,'source':provenance,'reason':reason,
-                'access':access,'evidenceId':evidence['id'] if evidence else None,'recordedAt':now,'author':'user','sha256':origin['sha256']})
-            self.store._event(db,campaign,'source_adopted',adoptionId=id,access=access)
-            return self.store._remember(db,campaign,'source-adopt',idempotencyKey,payload,row)
+            with self.store.connection(True) as db:
+                prior=self.store._idem(db,campaign,'source-adopt',idempotencyKey,payload)
+                if prior:return prior
+                self.store.writable(sourceCampaignId,db)
+                self.store._get(db,'campaigns',campaign)
+                id=identity('adoption');now=self.store.clock()
+                provenance={**origin,'targetCampaignId':campaign,'adoptionId':id,'adoptedAt':now,'access':access,
+                    'purpose':'design-inspiration','feedbackExposure':{'tasks':origin['tasks'],'purpose':'development','recordedAt':now,'unseenEvaluation':False}}
+                evidence=None
+                if access=='meta-research':
+                    evidence=self.store._save(db,'evidence',{'id':identity('evidence'),'campaignId':campaign,'trialId':None,
+                        'kind':'historical-inspiration','sha256':origin['sha256'],'path':str(canonical),'bytes':len(data),
+                        'policy':'explicit-history-adoption-v1','source':{'archive':'historical-source.txt','adoption':provenance}})
+                row=self.store._save(db,'source_adoptions',{'id':id,'campaignId':campaign,'source':provenance,'reason':reason,
+                    'access':access,'evidenceId':evidence['id'] if evidence else None,'recordedAt':now,'author':'user','sha256':origin['sha256']})
+                self.store._event(db,campaign,'source_adopted',adoptionId=id,access=access)
+                return self.store._remember(db,campaign,'source-adopt',idempotencyKey,payload,row)
     def list(self,campaign):
         self.store.get('campaigns',campaign);rows=[]
         for r in self.store.list('source_adoptions',campaign):

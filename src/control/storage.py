@@ -17,13 +17,13 @@ DEFAULTS={'version':1,'maxDataBytes':40*GiB,'maxCampaignBytes':20*GiB,'minFreeBy
     'criticalFreeBytes':2*GiB,'resumeMarginBytes':GiB,'trialReserveBytes':512*1024**2,
     'metaReserveBytes':256*1024**2,'scanSeconds':60,'garbageGraceSeconds':21600,
     'cacheAgeSeconds':86400,'additionalPaths':[]}
-ACTIVE={'starting','launching','running','waiting','reserved'}
+ACTIVE={'starting','launching','running','waiting','reserved','collecting'}
 
 
 class Storage:
     def __init__(self, service):
         self.service=service;self.data=Path(service.data).resolve();self.store=service.store;self.objects=Objects(self.data)
-        self.lock=threading.RLock();self.maintenance_lock=threading.Lock();self.worker=None;self.last_scan=0;self.last_maintenance=0;self.waiting={};self.samples=[]
+        self.scan_lock=threading.Lock();self.lock=threading.RLock();self.maintenance_lock=threading.Lock();self.worker=None;self.last_scan=0;self.last_maintenance=0;self.waiting={};self.samples=[]
         self.metrics={'bytes':0,'files':0,'groups':{},'campaigns':{},'observedAt':None}
         self.errors=[];self.reclaimed=0
         self.policy_file=self.data/'storage-policy.json'
@@ -44,7 +44,7 @@ class Storage:
             self.last_scan=0;return self.snapshot()
 
     def inventory(self,force=False):
-        with self.lock:
+        with self.scan_lock:
             now=time.time()
             if not force and now-self.last_scan<self.policy['scanSeconds']:return
             groups=Counter();seen=set();files=0;owned={};campaign_sets={}
@@ -91,13 +91,14 @@ class Storage:
         return values
 
     def pressure(self,campaign=None,extra=0):
-        self.inventory();p=self.policy;disks=self.disks();active=0;metas=0
+        p=self.policy;disks=self.disks();active=0;metas=0
         for c in self.store.list('campaigns'):
-            active+=sum(t['state'] in ('launching','running') for t in self.store.runs(c['id']))
+            active+=sum(t['state'] in ('launching','running','collecting') for t in self.store.runs(c['id']))
             metas+=sum(s.get('state') in ('starting','running','waiting') for s in self.store.list('meta_sessions',c['id']))
         reserve=active*p['trialReserveBytes']+metas*p['metaReserveBytes']+extra
         margin=p['resumeMarginBytes'] if self.waiting.get(campaign,False) else 0
         reasons=[]
+        if self.metrics['observedAt'] is None:reasons.append('等待后台容量巡检')
         if any(d['free']<=p['minFreeBytes']+reserve+margin for d in disks):reasons.append('磁盘剩余空间不足，需保留在途任务收尾容量')
         if any(d['freeInodes']<10000 for d in disks):reasons.append('文件系统可用文件数量不足')
         if self.metrics['bytes']+reserve+margin>=p['maxDataBytes']:reasons.append('活动数据达到全局存储预算')
@@ -107,6 +108,7 @@ class Storage:
 
     def permit(self,campaign,kind='request'):
         if not enabled(self.store.get('campaigns',campaign)['config']):return True
+        self.schedule()
         with self.lock:
             extra=self.policy['trialReserveBytes'] if kind=='trial' else self.policy['metaReserveBytes'] if kind in ('meta','build') else 0
             result=self.pressure(campaign,extra);waiting=result['waiting'];old=self.waiting.get(campaign)
@@ -133,11 +135,7 @@ class Storage:
         self.worker=threading.Thread(target=run,name='phyexp-storage',daemon=True);self.worker.start()
 
     def maintain(self,force=False):
-        from .store import Conflict
-        try:
-            with self.service.access.enter():self._maintain(force)
-        except Conflict:
-            if not self.service.access.cleaning:raise
+        self._maintain(force)
 
     def _maintain(self,force=False):
         with self.maintenance_lock:
@@ -150,18 +148,23 @@ class Storage:
             for c in campaigns:
                 cid=c['id']
                 for row in self.store.runs(cid):
+                    if row.get('evidenceIndex',{}).get('state') in ('pending','running'):continue
                     if row['state'] not in ('finished','failed','cancelled','unknown') or not row.get('output'):continue
                     directory=Path(row['output']).resolve()
                     if not directory.is_relative_to(self.data) or not directory.is_dir() or (directory/'artifact-archive.json').exists():continue
                     if listing is None or str(directory) in listing or self.service._process_alive(row.get('pid'),directory):continue
                     try:self.objects.archive(directory)
                     except (OSError,ValueError) as error:self.errors.append({'operation':'archive','trialId':row['id'],'error':str(error)[:250]})
-            protected={r['sha256'] for r in self.store.list('evidence')}
-            protected.update(r['sha256'] for r in self.store.list('source_adoptions'))
-            for file in (self.data/'trials').glob('*/artifact-archive.json'):
-                try:protected.update(v['sha256'] for v in json.loads(file.read_text())['files'].values())
-                except (OSError,ValueError,KeyError):return  # Unknown reachability: collect nothing.
-            self.reclaimed+=self.objects.prune(protected,now-self.policy['garbageGraceSeconds'])
+            def protected():
+                roots={r['sha256'] for r in self.store.list('evidence')}
+                roots.update(r['sha256'] for r in self.store.list('source_adoptions'))
+                for file in (self.data/'trials').glob('*/artifact-archive.json'):
+                    roots.update(v['sha256'] for v in json.loads(file.read_text())['files'].values())
+                return roots
+            # Resolve DB reachability after taking the publication lock, not from
+            # a stale snapshot that predates a concurrent reference registration.
+            try:self.reclaimed+=self.objects.prune(protected,now-self.policy['garbageGraceSeconds'])
+            except (OSError,ValueError,KeyError):pass  # Unknown reachability: collect nothing.
             # Only old noncurrent generations. Active jobs and unknown process state protect caches.
             active=any(t['state'] in ACTIVE for c in self.store.list('campaigns') for t in self.store.runs(c['id'])) or any(s.get('state') in ACTIVE for s in self.store.list('meta_sessions')) or any(o.get('state')=='running' for o in self.store.list('operations'))
             if not active and listing is not None:self.prune_caches(listing,now)

@@ -126,9 +126,7 @@ class MetaAPI:
             return result
         if op=='candidate_list':return page(service.meta_call(campaign,op,{}),args)
         if op=='evidence_list':
-            rows=service.meta_call(campaign,op,{k:v for k,v in args.items() if k=='batchId'})
-            if args.get('trialId'):rows=[r for r in rows if r['trialId']==args['trialId']]
-            result=page(rows,args)
+            result=service.evidence.page(campaign,**args)
             result['items']=[{**r,**self.files.evidence(campaign,self.store.get('evidence',r['id']))} for r in result['items']]
             return result
         if op=='evidence_read':

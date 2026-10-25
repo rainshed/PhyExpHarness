@@ -76,6 +76,8 @@ class ControlService:
         self.references=References(self)
         from .storage import Storage
         self.storage=Storage(self)
+        from .collection import Collections
+        self.collections=Collections(self)
     def authenticate(self,token):
         if secrets.compare_digest(token,self.user_token):return {'role':'user'}
         digest=hashlib.sha256(token.encode()).hexdigest()
@@ -113,7 +115,7 @@ class ControlService:
         if hasattr(self,'storage') and not self.storage.permit(campaign,'build'):raise Refused('存储空间不足，暂不启动构建；释放空间后重试。')
         row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
         def work():
-            with self.access.enter():
+            with self.access.enter(campaign):
                 if self.store.deletion(campaign):return
                 try:result=fn();row.update(state='finished',result=result)
                 except Exception as error:
@@ -425,7 +427,7 @@ class ControlService:
         for file in Path(trial['output']).glob('harbor/*/phyexp/gateway-audit.jsonl'):
             reconcile_audit(self.store,trial['campaignId'],trial['leaseId'],file)
         self.store.mark_unknown(trial['leaseId'])
-    def _collect(self,trial):
+    def _collect(self,trial,*,defer_evidence=False):
         output=Path(trial['output'])
         summary=read_summary(trial,self.store.get('candidates',trial['candidateId']));self._reconcile_usage(trial)
         state='finished' if summary.get('pipelineStatus')=='completed' else 'failed'
@@ -463,7 +465,11 @@ class ControlService:
                 changes['runnerImageProof']=proof
             except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
                 pass # Keep strict raw-image comparison when proof is unavailable.
-        items=self.evidence.ingest(trial,summary)
+        if defer_evidence:
+            changes.update(resultAvailableAt=time.time(),finishedAt=trial.get('executionFinishedAt') or changes['finishedAt'],
+                evidenceIndex={'state':'pending','completed':0})
+            items=[self.evidence.add(trial['campaignId'],trial['id'],'official-result',encoded(summary),{'archive':'controller-verified-result.json','derivedFrom':'summary.json','collection':summary.get('resultCollection')})]
+        else:items=self.evidence.ingest(trial,summary)
         t=self.store.trial_update(trial['id'],**changes)
         c=self.store.get('campaigns',trial['campaignId'])
         if not trial.get('reference') and c['config'].get('retentionRule')!=META_RETENTION_RULE and c['retainedCandidateId'] is None and t['score'] is not None:
@@ -511,6 +517,10 @@ class ControlService:
                     **{k:timing[k] for k in ('solverStartedAt','solverDeadline')}})
                 break
         if (output/'summary.json').is_file() and (output/'archive-manifest.json').is_file():
+            candidate=self.store.get('candidates',trial['candidateId'])
+            if candidate.get('executionContract')=='harbor-process-v1':
+                if self._process_alive(trial.get('pid'),output):return
+                return self.collections.enqueue({**trial,'output':str(output)})
             return self._collect({**trial,'output':str(output)})
         process=self.children.get(trial['id'])
         alive=process.poll() is None if process else self._process_alive(trial.get('pid'),output)
@@ -541,10 +551,7 @@ class ControlService:
         return self.store.trial_update(trial['id'],**changes)
     def tick(self):
         self.deletions.tick()
-        try:
-            with self.access.enter():self._tick()
-        except Conflict:
-            if not self.access.cleaning:raise
+        self._tick()
     def _tick(self):
         if not self.tick_lock.acquire(blocking=False):return
         try:
@@ -552,6 +559,7 @@ class ControlService:
             reap_children(self.children,self.store,'trials',{'finished','failed','cancelled','unknown'})
             if self.meta_driver:self.meta_driver.reap_children()
             self.storage.schedule()
+            self.collections.tick()
             for campaign in self.store.list('campaigns'):
                 id=campaign['id']
                 if campaign['state'] in ['draft','finished','failed','deleting']:continue
@@ -579,7 +587,7 @@ class ControlService:
                         try:self._launch(trial)
                         except Exception as error:self._failed_trial(trial,'startup_failure',error=str(error))
                 c=self.store.status(id)
-                if c['explorationClosed'] and c['counts']['activeTrials']==0 and c['counts']['reservedTrials']==0:
+                if c['explorationClosed'] and c['counts']['activeTrials']==0 and c['counts']['collectingTrials']==0 and c['counts']['reservedTrials']==0:
                     self.store.close_admission(id,c['stopReason'] or 'completed',False)
                 if now>=c['deadline']:
                     for t in self.store.runs(id):
@@ -591,7 +599,7 @@ class ControlService:
                         if t['state'] in ('launching','running') and not t.get('stopRequestedAt'):self.stop_trial(t,'storage_capacity')
                     if self.meta_driver:self.meta_driver.interrupt(id,'storage_capacity')
                 if self.meta_driver:self.meta_driver.tick(id)
-                elif c['state']=='closing' and c['counts']['activeTrials']==0:
+                elif c['state']=='closing' and c['counts']['activeTrials']==0 and c['counts']['collectingTrials']==0:
                     self.store.finalize(id);self.reports.status_summary(id,'达到活动上限；Meta 分析尚未完成。')
         finally:self.tick_lock.release()
     def export(self,campaign,candidate):

@@ -3,6 +3,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import os
 import threading
 import time
 
@@ -12,34 +13,33 @@ from .deletion_runtime import stop_processes, cleanup_resources, ensure_unused
 
 
 class ActivityAccess:
-    """Drain admitted HTTP requests/builds before filesystem removal.
-
-    A counter, not a lock held across await: the API event loop and sync workers
-    can enter/leave on different threads. New requests fail briefly during purge.
-    """
+    """Drain only the activity being removed, including streamed responses."""
     def __init__(self):
-        self.lock = threading.Lock()
-        self.readers = 0
-        self.cleaning = False
+        self.lock=threading.Lock();self.scopes={};self.cleaning=set()
+
+    @property
+    def readers(self):return sum(self.scopes.values())
 
     @contextlib.contextmanager
-    def enter(self):
+    def enter(self,campaign=None):
         with self.lock:
-            if self.cleaning:raise Conflict('后台正在完成活动清理，请稍后重试。')
-            self.readers += 1
+            if campaign in self.cleaning or campaign is None and self.cleaning:
+                raise Conflict('此活动正在完成清理，请稍后重试。')
+            self.scopes[campaign]=self.scopes.get(campaign,0)+1
         try:yield
         finally:
-            with self.lock:self.readers -= 1
+            with self.lock:self.scopes[campaign]-=1
 
     @contextlib.contextmanager
-    def exclusive(self):
+    def exclusive(self,campaign=None):
         with self.lock:
-            acquired = not self.cleaning and not self.readers
-            if acquired:self.cleaning = True
+            acquired=not self.cleaning and not self.scopes.get(None,0) and not self.scopes.get(campaign,0)
+            if campaign is None:acquired=acquired and not self.readers
+            if acquired:self.cleaning.add(campaign)
         try:yield acquired
         finally:
             if acquired:
-                with self.lock:self.cleaning = False
+                with self.lock:self.cleaning.remove(campaign)
 
 
 class Deletions:
@@ -98,22 +98,27 @@ class Deletions:
             db.execute('INSERT INTO deletions VALUES(?,?)',(campaign,encoded(job)))
             return self.public(job)
 
-    def guard_route(self, path):
+    def route_campaign(self, path):
         parts = path.strip('/').split('/')
         if len(parts) < 2:return
         kind, id = parts[:2]
         if kind == 'campaigns':
-            if len(parts) == 2 or parts[2] in ('deletion','events'):return
             campaign = id
         elif kind == 'meta':campaign = id
         else:
             table = {'candidates':'candidates','trials':self.store.run_table(id),'evidence':'evidence',
                      'reports':'reports','exports':'exports','meta-sessions':'meta_sessions',
-                     'meta-questions':'meta_questions','accounting':'leases'}.get(kind)
+                     'meta-questions':'meta_questions','accounting':'leases','model-access':'leases'}.get(kind)
             if not table:return
             try:campaign = self.store.get(table,id)['campaignId']
             except KeyError:return
-        self.store.writable(campaign)
+        return campaign
+
+    def guard_route(self,path):
+        parts=path.strip('/').split('/')
+        if parts[0]=='campaigns' and (len(parts)==2 or len(parts)>2 and parts[2] in ('deletion','events')):return
+        campaign=self.route_campaign(path)
+        if campaign:self.store.writable(campaign)
 
     def tick(self):
         with self.lock:
@@ -131,17 +136,20 @@ class Deletions:
         try:
             if job['phase'] == 'stopping':
                 with self.service.tick_lock:
+                    if not self.service.collections.stop(campaign):return
                     if not stop_processes(self.service,campaign,job,self.save):return
                 # Includes already-running builds whose callbacks are now fenced.
-                if any(not f.done() for f in self.service.operations.values()):return
-            with self.service.access.exclusive() as acquired:
+                if any(not self.service.operations[o['id']].done() for o in self.store.list('operations',campaign) if o['id'] in self.service.operations):return
+            with self.service.access.exclusive(campaign) as acquired:
                 if not acquired:return
                 # Coordinate explicit legacy migration/restore as well as API work.
                 lockfile = safe_path(self.service.data,self.service.data/'history-storage.lock')
                 with lockfile.open('a') as lock:
                     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
                     except BlockingIOError:return
-                    self.clean(job)
+                    if not self.service.storage.maintenance_lock.acquire(blocking=False):return
+                    try:self.clean(job)
+                    finally:self.service.storage.maintenance_lock.release()
         except Exception as error:
             if (self.store.deletion(campaign) or {}).get('state')=='deleted':return
             job.update(state='failed',error=str(error))
@@ -149,41 +157,55 @@ class Deletions:
 
     def clean(self, job):
         campaign = job['campaignId']
-        # Hold the writer transaction through the purge. Other Store instances
-        # cannot introduce a reference between the final inventory and removal.
-        with self.store.connection(True) as db:
-            if 'plan' not in job:
-                plan = Inventory(self.service,campaign,db).build()
-                if plan['blockers']:raise Refused('；'.join(b['message'] for b in plan['blockers']))
-                ensure_unused(self.service.data,plan)
-                cleanup_resources(self.service,campaign,plan)
-                job.update(phase='cleaning',plan=plan,counts=plan['counts'],sharedRetained=plan['sharedRetained'])
-                db.execute('UPDATE deletions SET data=? WHERE campaign=?',(encoded(job),campaign))
-        # The complete recovery plan is committed BEFORE the first unlink.
-        with self.store.connection(True) as db:
-            plan = job['plan']
+        # Build/inspect/clean engine resources outside SQLite's writer lock.
+        if 'plan' not in job:
+            with self.store.connection() as db:plan=Inventory(self.service,campaign,db).build()
+            if plan['blockers']:raise Refused('；'.join(b['message'] for b in plan['blockers']))
             ensure_unused(self.service.data,plan)
+            cleanup_resources(self.service,campaign,plan)
+            job.update(phase='cleaning',plan=plan,counts=plan['counts'],sharedRetained=plan['sharedRetained'])
+            self.save(job)
+        plan=job['plan'];ensure_unused(self.service.data,plan)
+        from src.evidence.objects import Objects
+        from .database import begin_write
+        trash=safe_path(self.service.data,self.service.data/'deletion-trash'/campaign)
+        trash.mkdir(parents=True,exist_ok=True)
+        # Object publication always precedes DB registration: use the same lock order.
+        with contextlib.ExitStack() as locks, Objects(self.service.data).locked(), self.store.connection() as db:
+            version=db.execute('PRAGMA data_version').fetchone()[0]
             inventory=Inventory(self.service,campaign,db)
             keep=inventory.retained({self.service.data/p for p in plan['paths']})
-            from src.evidence.objects import Objects
-            with contextlib.ExitStack() as locks, Objects(self.service.data).locked():
-                for path in plan['paths']:
-                    if not (path.startswith('cache/project-builds/') and path.endswith('.lock')):continue
-                    target=safe_path(self.service.data,path)
-                    if target not in keep and target.exists():
-                        stream=locks.enter_context(target.open('r'))
-                        try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                        except BlockingIOError:raise Refused('构建缓存仍在使用，请结束构建后重试：'+str(target))
-                for entry in plan['rewrites']:rewrite(self.service.data,entry)
-                # Local hard-link views go first. A surviving unexplained link is
-                # an ownership conflict, never permission to unlink another view.
-                paths=sorted(plan['paths'],key=lambda p:p.startswith('artifacts/'))
-                for path in paths:
-                    target=self.service.data/path
-                    if target in keep:continue
-                    if path.startswith('artifacts/') and target.exists() and target.stat().st_nlink>1:
+            from .deletion_storage import walk_stats
+            for _,info in walk_stats(trash):
+                original=inventory.artifact_inodes.get((info.st_dev,info.st_ino))
+                if original:inventory.own_links[original]=inventory.own_links.get(original,0)+1
+            for path in plan['paths']:
+                if not (path.startswith('cache/project-builds/') and path.endswith('.lock')):continue
+                target=safe_path(self.service.data,path)
+                if target not in keep and target.exists():
+                    stream=locks.enter_context(target.open('r'))
+                    try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    except BlockingIOError:raise Refused('构建缓存仍在使用，请结束构建后重试：'+str(target))
+            begin_write(db)
+            # A concurrent publication invalidates the inventory. Retry next tick.
+            if db.execute('PRAGMA data_version').fetchone()[0]!=version:return
+            for entry in plan['rewrites']:rewrite(self.service.data,entry)
+            paths=sorted(plan['paths'],key=lambda p:p.startswith('artifacts/'))
+            for path in paths:
+                target=safe_path(self.service.data,path)
+                if target in keep or not target.exists():continue
+                if path.startswith('artifacts/') and target.stat().st_nlink>1:
+                    # Private views are already detached; their links disappear in
+                    # the purge below. Unexplained links were checked by Inventory.
+                    expected=inventory.own_links.get(target,0)+1
+                    if target.stat().st_nlink>expected:
                         raise Refused('共享归档仍有未登记的文件引用，请先核实：'+str(target))
-                    remove_path(self.service.data,path)
+                os.replace(target,trash/hashlib.sha256(path.encode()).hexdigest())
+        # Recursive removal never holds a writer or publication lock. The saved
+        # plan and deterministic trash names recover a crash after any rename.
+        for path in trash.iterdir():remove_path(self.service.data,str(path))
+        remove_path(self.service.data,str(trash))
+        with self.store.connection(True) as db:
             for row in db.execute("SELECT key,result FROM commands WHERE campaign='global' AND kind='create'").fetchall():
                 if json.loads(row['result']).get('id') == campaign:
                     db.execute('INSERT OR IGNORE INTO deleted_create_keys VALUES(?)',(hashlib.sha256(row['key'].encode()).hexdigest(),))

@@ -19,8 +19,8 @@ from .model_access import control_only, check_config, TOKEN_FIELDS
 from .database import begin_write, diagnostic
 from src.execution.host.task_time import benchmark_time
 
-SCHEMA_VERSION = 7
-TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts')
+SCHEMA_VERSION = 8
+TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts','collection_jobs')
 PUBLIC_TASKS = ('time_budgeted_hamlearn_10q','time_budgeted_shadow_surrogate_60q','tunable_coupler_cz_netzero',
                 'logical_cnot_decoder_calibration','adaptive_clustered_clbcs_h2o')
 LEGACY_RETENTION_RULE = 'public-development-v1'
@@ -187,6 +187,8 @@ class Store:
             db.execute('INSERT OR IGNORE INTO migrations VALUES (?)',(SCHEMA_VERSION,))
             for table in TABLES:
                 db.execute(f'CREATE TABLE IF NOT EXISTS {table}(id TEXT PRIMARY KEY,campaign TEXT NOT NULL,data TEXT NOT NULL)')
+                db.execute(f'CREATE INDEX IF NOT EXISTS {table}_campaign ON {table}(campaign)')
+            db.execute("CREATE INDEX IF NOT EXISTS evidence_identity ON evidence(campaign,json_extract(data,'$.trialId'),json_extract(data,'$.kind'),json_extract(data,'$.sha256'))")
             db.execute('CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,campaign TEXT NOT NULL,data TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS commands(campaign TEXT,kind TEXT,key TEXT,payload TEXT,result TEXT,PRIMARY KEY(campaign,kind,key))')
             db.execute('CREATE TABLE IF NOT EXISTS deletions(campaign TEXT PRIMARY KEY,data TEXT NOT NULL)')
@@ -329,6 +331,7 @@ class Store:
             'trials':sum(t['state']!='cancelled' or t.get('startedAt') is not None for t in trials),
             'startedTrials':sum(t.get('startedAt') is not None for t in trials),
             'activeTrials':sum(t['state'] in ['launching','running'] for t in trials),
+            'collectingTrials':sum(t['state']=='collecting' for t in trials),
             'reservedTrials':sum(t['state']=='reserved' for t in trials)}
     def status(self,id):
         with self.connection() as db:
@@ -696,7 +699,8 @@ class Store:
     def finalize(self,campaign,reason=None):
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
-            if self._counts(db,campaign)['activeTrials']:raise Refused('Cannot finalize while a Trial is active')
+            counts=self._counts(db,campaign)
+            if counts['activeTrials'] or counts['collectingTrials']:raise Refused('Cannot finalize while a Trial is active or collecting results')
             if c['state']=='finished':return c
             c.update(state='finished',explorationClosed=True,finishedAt=self.clock(),
                 stopReason=reason or c['stopReason'] or 'completed',finalCandidateId=c['retainedCandidateId'])

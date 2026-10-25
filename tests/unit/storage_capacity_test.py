@@ -20,6 +20,7 @@ class StorageCapacityTests(unittest.TestCase):
         self.store=Store(self.root/'control.sqlite');self.store.put('campaigns',{'id':'c','config':{'storagePolicy':POLICY},'state':'running'})
         self.service=SimpleNamespace(data=self.root,store=self.store,access=ActivityAccess(),_process_alive=lambda *a:False)
         self.storage=Storage(self.service)
+        self.storage.inventory(force=True)
         self.disk=patch('src.control.storage.shutil.disk_usage',return_value=Usage(100*GiB,10*GiB,90*GiB));self.fake_disk=self.disk.start();self.addCleanup(self.disk.stop)
     def test_admission_reserves_inflight_closeout_and_recovers_with_hysteresis(self):
         self.fake_disk.return_value=Usage(100*GiB,89*GiB,11*GiB)
@@ -31,6 +32,7 @@ class StorageCapacityTests(unittest.TestCase):
     def test_data_and_campaign_budget_block_without_changing_lifecycle_or_clock(self):
         file=self.root/'campaigns/c/workspace/out';file.parent.mkdir(parents=True);file.write_bytes(b'x'*20000)
         self.storage.configure({'maxCampaignBytes':10000,'resumeMarginBytes':1000})
+        self.storage.inventory(force=True)
         before=self.store.get('campaigns','c');self.assertFalse(self.storage.permit('c'))
         self.assertEqual(self.store.get('campaigns','c'),before)
         file.unlink();self.storage.inventory(force=True);self.assertTrue(self.storage.permit('c'))

@@ -98,7 +98,7 @@ class MetaDriver:
                 row.update(stopReason=reason,stopRequestedAt=time.time());self._save_session(row)
     def closeout_ready(self,campaign):
         c=self.store.status(campaign)
-        if c['state']!='closing' or c['counts']['activeTrials'] or c['counts']['reservedTrials']:return False
+        if c['state']!='closing' or c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials']:return False
         if any(o['state']=='running' for o in self.store.list('operations',campaign)):return False
         reports=self.store.list('reports',campaign)
         return any(r['kind']=='final' and r['status']=='analysis' for r in reports) and all(
@@ -118,7 +118,7 @@ class MetaDriver:
                 current=self.store._get(db,'meta_sessions',id)
                 current.update(state='waiting',deliveredCursor=max(cursor,current.get('deliveredCursor',0)),heartbeat=time.time());self.store._save(db,'meta_sessions',current)
         else:row.update(state='waiting',cursor=cursor,heartbeat=time.time());self._save_session(row)
-        pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts']['reservedTrials'])
+        pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials'])
         from .meta_contracts import version
         state=activity_state(self.service,campaign)
         if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9'):
@@ -171,6 +171,7 @@ class MetaDriver:
                     with self.store.connection(True) as db:self.store._event(db,campaign,'meta_recovery',sessionId=row['id'],**decision)
                 else:self.store.close_admission(campaign,'meta_session_failed')
             if row['state']=='completed':
+                if self.store.status(campaign)['counts'].get('collectingTrials'):return
                 self.store.finalize(campaign)
                 if native_config(c):return
                 # Preserve Meta's analysis, refresh system facts after all provider settlements.
@@ -196,7 +197,7 @@ class MetaDriver:
                     return
         failed=[s for s in self.store.list('meta_sessions',campaign) if s['state']=='failed']
         if time.time()>=c['deadline'] or failed:
-            if not c['counts']['activeTrials']:
+            if not c['counts']['activeTrials'] and not c['counts'].get('collectingTrials',0):
                 self.store.finalize(campaign,c['stopReason'] or 'time_limit')
                 self.service.reports.status_summary(campaign,'Meta 会话未完成完整分析；已保留所有事实、用量与停止原因。')
             return

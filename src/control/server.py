@@ -76,7 +76,7 @@ def make_app(service,supervise=True):
             # ASGI scope includes the entire download body. call_next() alone
             # returns at headers and would release a file before it is streamed.
             try:
-                with service.access.enter():await self.app(scope,receive,send)
+                with service.access.enter(service.deletions.route_campaign(scope['path'])):await self.app(scope,receive,send)
             except Conflict as error:
                 await JSONResponse({'error':str(error)},status_code=409,headers={'Cache-Control':'no-store'})(scope,receive,send)
     app.add_middleware(ActivityRequests)

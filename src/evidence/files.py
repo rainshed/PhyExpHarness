@@ -48,8 +48,10 @@ class FileViews:
                     except OSError:shutil.copyfile(original,pending)
                 else:
                     if enabled(self.store.get('campaigns',campaign)['config']):
-                        original=Objects(self.service.data).put(data)
-                        pending.unlink();os.link(original,pending)
+                        objects=Objects(self.service.data)
+                        with objects.locked():
+                            original=objects._publish([data])
+                            pending.unlink();os.link(original,pending)
                     else:pending.write_bytes(data)
                 pending.chmod(0o444)
                 try:os.link(pending,target)

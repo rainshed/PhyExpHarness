@@ -116,6 +116,7 @@ class Objects:
         """Metadata roots plus filesystem references; publication and collection share a lock."""
         removed = 0
         with self.locked():
+            if callable(protected):protected=protected()
             for file in self.root.glob('.publishing-*'):
                 info=file.lstat()
                 if stat.S_ISREG(info.st_mode) and info.st_mtime<before:

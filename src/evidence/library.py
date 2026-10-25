@@ -1,5 +1,6 @@
 """Allowlisted derived feedback. Raw official archives remain unchanged and separately verifiable."""
 import hashlib
+import contextlib
 import gzip
 import json
 from pathlib import Path
@@ -27,18 +28,37 @@ class EvidenceLibrary:
     def __init__(self,store,data):self.store=store;self.root=Path(data)/'evidence';self.objects=Objects(data)
     def add(self,campaign,trial,kind,text,source,policy='public-development-v1'):
         data=text.encode() if isinstance(text,str) else text;sha=hashlib.sha256(data).hexdigest();file=self.root/sha
-        with self.store.connection(True) as db:
-            self.store.writable(campaign,db)
-            if enabled(self.store._get(db,'campaigns',campaign)['config']):
-                file=self.objects.put(data)
+        shared=enabled(self.store.get('campaigns',campaign)['config'])
+        # Publication is outside the SQLite writer lock. Keep the object lock until
+        # its reference commits so GC cannot remove a just-published body.
+        with self.objects.locked() if shared else contextlib.nullcontext():
+            if shared:
+                file=self.objects._publish([data])
             else:
                 file.parent.mkdir(parents=True,exist_ok=True)
                 if not file.exists():file.write_bytes(data);file.chmod(0o444)
-            existing=[x for x in self.store._list(db,'evidence',campaign) if x['trialId']==trial and x['kind']==kind and x['sha256']==sha]
-            if existing:return existing[0]
-            row={'id':identity('evidence'),'campaignId':campaign,'trialId':trial,'kind':kind,'sha256':sha,'path':str(file),
-                 'bytes':len(data),'source':source,'policy':policy,'encoding':'utf-8' if self._utf8(data) else 'binary'}
-            return self.store._save(db,'evidence',row)
+            with self.store.connection(True) as db:
+                self.store.writable(campaign,db)
+                matches=db.execute("SELECT data FROM evidence WHERE campaign=? AND json_extract(data,'$.trialId')=? AND json_extract(data,'$.kind')=? AND json_extract(data,'$.sha256')=?",(campaign,trial,kind,sha))
+                for match in matches:
+                    existing=json.loads(match['data'])
+                    if existing.get('source',{}).get('archive')==source.get('archive'):return existing
+                row={'id':identity('evidence'),'campaignId':campaign,'trialId':trial,'kind':kind,'sha256':sha,'path':str(file),
+                     'bytes':len(data),'source':source,'policy':policy,'encoding':'utf-8' if self._utf8(data) else 'binary'}
+                return self.store._save(db,'evidence',row)
+
+    def page(self,campaign,*,trialId=None,batchId=None,offset=0,limit=50):
+        if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=100:raise Refused('Invalid evidence page')
+        where=['campaign=?'];values=[campaign]
+        if trialId:where.append("json_extract(data,'$.trialId')=?");values.append(trialId)
+        if batchId:
+            where.append("json_extract(data,'$.trialId') IN (SELECT id FROM trials WHERE campaign=? AND json_extract(data,'$.batchId')=?)")
+            values.extend([campaign,batchId])
+        clause=' AND '.join(where)
+        with self.store.read_snapshot(),self.store.connection() as db:
+            total=db.execute('SELECT count(*) FROM evidence WHERE '+clause,values).fetchone()[0]
+            rows=[json.loads(x['data']) for x in db.execute('SELECT data FROM evidence WHERE '+clause+' ORDER BY rowid LIMIT ? OFFSET ?',[*values,limit,offset])]
+        return {'items':rows,'offset':offset,'total':total,'nextOffset':offset+len(rows) if offset+len(rows)<total else None}
     @staticmethod
     def _utf8(data):
         try:data.decode('utf-8');return True
@@ -69,7 +89,7 @@ class EvidenceLibrary:
             for file in folder.glob('harbor/*/phyexp/'+name):
                 items.append(self.add(trial['campaignId'],trial['id'],name,file.read_text(),{'archive':str(file.relative_to(folder))}))
         return items
-    def ingest_complete(self,trial,summary):
+    def ingest_complete(self,trial,summary,*,after=None,progress=None,retain_items=True):
         """Publish actual development outputs, never task images or verifier inputs.
 
         No field/event whitelist is applied inside these output files. Legacy
@@ -88,10 +108,13 @@ class EvidenceLibrary:
             file=root/rel
             if not file.is_symlink() and file.is_file() and file.resolve().is_relative_to(root):files[file.relative_to(root).as_posix()]=file
         items=[]
-        for rel,file in sorted(files.items()):
+        for index,(rel,file) in enumerate(sorted(files.items()),1):
+            if after is not None and rel<=after:continue
             kind='official-result' if rel=='summary.json' else 'trajectory-original' if file.name=='events.json' else 'raw-artifact'
-            items.append(self.add(trial['campaignId'],trial['id'],kind,file.read_bytes(),
-                {'archive':rel,'format':'segmented-log-tail' if Path(str(file)+'.segments/index.json').exists() else 'original-bytes','collection':summary.get('resultCollection'),**({'segments':rel+'.segments/index.json'} if Path(str(file)+'.segments/index.json').exists() else {}),**({'storageEncoding':'gzip'} if file.suffix=='.gz' else {})},policy='public-development-full-v2'))
+            item=self.add(trial['campaignId'],trial['id'],kind,file.read_bytes(),
+                {'archive':rel,'format':'segmented-log-tail' if Path(str(file)+'.segments/index.json').exists() else 'original-bytes','collection':summary.get('resultCollection'),**({'segments':rel+'.segments/index.json'} if Path(str(file)+'.segments/index.json').exists() else {}),**({'storageEncoding':'gzip'} if file.suffix=='.gz' else {})},policy='public-development-full-v2')
+            if retain_items:items.append(item)
+            if progress and (index%100==0 or index==len(files)):progress(rel,index,len(files))
         return items
     def read(self,campaign,id,offset=0,limit=16000):
         row=self.store.get('evidence',id)
