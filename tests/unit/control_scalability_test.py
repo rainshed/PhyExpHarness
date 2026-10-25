@@ -56,3 +56,21 @@ class ScalabilityTests(unittest.TestCase):
             overview=self.service.evidence.overview(self.cid)
         self.assertEqual(len(page['items']),10);self.assertIsNone(page['nextOffset'])
         self.assertEqual(overview['total'],110);self.assertEqual(len(overview['items']),1)
+
+    def test_native_file_navigation_does_not_expand_history(self):
+        from src.evidence.files import FileViews
+        c=self.store.get('campaigns',self.cid);c['config']['storagePolicy']=POLICY;self.store.put('campaigns',c)
+        with patch.object(self.service.materials,'_records',side_effect=AssertionError('full catalog on heartbeat')):
+            index=FileViews(self.service).refresh(self.cid)
+        self.assertEqual(index['scope'],'navigation');self.assertEqual(index['catalogs'][0]['operation'],'evidence_list')
+    def test_late_notifications_cannot_revive_a_terminal_session(self):
+        from src.control.meta import MetaDriver
+        driver=MetaDriver(self.service)
+        row=self.store.put('meta_sessions',{'id':'meta-finished','campaignId':self.cid,'state':'completed','cursor':0,'output':str(self.root/'meta')})
+        with patch.object(self.service.meta_api.files,'refresh',side_effect=AssertionError('terminal refresh')):
+            self.assertTrue(driver.notifications(row['id'],0)['finish'])
+        driver._save_session({**row,'state':'waiting'})
+        self.assertEqual(self.store.get('meta_sessions',row['id'])['state'],'completed')
+        self.store.put('meta_sessions',{**row,'state':'waiting'})
+        with patch.object(self.service,'_process_alive',return_value=False):driver.reconcile_closed(self.cid)
+        self.assertEqual(self.store.get('meta_sessions',row['id'])['state'],'failed')

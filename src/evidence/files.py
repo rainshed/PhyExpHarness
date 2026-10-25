@@ -93,6 +93,15 @@ class FileViews:
             data=encoded(stable(json.loads(data)))
         return self.publish(campaign,row['ref'],data,kind=row['kind'],source=row['source'],version=row.get('version'))
     def refresh(self,campaign):
+        if enabled(self.store.get('campaigns',campaign)['config']):
+            # Startup/recovery and heartbeat paths must never expand every body.
+            # Frozen native tools already expose both complete catalogue queries.
+            index={'version':VERSION,'campaignId':campaign,'scope':'navigation','items':[],
+                'reading':'材料导航。调用 evidence_list 读取完整不可变证据目录；materials_list 按页查看全部材料。文件入口由查询返回，原始已发布路径继续可用。',
+                'catalogs':[{'kind':'evidence','operation':'evidence_list','input':{}},
+                            {'kind':'materials','operation':'materials_list','input':{'offset':0,'limit':20}}]}
+            atomic_json(self.directory(campaign)/'evidence/index.json',index)
+            return index
         items=[]
         for row in self.service.materials._records(campaign):
             try:items.append(self.material(campaign,row))

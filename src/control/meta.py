@@ -25,6 +25,7 @@ class MetaDriver:
         # Runtime agent receipts have a separate writer; heartbeat/state updates must not erase them.
         with self.store.connection(True) as db:
             current=self.store._get(db,'meta_sessions',row['id'])
+            if current['state'] not in ('starting','running','waiting') and row.get('state') in ('starting','running','waiting'):return current
             excluded={'agents','revision'}|({'cursor','deliveredCursor'} if current.get('runtimeVersion')=='meta-runtime-v2' else set())
             current.update({k:v for k,v in row.items() if k not in excluded})
             return self.store._save(db,'meta_sessions',current)
@@ -106,6 +107,8 @@ class MetaDriver:
             for b in self.store.list('batches',campaign))
     def notifications(self,id,after):
         row=self.store.get('meta_sessions',id);campaign=row['campaignId'];c=self.store.status(campaign)
+        if c['state'] in ('finished','failed') or row['state'] not in ('starting','running','waiting'):
+            return {'cursor':row.get('cursor',after),'events':[],'status':{'state':c['state'],'sessionState':row['state']},'finish':True,'continue':False}
         events=self.store.events(campaign,after);cursor=max([after,*[e['seq'] for e in events]])
         finished_batches={e.get('batchId') for e in events if e['type']=='batch_finished'}
         selected=[e for e in events if e['type'] in ['reference_batch_finished','reference_run_finished','reference_policy_changed','batch_finished','operation_finished','closing','resume','resource_plan_updated','resource_plan_waiting','trial_conditions_required','admission_waiting','admission_denied','limits_changed','meta_question_answered'] or
@@ -116,6 +119,8 @@ class MetaDriver:
             self.service.meta_api.files.refresh(campaign)
             with self.store.connection(True) as db:
                 current=self.store._get(db,'meta_sessions',id)
+                if current['state'] not in ('starting','running','waiting') or self.store._get(db,'campaigns',campaign)['state'] in ('finished','failed'):
+                    return {'cursor':current.get('cursor',after),'events':[],'status':{'sessionState':current['state']},'finish':True,'continue':False}
                 current.update(state='waiting',deliveredCursor=max(cursor,current.get('deliveredCursor',0)),heartbeat=time.time());self.store._save(db,'meta_sessions',current)
         else:row.update(state='waiting',cursor=cursor,heartbeat=time.time());self._save_session(row)
         pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials'])
@@ -136,6 +141,22 @@ class MetaDriver:
             if type(cursor) is not int or not row.get('cursor',0)<=cursor<=row.get('deliveredCursor',row.get('cursor',0)):raise Refused('Acknowledgment outside delivered range')
             row['cursor']=cursor;row['acknowledgedAt']=time.time();self.store._save(db,'meta_sessions',row)
             return {'cursor':cursor}
+    def reconcile_closed(self,campaign):
+        for row in self.store.list('meta_sessions',campaign):
+            if row['state'] not in ('starting','running','waiting'):continue
+            if row.get('output') and self.service._process_alive(row.get('pid'),row['output']):
+                self.interrupt(campaign,'activity_closed')
+                if row.get('stopRequestedAt') and time.time()-row['stopRequestedAt']>10:
+                    try:os.kill(row['pid'],signal.SIGKILL)
+                    except ProcessLookupError:pass
+                continue
+            try:summary=json.loads((Path(row['output'])/'summary.json').read_text())
+            except (OSError,ValueError,KeyError,TypeError):summary={'status':'error','error':'Session process exited without final summary'}
+            row.update(state='completed' if summary.get('status')=='completed' else 'failed',
+                finishedAt=row.get('finishedAt') or time.time(),summary=summary)
+            self._save_session(row)
+            with self.store.connection(True) as db:self.store._event(db,campaign,'meta_terminal_reconciled',sessionId=row['id'],state=row['state'])
+
     def tick(self,campaign):
         c=self.store.status(campaign);sessions=self.store.list('meta_sessions',campaign);active=False
         for row in sessions:

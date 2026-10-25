@@ -571,7 +571,10 @@ class ControlService:
             self.collections.tick()
             for campaign in self.store.list('campaigns'):
                 id=campaign['id']
-                if campaign['state'] in ['draft','finished','failed','deleting']:continue
+                if campaign['state'] in ('finished','failed'):
+                    if self.meta_driver:self.meta_driver.reconcile_closed(id)
+                    continue
+                if campaign['state'] in ['draft','deleting']:continue
                 for trial in self.store.runs(id):
                     if trial['state'] in ['launching','running']:
                         if trial.get('referenceStopPending'):self.stop_trial(trial,'reference_plugin_disabled')
