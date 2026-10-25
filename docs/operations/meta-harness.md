@@ -825,3 +825,5 @@ Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评�
 部署先构建独立 release，在无 Trial、Meta、构建及归集工作的窗口切换 control/workbench 两个用户服务。维护备份放在 data 同级的私有 maintenance-backups，保存数据库一致性备份和服务配置；保留旧 release。冻结候选与协议不替换。Schema 9 的报告引用不能由旧代码直接读取：无新业务写入时可同时恢复本次数据库备份和旧服务；已有新业务数据时应先验证兼容导出/展开报告引用，不能只切回旧代码。
 
 `python scripts/project-candidate-diagnostics.py --data <data> --campaign <id>` 仅检查历史候选错误；加 `--write` 追加 failure-diagnoses.json 阅读投影。它记录输入摘要，不改官方结果、原事件或历史报告。
+
+TensorTrain 2 于 2026-10-25 发布 `936d39a`，control/workbench 均使用独立 release；规模验证、历史完整性核对和已知性能边界见[发布验收](../plans/control-plane-scalability.md#7-tensortrain-2-发布验收)。候选诊断包含运行中可能已恢复的错误，读取时须结合最终结果，不能将上报错误数量当作失败次数。
