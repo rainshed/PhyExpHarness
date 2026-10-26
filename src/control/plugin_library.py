@@ -86,6 +86,10 @@ class PluginLibrary:
         metadata = {'manifest': manifest, 'modes': modes}
         bodies = {**files, 'library.json': canonical(metadata)}
         with self.locked():
+            expected=digest(canonical({'schemaVersion':1,'kind':KIND,'files':{n:digest(v) for n,v in bodies.items()}}))
+            with self.store.connection() as db:
+                prior=db.execute('SELECT data FROM plugin_library WHERE id=?',(expected,)).fetchone()
+                if prior and source.get('kind')=='platform-template' and json.loads(prior['data'])['deleted']:return expected
             id, _ = _object(self.root, KIND, bodies)
             # _object converges concurrent publications; verify pre-existing bytes too.
             self.contents(id)
@@ -97,7 +101,8 @@ class PluginLibrary:
                     'description': manifest.get('functionSummary') or manifest.get('purpose') or '',
                     'manifest': manifest, 'bytes': sum(map(len, files.values())), 'files': sorted(files),
                     'createdAt': self.store.clock(), 'revision': 0, 'deleted': False, 'sources': [], 'checks': []}
-                if source not in row['sources']: row['sources'].append(source)
+                if prior and source in row['sources']:return id
+                row['sources'].append(source)
                 row['revision'] += 1
                 row['updatedAt'] = self.store.clock()
                 self.write(db, row)

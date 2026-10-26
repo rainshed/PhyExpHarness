@@ -1,0 +1,102 @@
+{
+  "name": "request-recovery",
+  "version": "1.0.0",
+  "displayName": "请求与响应恢复",
+  "functionSummary": "对临时请求故障、异常响应和工具参数错误进行有界恢复。",
+  "purpose": "在原任务截止内恢复可重试请求。",
+  "mechanism": "恢复协调器记录请求链、等待与反馈；不重放已完成工具副作用。",
+  "limitations": "重试会消耗剩余活动时间；不保证任务成功，不延长截止。",
+  "entry": "recovery/plugin.mjs",
+  "categories": [
+    "execution-control"
+  ],
+  "assembly": {
+    "contract": "dsh-plugin-v1",
+    "entry": "recovery/plugin.mjs",
+    "requires": [],
+    "conflicts": [],
+    "defaultConfig": {
+      "policy": {
+        "version": "solver-request-recovery-v2",
+        "retryDelaysSeconds": [
+          2,
+          5,
+          20,
+          30,
+          60
+        ],
+        "strategies": [
+          "transient-recovery",
+          "response-recovery",
+          "tool-argument-recovery"
+        ],
+        "contentRetryDelaysSeconds": [
+          0,
+          1
+        ],
+        "maxChainRetries": 5
+      }
+    },
+    "configSchema": {
+      "type": "object",
+      "required": [
+        "policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "object",
+          "required": [
+            "version",
+            "retryDelaysSeconds",
+            "strategies",
+            "contentRetryDelaysSeconds",
+            "maxChainRetries"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "solver-request-recovery-v2"
+            },
+            "retryDelaysSeconds": {
+              "type": "array",
+              "minItems": 5,
+              "maxItems": 5,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 3600
+              }
+            },
+            "contentRetryDelaysSeconds": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3600
+              }
+            },
+            "maxChainRetries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "strategies": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "transient-recovery",
+                  "response-recovery",
+                  "tool-argument-recovery"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

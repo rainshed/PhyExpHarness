@@ -26,7 +26,7 @@
 
 启动发生在 Harbor main：入口路径 `/opt/harness/<entrypoint[0]>`，cwd `/app`，`PHYEXP_CONTEXT` 是 JSON 路径。上下文包含原始 instruction、workspace、mcpServers、deadline（Unix 秒）、outputDirectory、固定 solver、resources 和 modelChannel。模型通道包含 url、protocol、codexSubscription 与仅限本 Trial 的 token。候选自行决定如何呈现环境、组装提示、管理工具/上下文/压缩/重试/会话/辅助请求；原始任务仍可核对。不要把短期 token 放进源码或日志。HTTP/SSE 可用，WebSocket 当前不可用。
 
-默认 `run.mjs` / profile / recovery 是普通候选文件。`runtimeConfig.recovery=null` 可移除默认恢复；也可修改源码、换成自有插件、重命名 bash、使用持久终端/jobs、替换 MCP 客户端。候选内全部辅助调用仍绑定同一 Solver。失败的参数在真正工具执行前校验，反馈与恢复由候选负责；不要重放已完成副作用。没有固定请求次数、单会话或静态 tools 全集约束。
+`run.mjs` / profile 与用户选择的插件均是普通候选文件。恢复使用 `plugins/<准确摘要>/`（模板内为 `plugins/request-recovery/`）中的普通插件；从 `plugins` 和 `runtimeConfig.plugins` 移除对应声明可禁用恢复；也可修改源码、换成自有插件、重命名 bash、使用持久终端/jobs、替换 MCP 客户端。候选内全部辅助调用仍绑定同一 Solver。失败的参数在真正工具执行前校验，反馈与恢复由候选负责；不要重放已完成副作用。没有固定请求次数、单会话或静态 tools 全集约束。
 
 候选只能连接本任务侧车和模型通道，不能接触真实凭据、其他 Trial、宿主或私有 verifier 输入。到期、取消和退出由外部监督收回候选进程，评分按 Harbor 原生规则。`execution`、`officialResult`、`evidenceStatus`、`comparison` 分列：异常退出不抹掉有效评分，缺少可信官方文件保持 null；v4 主指标仍覆盖所有尝试。候选依赖/profile 是研究变量；任务镜像、平台适配、固定模型、资源和阶段时间是比较条件。
 

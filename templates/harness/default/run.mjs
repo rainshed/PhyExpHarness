@@ -19,15 +19,14 @@ const insert=[{id:'candidate-provider',name:'@deepseek-ai/dsh-llm-pi-ai',config:
  ...context.mcpServers.map((server,i)=>({id:'task-mcp-'+i,name:'@deepseek-ai/dsh-mcp-client',
  config:{serverName:server.name,transport:server.transport,url:server.url,failOnStartupError:true,
  toolCallTimeoutMs:remaining(),reconnect:{enabled:true}}}))];
-if(config.recovery)insert.push({id:'candidate-recovery',name:path.join(root,'recovery/plugin.mjs'),config:{policy:config.recovery,deadline:context.deadline*1000}});
-for(const plugin of config.plugins||[])insert.push({...plugin,name:plugin.name.startsWith('.')?path.resolve(root,plugin.name):plugin.name});
+for(const plugin of config.plugins||[])insert.push({...plugin,name:plugin.name.startsWith('.')?path.resolve(root,plugin.name):plugin.name,config:{...plugin.config,runtimeContext:{deadline:context.deadline,workspace:context.workspace,outputDirectory:context.outputDirectory}}});
 const patch=[{id:'llm-deepseek',disabled:true},{id:'tool-fs',config:{read:true,readImage:true,write:true,edit:true}},
  {id:'persistent-bash',config:{timeoutMs:remaining()}},
  {id:'terminal-bash',config:{timeoutMs:remaining()}},
  {insert},...(config.patches||[])];
 const patchFile=path.join(output,'patches.json');fs.writeFileSync(patchFile,JSON.stringify(patch));
 const child=spawn(process.execPath,[path.join(root,'boot.mjs'),patchFile],{cwd:context.workspace,
- env:{...process.env,DSH_HOME:path.join(output,'dsh'),CANDIDATE_MODEL_TOKEN:channel.token},stdio:['pipe','pipe','pipe']});
+ env:{...process.env,DSH_HOME:path.join(output,'dsh'),CANDIDATE_MODEL_TOKEN:channel.token,PHYEXP_CHECK_PLUGIN_IDS:JSON.stringify((config.plugins||[]).map(p=>p.id)),PHYEXP_CHECK_RECEIPT:path.join(output,'load-receipt.json')},stdio:['pipe','pipe','pipe']});
 child.stderr.pipe(process.stderr);const lines=readline.createInterface({input:child.stdout});
 let sequence=0,turn;const pending=new Map(),events=[];
 const ended=new Promise(resolve=>child.once('exit',(code,signal)=>{for(const waiter of pending.values())waiter.reject(new Error('Harness exited'));turn?.reject(new Error('Harness exited'));resolve({code,signal});}));
@@ -42,6 +41,7 @@ lines.on('line',line=>{
 });
 function request(method,params){const id=String(++sequence);return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');});}
 try{
+ if(process.env.PHYEXP_ASSEMBLY_CHECK==='1'){const result=await ended;if(result.code)process.exitCode=result.code;}else{
  await request('initialize',{cwd:context.workspace,provider,model:context.solver.model,...(effort===undefined?{}:{reasoningEffort:effort}),maxTokens:config.maxTokens});
  const sessions=config.sessions||1;
  for(let i=0;i<sessions;i++){
@@ -52,5 +52,6 @@ try{
  }
  await request('shutdown',null);const result=await ended;
  if(result.code)process.exitCode=result.code;
+ }
 }catch(error){process.stderr.write(String(error.stack||error)+'\n');child.kill('SIGTERM');process.exitCode=1;}
 finally{fs.writeFileSync(path.join(output,'events.json'),JSON.stringify(events));lines.close();}

@@ -35,7 +35,7 @@
 | 插件说明与源码 | [plugin_reading.py](../../src/execution/bundle/plugin_reading.py)、[工程 schema](../../schemas/execution/harness-project.schema.json) | 可按声明路径读取源码，但不证明插件依赖完整、可独立装配 |
 | 活动创建与 H0 | [service.py](../../src/control/service.py)、[process_candidates.py](../../src/control/process_candidates.py)、[store.py](../../src/control/store.py) | 默认复制模板，部分位置根据首个候选或空插件列表判断 H0 |
 | 引用与删除 | [deletion_storage.py](../../src/control/deletion_storage.py)、[deletion.py](../../src/control/deletion.py)、[storage.py](../../src/control/storage.py) | 需要把独立库引用纳入保留与清理规则 |
-| 恢复能力 | [默认启动入口](../../templates/harness/default/run.mjs)、[恢复插件](../../templates/harness/default/recovery/plugin.mjs)、[恢复组合](../../templates/harness/default/recovery/composition.mjs) | 已有插件实现，但默认启动仍有 recovery 专用分支及跨目录依赖 |
+| 恢复能力 | [默认启动入口](../../templates/harness/default/run.mjs)、[恢复插件](../../templates/harness/default/plugins/request-recovery/recovery/plugin.mjs)、[恢复组合](../../templates/harness/default/plugins/request-recovery/recovery/composition.mjs) | 已有插件实现，但默认启动仍有 recovery 专用分支及跨目录依赖 |
 | Meta 边界 | [meta.py](../../src/control/meta.py)、[meta_api.py](../../src/control/meta_api.py)、[工具契约](../../packages/meta-harness/contracts.json) | 需要核对材料发布、挂载、查询和返回值均只涉及本活动获准内容 |
 | 工作台 | [公共表单](../../packages/meta-workbench-client/form.mjs)、[创建身份](../../packages/meta-workbench-client/create-attempt.mjs)、[创建页面](../../packages/meta-workbench-studio/client/features/create.tsx)、[工作台架构](../architecture/workbench.md) | 缺独立库和 H0 选择流程，仍有强制覆盖 H0 任务数的旧表单校验 |
 
@@ -110,7 +110,7 @@
 | 工作包 | Agent 必须完成 | 完成证据 | 当前状态 |
 |---|---|---|---|
 | P1 独立资产库 | 内容/索引/来源/引用契约，历史补录与新快照自动登记，用户查询/读取/删除，删除记录与并发恢复 | A01–A04；可重试补录入口及合成夹具；数据库升级前后核对 | 后台已实现，专项通过，完整集成验收待补 |
-| P2 装配与恢复插件 | 基础模板版本、装配解析、配置/依赖检查、恢复插件打包与普通加载、准确构建及导出 | A05–A07、A11；无恢复/有恢复的实际加载和模拟故障证据 | 待实施 |
+| P2 装配与恢复插件 | 基础模板版本、装配解析、配置/依赖检查、恢复插件打包与普通加载、准确构建及导出 | A05–A07、A11；无恢复/有恢复的实际加载和模拟故障证据 | 装配与普通恢复已实现，原生加载和故障专项通过；隔离导出验收待补 |
 | P3 用户组合 H0 | 创建选择快照、显式 H0 引用、幂等/删除竞争、表单校验修复、客户端/桥/Studio 创建与来源展示 | A08–A09、A12；用户选择到准备完成的完整路径 | 待实施 |
 | P4 完整入口与权限验收 | 独立库页面、版本/源码/配置/删除交互、Meta 材料过滤及拒绝路径、后台自动沉淀、文档和演示环境 | A10–A13；全部自动验收报告及 H01–H05 人工验收包 | 待实施 |
 

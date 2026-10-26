@@ -31,7 +31,7 @@ class ProcessCandidatesTests(unittest.TestCase):
     def test_same_operations_accept_complete_project_and_preserve_solver(self):
         baseline=self.service.build_candidate(self.cid,[],'H0')
         project=self.service.workspace(self.cid)/'h0';spec=json.loads((project/'harness.json').read_text())
-        spec['runtimeConfig']['sessions']=3;spec['runtimeConfig']['recovery']=None;spec['framework']={'package':'another-framework','version':'2'}
+        spec['runtimeConfig']['sessions']=3;spec['runtimeConfig']['plugins']=[];spec['framework']={'package':'another-framework','version':'2'}
         (project/'harness.json').write_text(json.dumps(spec))
         checked=self.service.build_candidate(self.cid,[],'check',check_only=True,project_path='/work/plugins/h0')
         candidate=self.service.build_candidate(self.cid,[],'Changed complete Harness',parent=baseline['id'],project_path='/work/plugins/h0')

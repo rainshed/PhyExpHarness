@@ -48,7 +48,7 @@ test('default recovery does not replay completed side effects and native guards 
 });
 
 test('removing recovery is a candidate choice with observable behavior',async()=>{
- const result=await run(spec=>{spec.runtimeConfig.recovery=null;},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'done'});
+ const result=await run(spec=>{spec.runtimeConfig.plugins=[];},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'done'});
  assert.equal(result.calls.length,2);assert.equal(result.code,0,result.stderr);
  assert.ok(!result.events.some(e=>e.type.startsWith('plugin:phyexp-request-recovery/')));
  assert.ok(result.calls[1].messages.some(m=>m.role==='tool'&&JSON.stringify(m).includes('Error')));
@@ -56,7 +56,7 @@ test('removing recovery is a candidate choice with observable behavior',async()=
 
 test('candidate changes sessions, prompt context and profile without platform modification',async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.sessions=2;spec.runtimeConfig.promptSuffix='\nCANDIDATE_CONTEXT_VARIANT';spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.sessions=2;spec.runtimeConfig.promptSuffix='\nCANDIDATE_CONTEXT_VARIANT';spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.patches=[{id:'persistent-bash',disabled:true},{id:'terminal-bash',disabled:true}];
   fs.appendFileSync(path.join(project,'profile.yml'),'\n# Candidate-owned profile variation\n');
  },body=>{
@@ -68,7 +68,7 @@ test('candidate changes sessions, prompt context and profile without platform mo
 
 test('candidate dependency services resolve out of list order and a replacement shell keeps state',async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.patches=[{id:'persistent-bash',disabled:true},{id:'terminal-bash',disabled:true}];
   spec.runtimeConfig.plugins=[{id:'consumer',name:'./consumer.mjs'},{id:'provider',name:'./provider.mjs'}];
   fs.writeFileSync(path.join(project,'provider.mjs'),`import {spawn} from 'node:child_process';
@@ -96,7 +96,7 @@ export function apply(ctx){ctx.tools.register(defineTool({name:'research_termina
 
 for(const cycle of [false,true])test('native dependency diagnostics identify '+(cycle?'a service cycle':'a missing service'),async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.plugins=[{id:'fixture-a',name:'./a.mjs'},...(cycle?[{id:'fixture-b',name:'./b.mjs'}]:[])];
   fs.writeFileSync(path.join(project,'a.mjs'),"export const name='fixture-a';export const inject=['fixtureB'];export function apply(ctx){ctx.provide('fixtureA',{});}");
   if(cycle)fs.writeFileSync(path.join(project,'b.mjs'),"export const name='fixture-b';export const inject=['fixtureA'];export function apply(ctx){ctx.provide('fixtureB',{});}");
@@ -122,7 +122,7 @@ test('candidate supplies its own MCP session recovery and result presentation',a
  await new Promise(resolve=>mcp.listen(0,'127.0.0.1',resolve));
  try{
   const result=await run((spec,project)=>{
-   spec.runtimeConfig.recovery=null;spec.runtimeConfig.plugins=[{id:'own-mcp',name:'./mcp.mjs'}];
+   spec.runtimeConfig.plugins=[];spec.runtimeConfig.plugins=[{id:'own-mcp',name:'./mcp.mjs'}];
    fs.writeFileSync(path.join(project,'mcp.mjs'),`import {defineTool} from '@deepseek-ai/dsh-tools';
 export const name='candidate-mcp';export const inject=['tools'];
 export function apply(ctx){let session,seq=0;

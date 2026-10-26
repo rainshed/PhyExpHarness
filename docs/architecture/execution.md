@@ -38,8 +38,16 @@ provenance 保留宿主启动/结束与 Solver 时钟，Harbor 原始阶段起�
 
 结果分别记录 execution、officialResult、evidenceStatus、comparison。官方文件须核验归属和完整性；非零退出、超时或诊断附件损坏可与可信官方分数并存。缺少可信官方文件保留 null；任务完成分另按[统一规则](evidence-storage.md#官方评分与任务完成分)派生。重复归集不重跑模型或 verifier。
 
-默认工程含响应保护与恢复组合，其传输等待、响应重新生成和工具参数反馈由工程源码/config 管理。Meta 可以修改、替换或移除这些策略；`runtimeConfig.recovery=null` 可禁用默认恢复。旧配方中的固定五档恢复不是新平台的不可变策略。副作用是否重放由候选策略负责，实验轨迹与最终诊断用于核查实际行为。
+默认预设显式声明 `request-recovery` 普通插件，其传输等待、响应重新生成和工具参数反馈由插件源码与配置管理。基础模板不含恢复源码；移除 `plugins` 与 `runtimeConfig.plugins` 中该插件即可禁用恢复。框架自身的参数校验及工具错误反馈仍然存在。Meta 可以修改、替换或移除这些策略。旧配方中的固定五档恢复不是新平台的不可变策略。副作用是否重放由候选策略负责，实验轨迹与最终诊断用于核查实际行为。
 
 ## 验证入口
 
 [工程冻结单元测试](../../tests/unit/project_bundle_test.py)、[候选接入](../../tests/unit/process_candidates_test.py)、[时限测试](../../tests/unit/benchmark_time_test.py)、[process 契约](../../tests/contracts/process-harness.test.mjs)与[策略契约](../../tests/contracts/process-strategies.test.mjs)分别覆盖源码/产物、策略可替换、通道和隔离。测试条件与未验证范围见[验证说明](../development/testing.md)。
+
+## 用户 H0 装配契约
+
+[组合器](../../src/control/h0.py)按 `user-h0-v1` 固定基础模板、准确插件摘要与配置。可选插件须显式声明 `assembly.contract=dsh-plugin-v1`、入口、配置 schema、准确版本依赖及冲突；缺少声明的资产仍可保存和阅读，但标为需要适配。此约定仅用于用户一键装配，不限制 Meta 后续完整工程开发。
+
+依赖必须全部出现在用户选择中，按依赖顺序加载；不自动升级或补选。每个带 npm 依赖的插件须有 package-lock.json，在原有隔离构建中安装，不在宿主运行插件。默认构建使用原生加载器检查全部所选插件实际激活，不调用 Solver；缺少服务和循环阻塞会使检查失败。空选择使用最小工程。运行上下文经普通插件配置的 runtimeContext 传入，deadline 不属于插件内容身份。
+
+[装配专项](../../tests/unit/h0_assembly_test.py)覆盖准确内容、删除默认、空组合、配置与依赖拒绝以及真实原生加载。活动创建和界面接入状态见[任务书](../plans/plugin-library-and-h0.md)。
