@@ -40,3 +40,5 @@ SDK 资料在 `npm run build:knowledge` 时从锁定安装、指南与类型生�
 [meta_recovery.py](../../src/control/meta_recovery.py)与驱动处理技术故障，不能承诺恢复已丢失的 OS 进程内存、未落盘消息或未知工具副作用，也不能因重启重置活动上限。终态会话拒绝迟到心跳回写为 waiting；活动结束后继续回收残留进程。
 
 Meta 恢复与候选内 Solver 恢复是不同职责；主 Meta 的策略不会自动替换已经冻结的候选。查询、脚本模型和隔离契约证明工程路径，不能证明长活动研究质量。测试入口：[原生 Meta](../../tests/contracts/meta-native.test.mjs)、[研究委派](../../tests/contracts/meta-research.test.mjs)、[输出边界](../../tests/contracts/meta-output-boundary.test.mjs)。
+
+新活动 `meta-system-v14` 明确 H0 是用户选定起点。Meta 材料目录和文件页仅从活动候选、显式纳入的研究材料及匹配 SDK 生成；全局库对象、来源活动报告和数据库不挂载到运行容器。主会话与原生研究子会话共用活动授权范围，库 API 在查找内容前拒绝非用户身份。自动入库回执只描述本次捕获，不返回全库来源命中。未来 Meta 选库能力须另行实现用户授权的独立插件，本期无该工具或开关。

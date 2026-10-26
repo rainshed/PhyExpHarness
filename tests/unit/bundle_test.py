@@ -27,6 +27,24 @@ class BundleTests(unittest.TestCase):
         (self.plugin/'index.mjs').write_text((ROOT/'knowledge/plugin-sdk/examples/echo.mjs').read_text())
     def tearDown(self):self.temp.cleanup()
     def freeze(self, selections=()):return freeze(ROOT,self.base/'store',self.recipe,selections)
+    def test_library_imports_both_legacy_formats_without_changing_frozen_sources(self):
+        from types import SimpleNamespace
+        from src.control.store import Store
+        from src.control.plugin_library import PluginLibrary
+        store=Store(self.base/'library/control.sqlite')
+        library=PluginLibrary(SimpleNamespace(store=store,data=self.base/'library'))
+        ids=[]
+        for legacy in (True,False):
+            bundle=freeze(ROOT,self.base/('legacy' if legacy else 'modern'),self.recipe,[{'path':self.plugin}],legacy=legacy)
+            original=(Path(bundle['path'])/'bundle.json').read_bytes()
+            result=library.import_candidate({'id':'candidate-'+str(legacy),'campaignId':'history-'+str(legacy),
+                'bundleId':bundle['id'],'bundlePath':bundle['path'],'plugins':bundle['plugins'],'check':{'status':'passed'}})
+            self.assertEqual(result['issues'],[]);ids.append(result['plugins'][0]['id'])
+            self.assertEqual((Path(bundle['path'])/'bundle.json').read_bytes(),original)
+        self.assertEqual(ids[0],ids[1])
+        self.assertEqual(library.detail(ids[0])['compatibility']['state'],'needs_adaptation')
+        self.assertEqual(len(library.get(ids[0])['sources']),2)
+
     def test_frozen_code_and_export_identity_survive_draft_edit_and_relocation(self):
         b=self.freeze([{'path':self.plugin,'config':{'prefix':'x:'}}]);p=Path(b['path'])
         (self.plugin/'index.mjs').write_text('throw new Error("changed draft");')

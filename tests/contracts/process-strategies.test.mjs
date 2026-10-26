@@ -7,7 +7,7 @@ import http from 'node:http';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 
-async function run(configure,reply){
+async function run(configure,reply,{deadlineOffset=70.12345}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-strategy-')),project=path.join(root,'candidate');
  fs.cpSync('templates/harness/default',project,{recursive:true});fs.symlinkSync(path.resolve('node_modules'),path.join(project,'node_modules'),'dir');
  const spec=JSON.parse(fs.readFileSync(path.join(project,'harness.json')));configure(spec,project);fs.writeFileSync(path.join(project,'harness.json'),JSON.stringify(spec));
@@ -18,13 +18,13 @@ async function run(configure,reply){
    const output=reply(body,calls.length,root);
    res.writeHead(200,{'content-type':'text/event-stream'});
    if(output.disconnect){res.destroy();return;}
-   const delta=output.calls?{role:'assistant',tool_calls:output.calls.map((c,i)=>({index:i,id:'c'+calls.length+'-'+i,type:'function',function:{name:c.name,arguments:typeof c.args==='string'?c.args:JSON.stringify(c.args)}}))}:{role:'assistant',content:output.text||'done'};
+   const delta=output.calls?{role:'assistant',tool_calls:output.calls.map((c,i)=>({index:i,id:'c'+calls.length+'-'+i,type:'function',function:{name:c.name,arguments:typeof c.args==='string'?c.args:JSON.stringify(c.args)}}))}:{role:'assistant',content:output.text??'done'};
    for(const chunk of [{choices:[{index:0,delta,finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:output.calls?'tool_calls':'stop'}]}])res.write('data: '+JSON.stringify({id:'r'+calls.length,object:'chat.completion.chunk',model:'fixture',...chunk})+'\n\n');
    res.end('data: [DONE]\n\n');
   }catch(error){providerError=error;res.writeHead(500);res.end('fixture assertion failed');}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const context={instruction:'Exercise candidate strategy.',workspace:root,outputDirectory:path.join(root,'out'),solver:{model:'fixture'},mcpServers:[],deadline:Date.now()/1000+70.12345,
+ const context={instruction:'Exercise candidate strategy.',workspace:root,outputDirectory:path.join(root,'out'),solver:{model:'fixture'},mcpServers:[],deadline:Date.now()/1000+deadlineOffset,
   modelChannel:{protocol:'completions',url:'http://127.0.0.1:'+server.address().port,token:'fixture'}};
  const file=path.join(root,'context.json');fs.writeFileSync(file,JSON.stringify(context));
  const child=spawn(process.execPath,[path.join(project,'run.mjs')],{env:{...process.env,PHYEXP_CONTEXT:file},stdio:['ignore','pipe','pipe']});
@@ -48,7 +48,7 @@ test('default recovery does not replay completed side effects and native guards 
 });
 
 test('removing recovery is a candidate choice with observable behavior',async()=>{
- const result=await run(spec=>{spec.runtimeConfig.recovery=null;},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'done'});
+ const result=await run(spec=>{spec.runtimeConfig.plugins=[];},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'done'});
  assert.equal(result.calls.length,2);assert.equal(result.code,0,result.stderr);
  assert.ok(!result.events.some(e=>e.type.startsWith('plugin:phyexp-request-recovery/')));
  assert.ok(result.calls[1].messages.some(m=>m.role==='tool'&&JSON.stringify(m).includes('Error')));
@@ -56,7 +56,7 @@ test('removing recovery is a candidate choice with observable behavior',async()=
 
 test('candidate changes sessions, prompt context and profile without platform modification',async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.sessions=2;spec.runtimeConfig.promptSuffix='\nCANDIDATE_CONTEXT_VARIANT';spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.sessions=2;spec.runtimeConfig.promptSuffix='\nCANDIDATE_CONTEXT_VARIANT';spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.patches=[{id:'persistent-bash',disabled:true},{id:'terminal-bash',disabled:true}];
   fs.appendFileSync(path.join(project,'profile.yml'),'\n# Candidate-owned profile variation\n');
  },body=>{
@@ -68,7 +68,7 @@ test('candidate changes sessions, prompt context and profile without platform mo
 
 test('candidate dependency services resolve out of list order and a replacement shell keeps state',async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.patches=[{id:'persistent-bash',disabled:true},{id:'terminal-bash',disabled:true}];
   spec.runtimeConfig.plugins=[{id:'consumer',name:'./consumer.mjs'},{id:'provider',name:'./provider.mjs'}];
   fs.writeFileSync(path.join(project,'provider.mjs'),`import {spawn} from 'node:child_process';
@@ -96,7 +96,7 @@ export function apply(ctx){ctx.tools.register(defineTool({name:'research_termina
 
 for(const cycle of [false,true])test('native dependency diagnostics identify '+(cycle?'a service cycle':'a missing service'),async()=>{
  const result=await run((spec,project)=>{
-  spec.runtimeConfig.recovery=null;
+  spec.runtimeConfig.plugins=[];
   spec.runtimeConfig.plugins=[{id:'fixture-a',name:'./a.mjs'},...(cycle?[{id:'fixture-b',name:'./b.mjs'}]:[])];
   fs.writeFileSync(path.join(project,'a.mjs'),"export const name='fixture-a';export const inject=['fixtureB'];export function apply(ctx){ctx.provide('fixtureA',{});}");
   if(cycle)fs.writeFileSync(path.join(project,'b.mjs'),"export const name='fixture-b';export const inject=['fixtureA'];export function apply(ctx){ctx.provide('fixtureB',{});}");
@@ -122,7 +122,7 @@ test('candidate supplies its own MCP session recovery and result presentation',a
  await new Promise(resolve=>mcp.listen(0,'127.0.0.1',resolve));
  try{
   const result=await run((spec,project)=>{
-   spec.runtimeConfig.recovery=null;spec.runtimeConfig.plugins=[{id:'own-mcp',name:'./mcp.mjs'}];
+   spec.runtimeConfig.plugins=[];spec.runtimeConfig.plugins=[{id:'own-mcp',name:'./mcp.mjs'}];
    fs.writeFileSync(path.join(project,'mcp.mjs'),`import {defineTool} from '@deepseek-ai/dsh-tools';
 export const name='candidate-mcp';export const inject=['tools'];
 export function apply(ctx){let session,seq=0;
@@ -137,4 +137,16 @@ export function apply(ctx){let session,seq=0;
   });
   assert.equal(result.code,0,result.stderr);assert.equal(initializations,2);assert.equal(successful,2);
  }finally{mcp.closeAllConnections();await new Promise(resolve=>mcp.close(resolve));}
+});
+
+for(const enabled of [true,false])test('invalid argument response recovery is '+(enabled?'enabled':'absent')+' through ordinary plugin loading',async()=>{
+ const result=await run(spec=>{if(!enabled)spec.runtimeConfig.plugins=[];},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'recovered'});
+ assert.equal(result.calls.length,2,result.stderr);
+ assert.equal(result.events.some(e=>e.type.startsWith('plugin:phyexp-request-recovery/')),enabled);
+});
+
+test('ordinary recovery uses the runtime deadline and refuses a retry beyond it',async()=>{
+ const result=await run(spec=>{spec.runtimeConfig.plugins[0].config.policy.contentRetryDelaysSeconds=[10];},()=>({calls:[{name:'bash',args:'{bad'}]}),{deadlineOffset:5});
+ assert.equal(result.calls.length,1,result.stderr);
+ assert.ok(result.events.some(e=>e.type==='plugin:phyexp-request-recovery/stopped'&&e.data.reason==='deadline'));
 });

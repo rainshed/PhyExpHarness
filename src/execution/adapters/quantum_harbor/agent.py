@@ -15,7 +15,7 @@ from .bridge import ContainerBridge
 from .mcp_tunnel import McpTunnel
 
 from ...host.task_network import restrict_main, release
-from ...host.task_time import start_solver_clock
+from ...host.task_time import start_solver_clock, ActivityDeadlineError
 
 
 class DeepSeekHarborAgent(BaseAgent):
@@ -134,7 +134,7 @@ asyncio.run(main())
         # Mirror that phase for gateway/tool cancellation; Harbor remains the
         # authority and will also cancel this coroutine at its native deadline.
         if self.benchmark_time:
-            timing=start_solver_clock(self.benchmark_time,self.activity_deadline,time.time())
+            timing=start_solver_clock(self.benchmark_time,self.activity_deadline,time.time(),self.recipe.get('timePolicy'))
             started=timing['solverStartedAt'];self.deadline=timing['solverDeadline']
             timing_path=self.host_logs/'timing.json'
             timing_path.with_suffix('.tmp').write_text(json.dumps(timing,indent=2))
@@ -153,6 +153,10 @@ asyncio.run(main())
             os.chmod(socket_path, 0o600)
             try:
                 await self.connect_mcp(environment, endpoints, tunnels)
+                if self.benchmark_time and time.time()>=self.deadline:
+                    if timing.get('deadlineCause')=='campaign_deadline':raise ActivityDeadlineError('Activity deadline reached during worker preparation')
+                    from harbor.trial.errors import AgentTimeoutError
+                    raise AgentTimeoutError('Benchmark deadline reached during worker preparation')
                 with (self.host_logs / 'worker.log').open('w') as log:
                     proc = await asyncio.create_subprocess_exec(
                         'node', str(Path(__file__).parents[2]/'reference/dsh-worker.mjs' if os.environ.get('PHYEXP_REFERENCE_SPEC') else Path(__file__).with_name('worker.mjs')),
@@ -162,6 +166,7 @@ asyncio.run(main())
                 if code != 0:
                     if self.benchmark_time and time.time() >= self.deadline:
                         from harbor.trial.errors import AgentTimeoutError
+                        if timing.get('deadlineCause')=='campaign_deadline':raise ActivityDeadlineError('Activity deadline reached during Solver execution')
                         raise AgentTimeoutError('Benchmark agent deadline reached')
                     raise RuntimeError(f'DeepSeek worker exited {code}; see phyexp/runtime-summary.json')
                 # Close admission and account for unfinished commands before the
@@ -171,6 +176,10 @@ asyncio.run(main())
                 await server.wait_closed()
                 bridge.check_verification()
             finally:
+                if self.benchmark_time:
+                    timing['solverFinishedAt']=time.time()
+                    timing_path.with_suffix('.tmp').write_text(json.dumps(timing,indent=2))
+                    timing_path.with_suffix('.tmp').replace(timing_path)
                 if proc and proc.returncode is None:
                     os.killpg(proc.pid, signal.SIGTERM)
                     try:

@@ -42,7 +42,7 @@ from .stop_policy import META_POLICY, CONTROLLED_POLICIES
 from .stop_review import StopRuntime
 from .processes import reap_children
 from . import resource_planning as planning
-from src.execution.host.task_time import POLICY as BENCHMARK_TIME, benchmark_time, read_task_time, verify_task_time
+from src.execution.host.task_time import POLICY as BENCHMARK_TIME, POLICIES as BENCHMARK_POLICIES, benchmark_time, read_task_time, verify_task_time
 from src.reporting.reports import Reports
 from src.exporting.project import export_project
 from src.exporting.validate import relocate
@@ -52,6 +52,8 @@ class ControlService:
         self.source=Path(source).resolve();self.data=Path(data).resolve();self.data.mkdir(parents=True,exist_ok=True);self.data.chmod(0o700)
         self.quantum=Path(quantum_harbor).resolve();self.base_url=base_url
         self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
+        from .plugin_library import PluginLibrary
+        self.plugin_library=PluginLibrary(self)
         from .deletion import ActivityAccess,Deletions
         self.access=ActivityAccess();self.deletions=Deletions(self)
         self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
@@ -97,6 +99,16 @@ class ControlService:
         self.store.writable(campaign)
         self.store.get('campaigns',campaign)
         path=self.data/'campaigns'/campaign/'workspace';path.mkdir(parents=True,exist_ok=True);return path
+    def baseline(self,campaign):
+        c=self.store.get('campaigns',campaign)
+        candidates=self.store.list('candidates',campaign)
+        if c.get('h0CandidateId'):
+            return next((x for x in candidates if x['id']==c['h0CandidateId']),None)
+        if c['config'].get('h0Policy'):return None
+        if c['config'].get('executionContract')=='harbor-process-v1':
+            return candidates[0] if candidates and candidates[0]['check']['status']=='passed' else None
+        return next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
+
     def knowledge_for(self,campaign):
         config=self.store.get('campaigns',campaign)['config']
         candidates=self.store.list('candidates',campaign)
@@ -143,7 +155,7 @@ class ControlService:
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
         # Server-owned defaults are outside the idempotency request. Cache changes
         # and create replays must never replace an existing Campaign's snapshot.
-        with self.providers.lock:
+        with self.providers.lock, self.plugin_library.locked():
             with self.providers.connection() as db:
                 catalog=self.providers.document(db)
             # A successful create replay uses its original snapshot, even after a catalog edit.
@@ -164,6 +176,7 @@ class ControlService:
                     raise Refused('New activities require benchmark resource planning')
                 if config.get('trialTimeSeconds') is not None:
                     raise Refused('求解时限由 benchmark 决定，请移除单次时限设置。')
+                if any(k in config for k in ('h0Policy','h0CompositionId')):raise Refused('H0 身份由后台生成')
                 if 'taskTimeLimits' in config or 'executionTimePolicy' in config:
                     raise Refused('Benchmark time configuration is server-owned')
             if not replay or json.loads(replay['payload']).get('resourcePolicy'):
@@ -187,13 +200,16 @@ class ControlService:
                 except (ValueError,OSError) as error:
                     raise Refused('开发资料包尚未准备好；请完成资料构建后重试。此次未创建活动。详情：'+str(error)) from error
             reference_defaults=self.references.freeze(config) if not replay else {}
-            time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark agent phase; startup and verification are separate.'},
+            time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark phase ceilings remain fixed; late starts are allowed within the activity deadline.'},
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
             runtime_defaults={'executionContract':'harbor-process-v1',
                 'executionResources':json.loads((self.source/'schemas/execution/process-resources.json').read_text())} if not replay else {}
-            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':META_POLICY}) if not replay else None
+            from .h0 import resolve_selection, POLICY as H0_POLICY
+            resolved=resolve_selection(self,config.get('h0Selection')) if not replay else None
+            h0_defaults={'h0Policy':H0_POLICY,'h0Selection':resolved['selection'],'h0CompositionId':resolved['compositionId']} if resolved else {}
+            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,**h0_defaults,'stopPolicy':META_POLICY}) if not replay else None
             campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':META_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
-                **time_defaults,**runtime_defaults,
+                **time_defaults,**runtime_defaults,**h0_defaults,
                 **({'storageDeployment':storage_profile()} if storage_profile() else {}),
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
@@ -228,7 +244,7 @@ class ControlService:
                     self.store._event(db,campaign,'task_images_prepared',tasks=c['config']['tasks'],log=str(log))
             except Exception as error:
                 raise Refused('Task image preparation failed: '+str(error)+'; log: '+str(log)) from error
-        candidate=self.build_candidate(campaign,[],'H0：固定执行基线')
+        candidate=self.build_candidate(campaign,[],'H0：本次活动选定的起点')
         if c['config'].get('referenceBindings'):
             from .reference.runtime import prepare_images
             prepare_images(self,campaign,verify(candidate['bundlePath']))
@@ -279,7 +295,8 @@ class ControlService:
         return value
     def execution_policy(self,campaign):
         candidates=self.store.list('candidates',campaign)
-        baseline=candidates[0] if candidates else {}
+        c=self.store.get('campaigns',campaign)
+        baseline=next((x for x in candidates if x['id']==c.get('h0CandidateId')),candidates[0] if candidates else {})
         if not baseline or not (Path(baseline['bundlePath'])/'bundle.json').is_file():return None
         if json.loads((Path(baseline['bundlePath'])/'bundle.json').read_text()).get('schemaVersion')==3:
             from src.execution.bundle.plugin_reading import project_sources
@@ -305,7 +322,7 @@ class ControlService:
         recipe['providerConfig']=campaign_route(c['config'],'solver')
         recipe['maxTokens']=recipe['providerConfig']['models'][0].get('maxTokens',8192)
         if benchmark_time(c['config']):
-            recipe['timePolicy']=BENCHMARK_TIME
+            recipe['timePolicy']=c['config']['executionTimePolicy']['version']
             recipe.pop('agentTimeoutSec',None);recipe.pop('commandTimeoutSec',None)
         else:
             recipe.pop('timePolicy',None);recipe['commandTimeoutSec']=300
@@ -374,7 +391,7 @@ class ControlService:
             reference_preflight(self,campaign)
         if action=='start':
             candidates=self.store.list('candidates',campaign)
-            h0=next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
+            h0=self.baseline(campaign)
             if not h0:raise Refused('H0 assembly is not ready')
             self._verify_task_images(c['config'])
             if c['state']=='draft' and not self.launch_trial_override:
@@ -392,7 +409,7 @@ class ControlService:
             if c['config'].get('metaComposition'):
                 verify_meta(self.data,c['config']['metaComposition'],self.source)
         result=self.store.control(campaign,action,key,expected_revision,changes)
-        if action=='start' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
+        if action=='start' and c['config'].get('executionContract')!='harbor-process-v1' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
         # User stop ends experiments but leaves the remaining Meta budget available for reports.
         if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)
         if action=='stop':
@@ -439,6 +456,10 @@ class ControlService:
     def stop_trial(self,trial,reason):
         if trial.get('stopRequestedAt'):return
         self.store.trial_update(trial['id'],stopReason=reason,stopRequestedAt=time.time())
+        output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
+        try:
+            if output.is_dir():write_json(output/'stop-request.json',{'reason':reason,'requestedAt':time.time()})
+        except OSError:pass  # A full disk must not prevent cancellation; the controller receipt is durable.
         if trial.get('leaseId'):
             lease=self.store.get('leases',trial['leaseId']);lease['revoked']=True;self.store.put('leases',lease)
         if self._process_alive(trial.get('pid'),trial.get('output','')):
@@ -458,7 +479,11 @@ class ControlService:
             usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),
             stopReason=summary.get('stopReason') if summary.get('resultCollection') else trial.get('stopReason') or summary.get('stopReason'),summary=summary,
             resultCollection=summary.get('resultCollection'),
-            **{k:summary[k] for k in ('execution','officialResult','evidenceStatus','comparison') if k in summary})
+            **{k:summary[k] for k in ('execution','officialResult','evidenceStatus','comparison','timing') if k in summary})
+        if trial.get('effectiveConditions',{}).get('timePolicy')==BENCHMARK_TIME and trial.get('stopReason'):
+            changes['stopReason']=trial['stopReason']
+            if (changes.get('failure') or {}).get('code') in ('user_stop','request_cancelled','runtime_failed'):
+                changes['failure']=public_failure({**changes['failure'],'code':trial['stopReason'],'termination':trial['stopReason']})
         provenance_path=output/'provenance.json'
         if provenance_path.exists():
             provenance=json.loads(provenance_path.read_text())
@@ -480,8 +505,14 @@ class ControlService:
                     changes['comparisonContext']['taskResources']=json.loads(resource_file.read_text())
             if trial.get('effectiveConditions'):
                 changes['comparisonContext']['executionConditions']={k:trial['effectiveConditions'].get(k) for k in ('trialTimeSeconds','actualTimeSeconds','frozenTrialCeilingSeconds')}
-                if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
+                if trial['effectiveConditions'].get('timePolicy') in BENCHMARK_POLICIES:
                     changes['comparisonContext']['executionConditions']=trial['effectiveConditions']['benchmarkTime']
+                    if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
+                        timing=summary.get('timing',{})
+                        changes['effectiveConditions']={**trial['effectiveConditions'],**{k:timing[k] for k in ('solverStartedAt','solverDeadline','benchmarkSolverDeadline','availableTimeAtSolverStartSeconds','effectiveSolverTimeSeconds','deadlineCause') if timing.get(k) is not None}}
+                        changes['comparisonContext']['executionConditions']={**trial['effectiveConditions']['benchmarkTime'],
+                            'timePolicy':BENCHMARK_TIME,'availablePhaseWindowSeconds':round(min(trial['effectiveConditions']['availableTimeSeconds'],trial['effectiveConditions']['benchmarkTime']['requiredTimeSeconds'] or trial['effectiveConditions']['availableTimeSeconds'])),
+                            'effectiveSolverTimeSeconds':round(timing['effectiveSolverTimeSeconds']) if timing.get('effectiveSolverTimeSeconds') is not None else None}
             if provenance.get('taskImageLock'):
                 changes['comparisonContext']['verifierImageId']=provenance['taskImageLock']['images']['verifier']
             try:
@@ -536,12 +567,12 @@ class ControlService:
     def _reconcile_trial(self,trial):
         output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
         conditions=trial.get('effectiveConditions',{})
-        if conditions.get('timePolicy')==BENCHMARK_TIME and conditions.get('solverDeadline') is None:
+        if conditions.get('timePolicy') in BENCHMARK_POLICIES and conditions.get('solverDeadline') is None:
             for file in output.glob('harbor/*/phyexp/timing.json'):
                 try:timing=json.loads(file.read_text())
                 except (OSError,json.JSONDecodeError):continue
                 trial=self.store.trial_update(trial['id'],effectiveConditions={**conditions,
-                    **{k:timing[k] for k in ('solverStartedAt','solverDeadline')}})
+                    **{k:timing[k] for k in ('solverStartedAt','solverDeadline','benchmarkSolverDeadline','availableTimeAtSolverStartSeconds','effectiveSolverTimeSeconds','deadlineCause') if k in timing}})
                 break
         if (output/'summary.json').is_file() and (output/'archive-manifest.json').is_file():
             candidate=self.store.get('candidates',trial['candidateId'])
@@ -567,7 +598,7 @@ class ControlService:
             cleanup(output);self._reconcile_usage({**trial,'output':str(output)})
             return self._failed_trial(trial,'supervisor_lost_start_not_repeated',state='unknown',output=str(output))
         if time.time()>=trial['deadline'] and not trial.get('stopRequestedAt'):
-            self.stop_trial(trial,'campaign_deadline' if conditions.get('timePolicy')==BENCHMARK_TIME else 'trial_deadline')
+            self.stop_trial(trial,'campaign_deadline' if conditions.get('timePolicy') in BENCHMARK_POLICIES else 'trial_deadline')
         if trial.get('stopRequestedAt') and time.time()-trial['stopRequestedAt']>15:
             if self._process_alive(trial.get('pid'),output):os.kill(trial['pid'],signal.SIGKILL)
             cleanup(output)
@@ -577,6 +608,7 @@ class ControlService:
         self.evidence.add(trial['campaignId'],trial['id'],'lifecycle',json.dumps({'trialId':trial['id'],**changes},ensure_ascii=False),{'authority':'controller','officialScore':None})
         return self.store.trial_update(trial['id'],**changes)
     def tick(self):
+        self.plugin_library.schedule()
         self.deletions.tick()
         self._tick()
     def _tick(self):
@@ -600,7 +632,7 @@ class ControlService:
                         except Exception as error:self.store.trial_update(trial['id'],lastCollectionError=str(error))
                 c=self.store.status(id);cfg=c['config'];now=time.time()
                 if cfg.get('executionContract')!='harbor-process-v1' and c['state']=='running' and not self.store.list('batches',id) and (not planning.enabled(cfg) or c.get('resourcePlan')):
-                    h0=next((x for x in self.store.list('candidates',id) if not x['plugins'] and x['check']['status']=='passed'),None)
+                    h0=self.baseline(id)
                     if h0:
                         try:self.store.submit(id,h0['id'],cfg['tasks'],1,'system-baseline')
                         except Refused:

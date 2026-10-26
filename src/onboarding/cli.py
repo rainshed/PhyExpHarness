@@ -35,7 +35,7 @@ def parser():
     commands.add_parser('status', parents=[shared], help='读取后台和工作台就绪状态')
     commands.add_parser('stop-local', parents=[shared], help='没有未结束活动时关闭本入口管理的本地进程')
     commands.add_parser('models', parents=[shared], help='查询模型与认证状态，不调用模型')
-    commands.add_parser('tasks', parents=[shared], help='查询任务与完整 benchmark 时间预留')
+    commands.add_parser('tasks', parents=[shared], help='查询任务与 benchmark 各阶段时间上限')
     exp = commands.add_parser('experiment', help='准备、启动和核对一次有限实验')
     operations = exp.add_subparsers(dest='operation', required=True)
     for action in ('init', 'prepare', 'start', 'status', 'wait'):

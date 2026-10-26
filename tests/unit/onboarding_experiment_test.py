@@ -56,10 +56,15 @@ class FirstExperimentTests(unittest.TestCase):
         self.assertEqual(error.exception.code,'session_config_changed')
         self.assertFalse(any(route=='/campaigns' for route,_ in self.api.calls))
 
-    def test_time_budget_cannot_shorten_benchmark(self):
-        with self.assertRaises(Problem) as error:self.init(wall_time=100)
-        self.assertEqual(error.exception.code,'insufficient_time')
-        self.assertFalse(exp.session_path(self.config,'first').exists())
+    def test_explicit_short_window_is_allowed_without_changing_benchmark(self):
+        result=self.init(wall_time=100)
+        self.assertEqual(result['config']['wallTimeSeconds'],100)
+        self.assertEqual(result['benchmarkReservationSeconds'],5000)
+        self.assertNotIn('trialTimeSeconds',result['config'])
+
+    def test_nonpositive_activity_time_is_rejected(self):
+        with self.assertRaises(Problem) as error:self.init(wall_time=0)
+        self.assertEqual(error.exception.code,'invalid_time')
 
     def test_create_timeout_replays_identical_body_after_command_restart(self):
         self.init();self.api.lose_create=True

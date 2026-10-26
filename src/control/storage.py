@@ -202,6 +202,9 @@ class Storage:
             # a stale snapshot that predates a concurrent reference registration.
             try:self.reclaimed+=self.objects.prune(protected,now-self.policy['garbageGraceSeconds'])
             except (OSError,ValueError,KeyError):pass  # Unknown reachability: collect nothing.
+            if hasattr(self.service,'plugin_library'):
+                try:self.reclaimed+=self.service.plugin_library.prune(now-self.policy['garbageGraceSeconds'])
+                except (OSError,ValueError,KeyError) as error:self.errors.append({'operation':'plugin-library-prune','error':str(error)[:250]})
             # Only old noncurrent generations. Active jobs and unknown process state protect caches.
             active=any(t['state'] in ACTIVE for c in self.store.list('campaigns') for t in self.store.runs(c['id'])) or any(s.get('state') in ACTIVE for s in self.store.list('meta_sessions')) or any(o.get('state')=='running' for o in self.store.list('operations'))
             if not active and listing is not None:

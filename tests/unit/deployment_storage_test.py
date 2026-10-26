@@ -59,6 +59,33 @@ class DeploymentStorageTests(unittest.TestCase):
         self.assertEqual(runtime_cache(path),path)
         self.assertEqual(task_storage(self.root/'other'),{})
 
+    def test_user_h0_keeps_split_storage_and_library_sources(self):
+        from src.control.service import ControlService
+        from src.control.h0 import defaults, materialize
+        from tests.fixtures.benchmark_tasks import make_tasks
+        root=Path(__file__).resolve().parents[2]
+        tasks=['time_budgeted_hamlearn_10q']
+        quantum=make_tasks(self.root/'quantum',tasks)
+        service=ControlService(root,self.data,quantum,'http://127.0.0.1:1')
+        self.addCleanup(service.pool.shutdown,wait=True)
+        model={'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'}
+        offered=defaults(service);selection={k:offered[k] for k in ('version','templateId','plugins')}
+        with patch.object(service,'_operation',return_value={'operationId':'fixture'}):
+            campaign=service.create({'solver':model,'meta':model,'tasks':tasks,'concurrency':1,
+                'wallTimeSeconds':7200,'h0Selection':selection},'h0-split-storage')
+        self.assertEqual(campaign['config']['storageDeployment'],self.profile)
+        self.assertEqual(campaign['config']['h0Selection'],selection)
+        project=service.workspace(campaign['id'])/'h0'
+        resolved=materialize(service,selection,project)
+        self.assertEqual(resolved['compositionId'],campaign['config']['h0CompositionId'])
+        for plugin in resolved['project']['plugins']:
+            self.assertTrue((project/plugin['path']/'plugin.json').is_file())
+            self.assertTrue(service.plugin_library.contents(plugin['libraryId'])[0])
+        self.assertEqual(service.store.path,self.root/'stateRoot/control.sqlite')
+        self.assertTrue(service.plugin_library.root.is_relative_to(self.data))
+        self.assertFalse((self.data/'control.sqlite').exists())
+        self.assertFalse((self.data/'objects.lock').exists())
+
     def test_current_meta_closeout_uses_split_state_and_persistent_roots(self):
         from src.control.service import ControlService
         from src.control.meta import MetaDriver

@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from src.control.service import ControlService
@@ -178,3 +179,15 @@ class ResultCollectionTests(unittest.TestCase):
         self.assertEqual(shown['taskEvaluation']['total']['eligible'],1)
         self.assertEqual(shown['taskEvaluation']['macroSuccessRate'],0)
         self.assertEqual(before,{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in self.output.rglob('*') if p.is_file()})
+
+
+    def test_new_time_policy_preserves_controller_deadline_even_without_host_receipt(self):
+        trial=self.store.trial_update(self.trial['id'],state='running',stopReason='campaign_deadline',
+            effectiveConditions={'timePolicy':'benchmark-time-v2','availableTimeSeconds':1800,
+                'benchmarkTime':{'solverTimeSeconds':9000,'requiredTimeSeconds':10000}})
+        summary={'pipelineStatus':'completed','officialReward':1,'failure':None,'stopReason':None,
+                 'resultCollection':{'version':'official-result-v3'}}
+        with patch('src.control.service.read_summary',return_value=summary):
+            result=self.service._collect(trial)
+        self.assertEqual(result['score'],1);self.assertEqual(result['stopReason'],'campaign_deadline')
+        self.assertIsNone(result['failure'])

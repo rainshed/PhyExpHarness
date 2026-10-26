@@ -10,11 +10,11 @@ ctx.on 注册随 Cordis 作用域卸载。等待响应 signal，恢复状态应�
 
 ## 默认模板的策略
 
-当前默认工程 harness.json 的 runtimeConfig.recovery 使用 solver-request-recovery-v2：transient-recovery、response-recovery、tool-argument-recovery 通过 recovery-core 协调。传输等待为 2、5、20、30、60 秒，内容恢复共享 0、1 秒两次机会，每条链最多追加五次请求。这是默认工程配置，不是平台强制算法。
+平台提供的 request-recovery 是普通可选插件；用户可在 H0 中明确勾选。其源码模板中，harness.json 的 runtimeConfig.plugins 对应项中 config.policy 使用 solver-request-recovery-v2：transient-recovery、response-recovery、tool-argument-recovery 通过 recovery-core 协调。传输等待为 2、5、20、30、60 秒，内容恢复共享 0、1 秒两次机会，每条链最多追加五次请求。这是默认工程配置，不是平台强制算法。
 
 未完成响应丢弃后重新生成，不能拼接残缺参数执行。完整参数的 JSON/schema 错误由工具 guard 返回错误，先前已完成工具副作用不应重放。原生 compaction 只提交完整摘要，普通 ctx.llm.stream 辅助调用由调用方处理恢复。
 
-配置为 recovery=null 可禁用这套默认恢复；也可改源码、服务、事件或实现自己的策略。候选内的多会话、不同工具清单和辅助请求都使用同一固定 Solver 通道，过程留在执行轨迹。外部 process 通道不执行候选的语义保护或自动重试。
+移除 plugins 与 runtimeConfig.plugins 中对应项可禁用这套恢复；框架原生参数校验与工具错误反馈继续保留；也可改源码、服务、事件或实现自己的策略。候选内的多会话、不同工具清单和辅助请求都使用同一固定 Solver 通道，过程留在执行轨迹。外部 process 通道不执行候选的语义保护或自动重试。
 
 ## 结果与诊断
 

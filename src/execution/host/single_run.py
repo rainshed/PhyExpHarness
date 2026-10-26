@@ -14,7 +14,7 @@ from pathlib import Path
 from ..bundle.manifest import verify
 from .network import provider_environment
 from ..adapters.quantum_harbor.results import collect, archive_manifest, verify_manifest
-from .task_time import POLICY as BENCHMARK_TIME, read_task_time
+from .task_time import POLICY as BENCHMARK_TIME, POLICIES as BENCHMARK_POLICIES, read_task_time, execution_timing
 
 TRIAL_CLOSEOUT_RESERVE_SECONDS = 330
 
@@ -100,7 +100,8 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     bundle = verify(bundle_root)
     process_contract = bundle.get('schemaVersion') == 3
     recipe = json.loads((bundle_root / 'recipe.json').read_text())
-    benchmark = recipe.get('timePolicy') == BENCHMARK_TIME
+    benchmark = recipe.get('timePolicy') in BENCHMARK_POLICIES
+    late = recipe.get('timePolicy') == BENCHMARK_TIME
     timing = read_task_time(quantum_harbor, task_name) if benchmark else None
     task = quantum_harbor / 'harbor_tasks' / task_name
     if '/' in task_name or not (task / 'task.toml').is_file():
@@ -108,14 +109,18 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     output.mkdir(parents=True, exist_ok=False)
     started = time.time()
     process = None
+    execution_finished = None
     stopped = {'reason': None}
     def stop(_sig, _frame):
-        stopped['reason'] = 'user_stop'
+        try:reason=json.loads((output/'stop-request.json').read_text())['reason']
+        except (OSError,ValueError,KeyError):reason='campaign_deadline' if benchmark and time.time()>=deadline else 'user_stop'
+        stopped['reason'] = stopped['reason'] or reason
     previous = signal.signal(signal.SIGTERM, stop)
     provenance = {'schemaVersion':1, 'startedAt':now(), 'bundleId':bundle['id'], 'bundleRoot':str(bundle_root),
         'recipe':recipe, 'deadline':deadline, 'task':task_name,
         **({'launchId':os.environ.get('PHYEXP_LAUNCH_ID') or 'standalone-'+hashlib.sha256(str(output).encode()).hexdigest()} if process_contract else {}), **({'softTokenLimit':soft_token_limit} if os.environ.get('PHYEXP_ACCOUNTING_URL') else {'modelAccessPolicy':'control-only-v1'}),
         **({'benchmarkTime':timing} if benchmark else {'trialCloseoutReserveSeconds':TRIAL_CLOSEOUT_RESERVE_SECONDS}),
+        **({'executionStartedAt':started,'availableTimeSeconds':max(0,deadline-started)} if late else {}),
         'quantumHarbor':{'path':str(quantum_harbor), 'sourceHashes':source_hashes(quantum_harbor,['src','configs','docker','harbor_tasks'])}}
     if os.environ.get('PHYEXP_REFERENCE_SPEC'):
         ref=json.loads(Path(os.environ['PHYEXP_REFERENCE_SPEC']).read_text())
@@ -124,7 +129,10 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
     write_json(output / 'supervisor.json', {'pid':os.getpid(), 'startedAt':now(), 'deadline':deadline, 'state':'starting'})
     try:
         remaining = deadline - time.time()
-        if benchmark and (timing['requiredTimeSeconds'] is None or remaining < timing['solverTimeSeconds'] + timing['verifierTimeSeconds'] + timing['verifierEnvironmentTimeSeconds']):
+        if late and remaining<=0:
+            stopped['reason']='campaign_deadline'
+            raise TimeoutError('Activity deadline reached before launch')
+        if benchmark and not late and (timing['requiredTimeSeconds'] is None or remaining < timing['solverTimeSeconds'] + timing['verifierTimeSeconds'] + timing['verifierEnvironmentTimeSeconds']):
             raise TimeoutError('Activity cannot fit the full benchmark; task time cannot be shortened')
         if not benchmark and remaining <= TRIAL_CLOSEOUT_RESERVE_SECONDS:
             raise TimeoutError('Insufficient time for startup and official verification')
@@ -165,12 +173,15 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         harbor = shutil.which('harbor')
         if not harbor:
             raise RuntimeError('Install the declared Harbor Python dependency first')
+        if late and (stopped['reason'] or time.time()>=deadline):
+            stopped['reason']=stopped['reason'] or 'campaign_deadline'
+            raise TimeoutError('Execution stopped before Harbor launch: '+stopped['reason'])
         with (output / 'console.log').open('w') as log:
             process = subprocess.Popen([harbor,'run','-c',str(output/'harbor-config.json')], cwd=quantum_harbor,
                 env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             while process.poll() is None:
-                if time.time() >= deadline:
-                    stopped['reason'] = 'trial_deadline'
+                if time.time() >= deadline and not stopped['reason']:
+                    stopped['reason'] = 'campaign_deadline' if benchmark else 'trial_deadline'
                 if stopped['reason']:
                     os.killpg(process.pid, signal.SIGTERM)
                     try: process.wait(timeout=10)
@@ -180,6 +191,7 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
                     break
                 write_json(output/'supervisor.json', {'pid':os.getpid(), 'childPid':process.pid, 'state':'running', 'deadline':deadline,'heartbeat':time.time()})
                 time.sleep(.5)
+        execution_finished=time.time()
         write_json(output/'process.json', {'harborExitCode':process.returncode,'stopReason':stopped['reason']})
         if process_contract:
             from ..adapters.quantum_harbor.official import collect as collect_official
@@ -196,11 +208,13 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         signal.signal(signal.SIGTERM, previous)
         if process and process.poll() is None:
             os.killpg(process.pid,signal.SIGKILL);process.wait()
+        if late:provenance['executionFinishedAt']=execution_finished if execution_finished is not None else time.time()
         actions = cleanup(output)
         if benchmark:
             for file in output.glob('harbor/*/phyexp/timing.json'):
                 phase=json.loads(file.read_text())
                 provenance.update({k:phase[k] for k in ('solverStartedAt','solverDeadline')})
+                if late:provenance['solverTiming']=phase
         provenance.update(finishedAt=now(), wallTimeSeconds=time.time()-started)
         write_json(output/'provenance.json', provenance)
     if process_contract and result.get('officialReward') is not None:
@@ -208,6 +222,11 @@ def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_lim
         # starting checkpoint. No model or task execution is repeated.
         result = collect_official(output, bundle_id=bundle['id'], task=task_name)
     result.update(runId=output.name,runDir=str(output),bundleId=bundle['id'],wallTimeSeconds=time.time()-started,cleanup=actions)
+    if late:
+        native=list(output.glob('harbor/*/result.json'))
+        try:harbor_result=json.loads(native[0].read_text()) if len(native)==1 else {}
+        except (OSError,ValueError):harbor_result={}
+        result['timing']=execution_timing(provenance,harbor_result)
     write_json(output/'summary.json', result)
     write_json(output/'supervisor.json', {'pid':os.getpid(),'state':'finished','deadline':deadline,'finishedAt':now()})
     archive_manifest(output)
@@ -245,7 +264,7 @@ def main(bundle_root=None, argv=None):
         recipe=json.loads((Path(bundle_root)/'recipe.json').read_text())
         duration=args.timeout
         if duration is None:
-            duration=read_task_time(args.quantum_harbor,args.task)['requiredTimeSeconds'] if recipe.get('timePolicy')==BENCHMARK_TIME else 3600
+            duration=read_task_time(args.quantum_harbor,args.task)['requiredTimeSeconds'] if recipe.get('timePolicy') in BENCHMARK_POLICIES else 3600
         if duration is None:parser.error('Unbounded benchmark requires an explicit activity deadline')
         deadline=time.time()+duration
     result = run(bundle_root,args.quantum_harbor,args.task,args.output,deadline,args.soft_token_limit,args.task_image_lock)

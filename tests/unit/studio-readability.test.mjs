@@ -75,3 +75,17 @@ test('whole candidate variations are separate from fixed process experiment cond
  c.trials[1].comparisonContext.solver={model:'other'};assert.equal(comparison(c,'h1','h0').state,'different');
  delete c.trials[1].comparisonContext.adapter;assert.notEqual(comparison(c,'h1','h0').state,'same');
 });
+
+test('late starts compare actual windows and retain unknown timing as unknown',()=>{
+ const c=withTrials(campaign());c.config.tasks=['a'];
+ for(const t of c.trials)t.effectiveConditions={timePolicy:'benchmark-time-v2',solverTimeSeconds:9000,
+  benchmarkTime:{solverTimeSeconds:9000,requiredTimeSeconds:10000},availableTimeSeconds:12000,effectiveSolverTimeSeconds:9000};
+ assert.equal(comparison(c,'h1','h0').state,'same');
+ c.trials[1].effectiveConditions.availableTimeSeconds=1800;
+ c.trials[1].effectiveConditions.effectiveSolverTimeSeconds=1740;
+ assert.equal(comparison(c,'h1','h0').state,'different');
+ assert.ok(comparison(c,'h1','h0').reasons.includes('实验时限或实际预算不同'));
+ c.trials[1].effectiveConditions.availableTimeSeconds=12000;
+ delete c.trials[1].effectiveConditions.effectiveSolverTimeSeconds;
+ assert.equal(comparison(c,'h1','h0').state,'unknown');
+});

@@ -33,7 +33,7 @@ class ScalabilityTests(unittest.TestCase):
         self.assertEqual(issue['fields'],['taskSourcesDigest']);self.assertEqual(issue['trialIds'],['a','b'])
     def test_time_conditions_are_current_and_withdrawal_is_idempotent(self):
         c={'deadline':1000,'config':{'executionTimePolicy':{'version':'benchmark-task-time-v1'},'stopMode':'strict','drainGraceSeconds':0,'reserveSeconds':0,'reserveTokens':0,'taskTimeLimits':{'t':{'requiredTimeSeconds':600,'solverTimeSeconds':400}}}}
-        from src.execution.host.task_time import POLICY as TIME
+        from src.execution.host.task_time import LEGACY_POLICY as TIME
         c['config']['executionTimePolicy']['version']=TIME
         trial={'task':'t','state':'reserved'}
         self.assertEqual(feasibility(c,trial,100)['latestStartAt'],400)

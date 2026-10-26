@@ -1,6 +1,6 @@
 # Meta 资源规划接口
 
-适用于活动状态 `resourcePlanning.policy = meta-resource-planning-v1`。新活动采用 `benchmark-time-v1` 和 `control-only-v1`，不统计 token 或费用，用户上限、Meta 运行计划和已受理实验条件分别保存；旧活动按其绑定的工具契约执行。
+适用于活动状态 `resourcePlanning.policy = meta-resource-planning-v1`。新活动采用 `benchmark-time-v2` 和 `control-only-v1`，不统计 token 或费用，用户上限、Meta 运行计划和已受理实验条件分别保存；旧活动按其绑定的工具契约执行。
 
 ## 提交和修改计划
 
@@ -28,9 +28,13 @@
 
 ## 批次与任务时限
 
-`batch_submit` 接收 `candidateId`、`tasks`、`repeats`、`idempotencyKey`。每道题的求解和评分时限由 benchmark 原始配置决定，可在状态中的 `taskTimeLimits` 查询。准备与评分不占用求解时间；计划和批次不能覆盖任务时限，也不能接受缩短执行。
+`batch_submit` 接收 `candidateId`、`tasks`、`repeats`、`idempotencyKey`。每道题的求解和评分时限由 benchmark 原始配置决定，可在状态中的 `taskTimeLimits` 查询。各阶段上限独立；计划和批次不能覆盖 benchmark 时限。实际运行同时受活动截止约束，不能将原任务上限改写成剩余时间。
 
-活动剩余时间不足以完整执行时，选择仍可完整运行的任务或处理已有证据。比较实验时使用后台记录的实际资源条件。
+剩余时间不足以容纳所有阶段上限也允许提交和启动，由 Meta 自主判断是否值得尝试。`pendingTrials` 给出 `solverTimeSeconds`、`phaseCeilingTotalSeconds`、`availableSeconds` 与 `interruptionRisk`；总上限不是预计耗时或最低启动预留。没有有限上限时明确显示未知风险，仍受活动硬截止。收尾预留、并发、次数、暂停和存储限制继续有效。
+
+默认到活动截止就终止剩余求解和评分；只有用户明确选择 drain 模式，截止前已启动任务才可使用有限额外时间，截止后不再启动。实验的 `effectiveConditions.availableTimeSeconds` 保存调度启动可用时间，`availableTimeAtSolverStartSeconds` 保存求解开始时剩余时间，`effectiveSolverTimeSeconds` 保存有效求解窗口；`timing` 保存实际准备、求解、评分和执行耗时，缺失为 null。比较时说明短窗口与完整窗口的差异，活动截止中断不单独证明插件退步。
+
+历史 `benchmark-time-v1` 仍要求完整阶段预留，不自动改写已有活动或冻结配方。
 
 历史活动可能仍包含 `defaultTrialTimeSeconds`、批次 `execution` 和 `trial_conditions_accept`，其含义以该活动冻结的契约和资料为准。当前活动不要发送这些字段或操作。
 

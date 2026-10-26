@@ -94,6 +94,7 @@ def plugin_changes(previous, current):
 def build_tables(candidates, batches, trials, campaign=None, annotations=None, batch_id=None):
     campaign, annotations = campaign or {}, annotations or {}
     candidates = sorted((candidate_view(c) for c in candidates), key=lambda c: (c.get('createdAt', 0), c['id']))
+    if campaign.get('h0CandidateId'):candidates.sort(key=lambda c:c['id']!=campaign['h0CandidateId'])
     batches = sorted(batches, key=lambda b: b['round'])
     batch_candidates={b['id']:b['candidateId'] for b in batches}
     trials=[{**t,'candidateId':t.get('candidateId',batch_candidates.get(t.get('batchId')))} for t in trials]
@@ -133,6 +134,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         parent = c.get('parentId')
         version_rows.append({'id': c['id'], 'label': labels[c['id']], 'description': c.get('description', ''),
             'displayName': labels[c['id']]+' · '+(c.get('displayName') or ('原始基线' if not members else '、'.join(plugin_rows[m['pluginId']]['displayName'] for m in members)+'版')),
+            'role':'H0' if c['id']==campaign.get('h0CandidateId') else None,'compositionId':c.get('compositionId'),
             'bundleId': c['bundleId'], 'project':c.get('project'), 'executionContract':c.get('executionContract'), 'parentId': parent, 'parentLabel': labels.get(parent), 'plugins': members,
             'final': c['id'] == campaign.get('finalCandidateId'), 'retained': c['id'] == campaign.get('retainedCandidateId'),
             'assemblyStatus': c.get('check', {}).get('status', 'unknown'),
@@ -144,7 +146,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         previous_candidate = lookup.get(previous['candidateId']) if previous else None
         changes = plugin_changes(previous_candidate, selected) if previous else [
             {'kind': 'initial', 'label': '首轮，无上一轮比较对象', 'pluginKeys': []}]
-        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings', 'execution', 'officialResult', 'evidenceStatus', 'comparison', 'evidenceIndex', 'executionFinishedAt', 'resultAvailableAt', 'evidenceIndexedAt', 'candidateDiagnostics', 'scheduling', 'sourceIdentities']}
+        results = [{k: t.get(k) for k in ['id', 'task', 'repeat', 'state', 'score', 'stopReason', 'fixture', 'startedAt', 'finishedAt', 'comparisonContext', 'failure', 'scoringStatus', 'resultLabel', 'completionLabel', 'taskAssessment', 'effectiveConditions', 'conditionsRequired', 'executionSettings', 'execution', 'officialResult', 'evidenceStatus', 'comparison', 'evidenceIndex', 'executionFinishedAt', 'resultAvailableAt', 'evidenceIndexedAt', 'candidateDiagnostics', 'scheduling', 'sourceIdentities', 'timing']}
                    for t in trials if t['batchId'] == b['id']]
         round_rows.append({'id': b['id'], 'round': b['round'], 'candidateId': b['candidateId'],
             'versionName': names.get(b['candidateId'],'版本缺失'), 'testSettings':b.get('testSettings'),

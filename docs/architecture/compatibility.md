@@ -12,8 +12,9 @@
 | Meta composition v1/v2、工具 v2–v10 | 按活动记录的准确资产与摘要解析，未知/篡改资产拒绝恢复 |
 | 旧模型记账策略 | 保留 `/accounting` 与旧账本逻辑；新活动拒绝采用旧策略 |
 | task-completion-v1/v2/v3 | 旧记录按原绑定统计；缺少绑定字段按 v1，不能自动套用 v4 |
-| 旧固定 Trial 时限 | 保留旧预留、批次条件和接受缩短语义；新活动只用 benchmark-time-v1 |
-| stop-review-v1 / goal-or-budget-v1 | 原活动保留独立停止审查或 stable 门槛；工具 v9 原资产与系统模板 v11 原文保留，新活动采用 meta-closeout-v1 / 工具 v10 / 模板 v12 |
+| 旧固定 Trial 时限 | 保留旧预留、批次条件和接受缩短语义；新活动采用 benchmark-time-v2 |
+| benchmark-time-v1 | 保留完整阶段预留与准备后完整求解窗口检查；新活动 benchmark-time-v2 允许晚启动，任务元数据版本仍为 v1。原活动与冻结配方不自动升级 |
+| stop-review-v1 / goal-or-budget-v1 | 原活动保留独立停止审查或 stable 门槛；工具 v9 原资产与系统模板 v11 原文保留，新活动采用 meta-closeout-v1 / 工具 v10 / 模板 v13（v12 原文保留；v13 按新时间策略添加指导） |
 | 旧内嵌报告与未分段日志 | 继续读取，不用新快照重写原件 |
 
 默认版本清单见[架构总览](overview.md)。版本号分属不同契约，不能根据“v3”或创建时间猜测行为。
@@ -35,3 +36,7 @@
 [候选诊断脚本](../../scripts/project-candidate-diagnostics.py)默认只读，--write 追加阅读投影，保留来源摘要；候选自报错误不是官方评分权威，也不能把诊断条数当作失败次数。
 
 兼容验证：[旧 Bundle](../../tests/unit/bundle_test.py)、[历史存储](../../tests/unit/history_storage_test.py)、[旧计分](../../tests/unit/outcomes_test.py)、[工具绑定](../../tests/unit/meta_contracts_test.py)、[模型访问与旧账本](../../tests/unit/model_access_test.py)。
+
+## 用户组合起点
+
+`user-h0-v1` 仅在新创建请求中绑定；既有 process 或旧 Runner 活动不重选 H0、不迁移开放活动。新活动保存显式 h0CandidateId；旧记录继续按原首候选/旧空插件规则读取。新 Meta 系统模板为 v14，仅增加用户所选起点和材料范围说明；此前冻结的模板、SDK、配方、编号与成绩保持不变。完整工程资产缺少 dsh-plugin-v1 装配声明时仍可入库阅读，不能自动假设适配当前模板。

@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from src.execution.host.single_run import TRIAL_CLOSEOUT_RESERVE_SECONDS
-from src.execution.host.task_time import benchmark_time, POLICY as BENCHMARK_TIME
+from src.execution.host.task_time import benchmark_time, late_start
 
 from .model_access import control_only, TOKEN_FIELDS
 
@@ -78,7 +78,7 @@ def trial_settings(campaign, candidate, execution=None):
     execution = execution or {}
     if benchmark_time(campaign['config']):
         if execution:raise Refused('Benchmark owns task time; batch overrides and shortening are unavailable')
-        return {'solver':campaign['config']['solver'],'timePolicy':BENCHMARK_TIME,
+        return {'solver':campaign['config']['solver'],'timePolicy':campaign['config']['executionTimePolicy']['version'],
                 'resourcePlanRevision':plan['revision'],'userLimitsRevision':campaign.get('userLimitsRevision',1)}
     if set(execution) - {'trialTimeSeconds', 'allowShortened'}:
         raise Refused('Unknown batch execution setting')
@@ -105,6 +105,16 @@ def feasibility(campaign,trial,now):
     if trial.get('state')!='reserved' or not benchmark_time(campaign['config']):return None
     timing=trial.get('executionSettings',{}).get('benchmarkTime') or campaign['config']['taskTimeLimits'][trial['task']]
     required=timing['requiredTimeSeconds'];end=end_time(campaign)
+    if late_start(campaign['config']):
+        available=max(0,end-now)
+        admitted=now<campaign['deadline']-reserves(campaign)[0]
+        return {'state':'waiting_resources' if admitted else 'currently_infeasible',
+                'reason':None if admitted else 'closeout_time' if now<campaign['deadline'] else 'campaign_deadline',
+                'requiredSeconds':None,'phaseCeilingTotalSeconds':required,'availableSeconds':available,
+                'latestStartAt':campaign['deadline']-reserves(campaign)[0],'observedAt':now,
+                'solverTimeSeconds':timing['solverTimeSeconds'],'canShorten':False,'lateStartAllowed':True,
+                'interruptionRisk':required is None or available<required,
+                'nextAction':'等待调度名额；活动截止可能中断实验' if admitted else '核对活动截止及可调整的收尾预留'}
     latest=min(end-required,campaign['deadline']-reserves(campaign)[0]) if required is not None else None
     available=max(0,end-now)
     feasible=latest is not None and now<campaign['deadline']-reserves(campaign)[0] and now<=latest

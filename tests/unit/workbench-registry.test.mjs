@@ -15,7 +15,7 @@ test('UI registry builds Studio without classic and adds/removes an alternative 
  const save=()=>write('profiles/meta-workbench/uis.json',JSON.stringify(registry));
  const build=(selection)=>execFileSync(process.execPath,['scripts/build-workbench.mjs'],{cwd:root,env:{...process.env,PHYEXP_UI_VARIANT:selection},stdio:'pipe'});
  try{
-  for(const name of ['meta-workbench-studio','meta-workbench-client'])fs.cpSync(path.join(repo,'packages',name),path.join(root,'packages',name),{recursive:true,filter:src=>!src.includes('/lib')});
+  for(const name of ['meta-workbench-studio','meta-workbench-client'])fs.cpSync(path.join(repo,'packages',name),path.join(root,'packages',name),{recursive:true,filter:src=>path.basename(src)!=='lib'});
   for(const name of ['build-workbench.mjs','workbench-uis.mjs'])write('scripts/'+name,fs.readFileSync(path.join(repo,'scripts',name)));
   write('schemas/meta-defaults.json',fs.readFileSync(path.join(repo,'schemas/meta-defaults.json')));
   fs.mkdirSync(path.join(root,'node_modules/@phyexp'),{recursive:true});

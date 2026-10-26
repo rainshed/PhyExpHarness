@@ -192,9 +192,10 @@ def build(contents, spec, cache, log, resources, *, cancel=None, on_publish=None
                 subprocess.run(['docker', 'rm', '-f', name], stdout=log, stderr=subprocess.STDOUT, timeout=60)
 
 
-def freeze_project(source_root, store, directory, recipe, cache, log, resources, *, on_publish=None, cancel=None):
+def freeze_project(source_root, store, directory, recipe, cache, log, resources, *, on_publish=None, cancel=None, on_snapshot=None):
     from .freeze import _object, _publish
     contents, spec = snapshot(directory)
+    if on_snapshot:on_snapshot(contents, spec)
     artifact, receipt = build(contents, spec, cache, log, resources,
                               **({'cancel':cancel} if cancel else {}),**({'on_publish':on_publish} if on_publish else {}))
     check_cancel(cancel)

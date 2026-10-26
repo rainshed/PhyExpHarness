@@ -4,7 +4,7 @@
 
 ## 策略所有权
 
-Meta 从 [默认工程](../../templates/harness/default/harness.json)开始，可以改变语言/框架、入口、依赖、profile、提示、工具、终端、会话、辅助调用、上下文压缩及恢复。默认 DSH、bash/MCP 工具和异常恢复都是候选文件。平台不固定工具清单、请求次数或单会话策略，也不要求先测全部 H0。
+Meta 从用户选定并冻结的 H0 工程开始；平台提供[基础模板与推荐恢复插件](../../templates/harness/default/harness.json)，可以改变语言/框架、入口、依赖、profile、提示、工具、终端、会话、辅助调用、上下文压缩及恢复。默认 DSH、bash/MCP 工具和异常恢复都是候选文件。平台不固定工具清单、请求次数或单会话策略，也不要求先测全部 H0。
 
 不随候选变化的条件包括活动固定 Solver 与调用设置、任务公开范围、真实凭据边界、官方评分权威、隔离、benchmark 时限、用户活动上限和外部资源容量。候选可以申报插件用途与源码路径供阅读，但声明不授予权限、不构成策略白名单。
 
@@ -26,7 +26,9 @@ main 只能连接本任务 qsim 和专属模型通道。真实供应商凭据留
 
 ## 时间、环境与退出
 
-[task_time.py](../../src/execution/host/task_time.py)读取任务配置：环境准备、Agent setup、Solver、verifier 及独立 verifier 环境分别计算。调度必须能容纳完整阶段，Solver 时钟在准备后开始。原 benchmark 无有限时限而活动墙钟有限时返回无法预留，不自行发明时限。新活动拒绝单次时限覆盖和缩短接受操作。
+[task_time.py](../../src/execution/host/task_time.py)读取任务配置：环境准备、Agent setup、Solver、verifier 及独立 verifier 环境分别记录上限。新活动绑定 benchmark-time-v2，允许短窗口启动；Solver 时钟在准备后开始，实际截止为 benchmark 求解截止与该次活动执行截止中的较早者。原 benchmark 无有限求解上限时保留 null，实际运行受活动截止约束。阶段上限不改写，不接受单次时限覆盖。严格截止终止剩余求解和评分；明确选择 drain 才允许已启动任务有限延期。清理和证据归集不借此继续求解或补跑 verifier。
+
+provenance 保留宿主启动/结束与 Solver 时钟，Harbor 原始阶段起止时间用于生成 timing：preparationSeconds（宿主启动至开始求解）、environmentSeconds、setupSeconds、solverSeconds、verifierSeconds、executionTimeSeconds（不含后续清理与归集）。缺少起止证据的阶段保持 null；传统 wallTimeSeconds 仍可能包含清理，不能当作求解耗时。控制端另存调度启动可用时间。官方成绩与真实中断原因独立保存；时间条件随实验、报告和比较展示，完整窗口与短窗口不静默视为一致。
 
 任务镜像在准备阶段冻结；Trial 不重建或拉取替代标签，启动核验实际 main/qsim/verifier 镜像身份。任务配置或镜像丢失明确失败。新容器与卷承接每次尝试，镜像共享不等于随机样本固定。
 
@@ -36,8 +38,16 @@ main 只能连接本任务 qsim 和专属模型通道。真实供应商凭据留
 
 结果分别记录 execution、officialResult、evidenceStatus、comparison。官方文件须核验归属和完整性；非零退出、超时或诊断附件损坏可与可信官方分数并存。缺少可信官方文件保留 null；任务完成分另按[统一规则](evidence-storage.md#官方评分与任务完成分)派生。重复归集不重跑模型或 verifier。
 
-默认工程含响应保护与恢复组合，其传输等待、响应重新生成和工具参数反馈由工程源码/config 管理。Meta 可以修改、替换或移除这些策略；`runtimeConfig.recovery=null` 可禁用默认恢复。旧配方中的固定五档恢复不是新平台的不可变策略。副作用是否重放由候选策略负责，实验轨迹与最终诊断用于核查实际行为。
+默认预设显式声明 `request-recovery` 普通插件，其传输等待、响应重新生成和工具参数反馈由插件源码与配置管理。基础模板不含恢复源码；移除 `plugins` 与 `runtimeConfig.plugins` 中该插件即可禁用恢复。框架自身的参数校验及工具错误反馈仍然存在。Meta 可以修改、替换或移除这些策略。旧配方中的固定五档恢复不是新平台的不可变策略。副作用是否重放由候选策略负责，实验轨迹与最终诊断用于核查实际行为。
 
 ## 验证入口
 
 [工程冻结单元测试](../../tests/unit/project_bundle_test.py)、[候选接入](../../tests/unit/process_candidates_test.py)、[时限测试](../../tests/unit/benchmark_time_test.py)、[process 契约](../../tests/contracts/process-harness.test.mjs)与[策略契约](../../tests/contracts/process-strategies.test.mjs)分别覆盖源码/产物、策略可替换、通道和隔离。测试条件与未验证范围见[验证说明](../development/testing.md)。
+
+## 用户 H0 装配契约
+
+[组合器](../../src/control/h0.py)按 `user-h0-v1` 固定基础模板、准确插件摘要与配置。可选插件须显式声明 `assembly.contract=dsh-plugin-v1`、入口、配置 schema、准确版本依赖及冲突；缺少声明的资产仍可保存和阅读，但标为需要适配。此约定仅用于用户一键装配，不限制 Meta 后续完整工程开发。
+
+依赖必须全部出现在用户选择中，按依赖顺序加载；不自动升级或补选。每个带 npm 依赖的插件须有 package-lock.json，在原有隔离构建中安装，不在宿主运行插件。默认构建使用原生加载器检查全部所选插件实际激活，不调用 Solver；缺少服务和循环阻塞会使检查失败。空选择使用最小工程。运行上下文经普通插件配置的 runtimeContext 传入，deadline 不属于插件内容身份。
+
+[装配专项](../../tests/unit/h0_assembly_test.py)覆盖准确内容、删除默认、空组合、配置与依赖拒绝以及真实原生加载。活动创建和用户流程见[插件库指南](../guides/plugin-library.md)，装配字段见[声明 schema](../../schemas/execution/plugin-assembly.schema.json)。

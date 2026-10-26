@@ -21,6 +21,7 @@ class KnowledgeSnapshotTests(unittest.TestCase):
         shutil.copytree(ROOT/'knowledge/plugin-sdk/reference',self.reference)
         self.service=ControlService(ROOT,self.root/'data',self.root/'quantum','http://127.0.0.1:1')
         self.service.source=self.root/'source'
+        shutil.copytree(ROOT/'templates/harness/default',self.service.source/'templates/harness/default')
         (self.service.source/'schemas/execution').mkdir(parents=True)
         shutil.copyfile(ROOT/'schemas/execution/process-resources.json',self.service.source/'schemas/execution/process-resources.json')
         task=self.root/'quantum/harbor_tasks/time_budgeted_hamlearn_10q'

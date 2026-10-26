@@ -3,9 +3,12 @@ import crypto from 'node:crypto';
 import {LlmError} from '@deepseek-ai/dsh-llm';
 import {StreamGuard,BENCHMARK_STREAM_POLICY} from '../host/stream_guard.mjs';
 import {installRecoveryComposition} from './composition.mjs';
+import {recoveryPolicy} from './policy.mjs';
 export const name='candidate-recovery';
 export const inject=['llm','agents','sessionProjections','tools'];
-export async function apply(ctx,{policy,deadline}){
+export async function apply(ctx,{policy,runtimeContext}){
+ policy=recoveryPolicy(policy);
+ const deadline=runtimeContext.deadline*1000;
  const coordinator=await installRecoveryComposition(ctx,policy,deadline);
  const protect=async function*(next,options){
   const id=crypto.randomUUID(),chain=options.phyexpRecovery?.chainId||id;

@@ -13,8 +13,8 @@
 | 候选可替换框架、工具、会话和恢复 | [工程冻结](../../src/execution/bundle/project.py)、[默认工程](../../templates/harness/default/harness.json) | [process-strategies](../../tests/contracts/process-strategies.test.mjs)、[project_bundle_test](../../tests/unit/project_bundle_test.py) |
 | check 是隔离构建/入口核验，不是科学实验 | [process_candidates.py](../../src/control/process_candidates.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[project-build](../../tests/contracts/project-build.py) |
 | 新活动无 token 账本，旧账本仍兼容 | [model_access.py](../../src/control/model_access.py)、[accounting.py](../../src/control/accounting.py) | [model_access_test](../../tests/unit/model_access_test.py)、[model-access](../../tests/unit/model-access.test.mjs) |
-| 求解时限属于 benchmark，不扣旧 330 秒固定预留 | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) | [benchmark_time_test](../../tests/unit/benchmark_time_test.py)、[benchmark-task-ui](../../tests/unit/benchmark-task-ui.test.mjs) |
-| 后台 Meta 规划并发/收尾，新 process 不强制全部 H0；UI 次数校验仍有差距 | [service.py](../../src/control/service.py)、[资源规划](../../src/control/resource_planning.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[resource_planning_test](../../tests/unit/resource_planning_test.py) |
+| benchmark 阶段上限与活动截止独立，允许短窗口启动并保留实际时间条件 | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) | [benchmark_time_test](../../tests/unit/benchmark_time_test.py)、[benchmark-task-ui](../../tests/unit/benchmark-task-ui.test.mjs) |
+| 后台 Meta 规划并发/收尾，新 process 不强制全部 H0；UI 允许较少实验额度 | [service.py](../../src/control/service.py)、[资源规划](../../src/control/resource_planning.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[resource_planning_test](../../tests/unit/resource_planning_test.py) |
 | Meta 提交理由与总结自主收尾；在途工作落定，无报告或额外回复门槛；旧规则保留 | [stop_review.py](../../src/control/stop_review.py)、[meta.py](../../src/control/meta.py)、[收尾展示](../../packages/meta-workbench-studio/client/components/closeout.tsx) | [meta_finish_test](../../tests/unit/meta_finish_test.py)、[meta-closeout-ui](../../tests/unit/meta-closeout-ui.test.mjs)、[stop_review_test](../../tests/unit/stop_review_test.py)、[meta_prompt_test](../../tests/unit/meta_prompt_test.py) |
 | 主 Meta、研究委派、持久文件/会话及角色边界 | [meta_native_composition.py](../../src/control/meta_native_composition.py)、[meta_worker_native.mjs](../../src/control/meta_worker_native.mjs) | [meta-native](../../tests/contracts/meta-native.test.mjs)、[meta-research](../../tests/contracts/meta-research.test.mjs) |
 | 完整结果落文件，短回执与分页读取 | [meta_tool_boundary.py](../../src/control/meta_tool_boundary.py)、[meta_outputs.mjs](../../src/control/meta_outputs.mjs) | [meta-output-boundary](../../tests/contracts/meta-output-boundary.test.mjs)、[meta_tool_boundary_test](../../tests/unit/meta_tool_boundary_test.py) |
@@ -30,13 +30,14 @@
 | 导出准确冻结闭包，验证状态分层 | [exporting/project.py](../../src/exporting/project.py) | [export_test](../../tests/unit/export_test.py)、[process-standalone](../../tests/contracts/process-standalone.py) |
 | UI 独立、公共客户端/桥、幂等创建与页面生命周期 | [UI 清单](../../profiles/meta-workbench/uis.json)、[公共客户端](../../packages/meta-workbench-client/package.json) | [workbench-registry](../../tests/unit/workbench-registry.test.mjs)、[workbench-client](../../tests/unit/workbench-client.test.mjs)、[workbench-lifecycle](../../tests/contracts/workbench-lifecycle.test.mjs) |
 | 供应商快照、认证不进候选、连接测试不要求 usage | [provider_settings.py](../../src/control/provider_settings.py)、[provider_probe.mjs](../../src/control/provider_probe.mjs) | [provider_settings_test](../../tests/unit/provider_settings_test.py)、[providers](../../tests/contracts/providers.test.mjs) |
+| 用户插件库独立保留，用户冻结 H0，Meta 仅见选定材料 | [库服务](../../src/control/plugin_library.py)、[组合器](../../src/control/h0.py)、[库与 H0 UI](../../packages/meta-workbench-studio/client/components/plugin-library.tsx) | [库专项](../../tests/unit/plugin_library_test.py)、[装配](../../tests/unit/h0_assembly_test.py)、[创建](../../tests/unit/h0_creation_test.py)、[准确库请求](../../tests/unit/plugin-library.test.mjs)、[容器边界](../../tests/contracts/plugin-library-boundary.test.mjs) |
 
 ## 本轮纠正的主要不一致
 
 | 旧文档问题 | 按实现校正 |
 |---|---|
 | 当前新活动仍累计 token/费用、设置 token 子额度 | control-only-v1 不做累计/预留/结算；历史路径单列 |
-| 首次计划自动跑全部 H0、任务数必须被基线额度覆盖 | 后台新 process 不强制该顺序；Studio 仍保留旧次数表单校验，已写入指南和待办 |
+| 首次计划自动跑全部 H0、任务数必须被基线额度覆盖 | 新 process 由 Meta 决定是否测试 H0，Studio 已允许两任务但一次实验上限 |
 | 用户/Meta 分配单次时限，固定扣除 330 秒 | 新活动时限由 benchmark 分阶段读取，不接受覆盖/缩短 |
 | 默认恢复和工具清单属于不可修改基础设施 | 新工程拥有策略，默认模板是可修改候选 |
 | 默认六项插件全部启用、探索耗尽经审查可停止 | 停止审查默认关闭；历史 goal-or-budget 拒绝 exhausted，新活动由 Meta 提交理由与总结自主收尾 |
@@ -81,3 +82,57 @@
 初次全量检查中 222 项 JavaScript 通过，552 项 Python 有 3 项因依赖相邻 Quantum-Harbor 而失败。将这两组单元测试改用合成任务文件后，相关 24 项及完整 552 项 Python 复测通过，无跳过；保留首次失败日志。新增检查覆盖缺项、重复安装、端口占用、实例身份、凭据缺失、创建/启动响应丢失、一次实验上限及官方文件摘要变化。完整构建、项目边界与文档检查通过。原始记录保存在本地 reports/development/meta-harness/agent-installation。
 
 [GitHub 工作流](../../.github/workflows/project.yml)已加入 Ubuntu/macOS 新克隆安装、复用、单元及启动检查，但本轮没有推送或执行托管 runner。没有调用真实模型，没有将单元夹具或 HTTP 桥检查称作首次真实实验/浏览器验收。浏览器工具的安全策略拒绝打开 file: 登录页，页面验收仍待执行；其他平台容器与真实首次实验也保留在待办计划。
+
+
+## 实验晚启动与活动截止的验证
+
+2026-10-26，以 ba2b5e4 为修改前源码基线，先提交文档与实施边界 42b61ec。新活动采用 benchmark-time-v2 / meta-system-v13；任务元数据仍保留 v1，旧活动与冻结配方维持完整阶段预留策略。主线和参考实验允许短窗口受理、启动及准备后开始求解，活动硬截止与明确选择的有限延期模式保持独立。
+
+在项目虚拟环境执行 `PATH="$PWD/.venv/bin:$PATH" npm test`，最终 225 项 JavaScript、568 项 Python 全部通过，无跳过。`npm run build`、补充 UI 构建、`npm run check:docs` 和 `npm run check:project` 通过。测试覆盖短窗口、正常完成、到期中断、启动准备跨越截止、排队到期、暂停/并发/收尾预留、drain 只允许在途任务延期、参考实验共用时间策略、旧策略回归、真实原因与先行故障保留、官方结果优先、时间条件展示和比较。
+
+[时限检查](../../tests/unit/benchmark_time_test.py)使用合成 benchmark 元数据、模拟时钟与宿主进程回执；[官方结果检查](../../tests/unit/official_results_test.py)核对时间证据、截止原因及可信成绩；[归集检查](../../tests/unit/result_collection_test.py)覆盖控制端停止记录；[界面检查](../../tests/unit/benchmark-task-ui.test.mjs)和[比较检查](../../tests/unit/studio-readability.test.mjs)核对缺失时间不伪造为零、短窗口不标为条件一致。本轮没有运行真实模型、真实 Docker 端到端实验、完整独立搬迁或浏览器人工验收，不据单元通过宣称这些层已验证。
+
+首次直接调用系统 Python 缺少 Harbor；改用项目虚拟环境后专项通过。首次完整回归中一项旧测试误用当前策略常量，改为显式绑定旧策略后完成全量复测；一次单独导入测试缺少测试目录路径，最终按标准 discover 入口验证。原始日志与最终结果保存在本地 reports/development/meta-harness/late-start，不改写既有验证记录。
+
+
+## 插件库后台第一阶段（b777220 时的记录）
+
+2026-10-26，从 76d95a6 开始实施。[插件库](../../src/control/plugin_library.py)实现独立内容登记、历史补录进度、删除记录、修订与幂等、引用保护和宽限期清理；[候选接入](../../src/control/process_candidates.py)在构建前保存可定位插件，失败也保留源码。库 HTTP 路由仅用户可调用。
+
+[库专项](../../tests/unit/plugin_library_test.py) 7 项与[候选专项](../../tests/unit/process_candidates_test.py) 5 项通过，覆盖身份、失败源码、内容完整性、来源脱离、删除/恢复、依赖保留、重扫续接和用户/Meta 路由隔离；此前插件相关 22 项通过。尚未完成装配、H0 入口、完整并发/浏览器/容器验收；不把单元结果当作全部功能通过。后续按[任务书](../plans/plugin-library-and-h0.md)补齐验证。
+
+### 用户选择起点的冻结与重放
+
+[H0 组合器](../../src/control/h0.py)、[创建服务](../../src/control/service.py)及[候选事务](../../src/control/store.py)保存准确选择与显式 H0 引用；新 process 活动不自动提交基线。[创建专项](../../tests/unit/h0_creation_test.py)验证非空起点、创建后删除、原键重放、工作区偏离拒绝、多任务但一次实验上限以及用户/Meta API 边界。原生加载和恢复测试见[执行工程](../architecture/execution.md)；完整浏览器与交付验证仍按[任务书](../plans/plugin-library-and-h0.md)登记。
+
+
+## 插件库与用户起点的完整接入
+
+2026-10-26，从方案 76d95a6 开始，P1、P2、P3 分别在 b777220、cee2280、a01b465 完成，984b50e 补齐公共客户端、桥、Studio、发布恢复与工程验收。当前功能见[插件库指南](../guides/plugin-library.md)；[任务书](../plans/plugin-library-and-h0.md#本次工程证据映射)维护 A01–A13 的证据对应，H01–H04 等待用户完整确认；H05 由 Agent 验收，见下文。
+
+[真实构建与导出契约](../../tests/contracts/plugin-library-h0.py)已完成含恢复和最小模板两种隔离构建，将 ZIP 提取到独立目录，仅挂载其运行产物到无网络 Docker 容器后完成原生加载；删除独立库源码不破坏原导出。源码组合摘要与 H0 一致，旧执行身份不改。[Meta 边界契约](../../tests/contracts/plugin-library-boundary.test.mjs)使用 MetaHost 实际主会话及审查挂载，在真实容器中确认选定内容可读、库和控制数据库不可见；受控 API/材料专项补充主/子身份、猜摘要与路径拒绝。
+
+浏览器在[合成实例](../../tests/fixtures/plugin_library_workbench.py)完成库读取、失败源码、历史来源、错误配置纠正、含恢复/不含恢复创建、刷新、两任务一次额度、重扫、显式恢复、56 版本分页和同名 51 版本删除。浏览器暴露的恢复预览文案和删除后空分页已修复。实例禁用模型启动，构建显式标记 fixture；真实构建证据来自上一段的独立 Docker 契约。两种证据不混用，不把 Agent 操作算作人类接受。
+
+首次回归发现旧页面目录过滤误排除 library 页面、测试源码副本缺模板、假构建被真实磁盘水位挡住，以及旧系统模板预期未显式固定。已修复测试前提或对应实现并复测；生产存储阈值保持不变。导出契约首次把产物摘要误当对象，已改为统一解析资产；未把失败算为通过。最后文档同步期间一次 pretest 因待写入的验收标题缺失停止，补齐后重新执行。完整输出、截图和各层状态保存在本地 reports/development/meta-harness/plugin-library-and-h0。
+
+最终 `PATH="$PWD/.venv/bin:$PATH" npm test` 的 228 项 JavaScript、597 项 Python 全部通过；最后配置规范内部引用防护调整后，21 项库/装配/创建专项再次通过。原生 process 策略 10 项、旧恢复契约 15 项通过，实际 Meta 容器边界 1 项通过。资料与 UI 构建、项目边界和 70 页文档检查通过。
+
+本次没有调用真实模型、运行科学评分、迁移真实开放活动、发布实例或代签人工验收。恢复能力的工程验证不构成效果提升或因果结论。
+
+
+## 插件库选择交互的用户反馈修正
+
+基线 984b50e。移除工作台的推荐预设，首次 H0 选择为空，已有草稿和未知创建请求不改写。H0 列表使用独立复选框，多选与「查看详情」分离；版本计数明确为单插件版本总数。历史导入和删除记录收在「库管理」，保留原有自动保存、删除隐藏和明确恢复语义。
+
+公共客户端、创建身份及工作台专项 32 项通过，资料/UI 构建与项目/文档检查通过。实际浏览器验证空选择、两个不同插件同时勾选、查看第三个版本不替换选择，以及准确组合核对成功；随后恢复验证前的空选择，未新建活动、未调用模型。历史导入和删除记录说明在折叠区域中可读。本轮未重跑后端、Docker 构建或全部单元；这些后端契约没有修改。
+
+基线 563ba42 的后续文案调整移除 H0 选择页对恢复插件的单独提示，按冻结模板的 profile 与任务运行入口说明内置基础插件，并明确 0 个额外插件也可运行任务。[插件库指南](../guides/plugin-library.md#组合本次起点)同步解释已选数量。UI 构建、项目/文档检查和浏览器实际显示核对通过；本次只改说明，未改变插件选择或运行逻辑，未新增活动或调用模型，未重复执行后端和 Docker 检查。
+
+## H05 Meta 访问范围的 Agent 技术验收
+
+2026-10-26，源码基线 5390fa1，本次增加专项测试并修正验收分工，未修改产品运行代码。[H0 创建专项](../../tests/unit/h0_creation_test.py)补齐已选插件派生、冻结后自动入库、原 H0 不变、已选内容去重时不暴露其他来源，以及主/研究子身份对库分页、源码、任务、管理和 H0 用户接口的拒绝；已存在和不存在的版本返回相同拒绝。未选源码和历史来源标记不能通过当前活动材料搜索、猜引用或发布文件读取。
+
+可复现命令见[专项验证](testing.md#插件库与用户-h0-专项)。本次 H0 创建与库专项 17 项、[Meta 容器边界](../../tests/contracts/plugin-library-boundary.test.mjs) 1 项通过，无跳过。容器检查使用实际 MetaHost 主/审查会话挂载；原生研究子会话共享主边界，未启动真实模型子会话。后台集成使用合成构建回执，挂载验证使用真实 Docker；未调用模型、运行科学评分或改动用户实例。项目与文档检查通过。
+
+H05 归 Agent 技术验收，不再要求用户执行权限检查或签署隔离证明。用户负责 H01–H04 的操作与信息表达反馈；这项职责修正不代替用户接受，也不将上述检查扩大为未经测试的安全保证。

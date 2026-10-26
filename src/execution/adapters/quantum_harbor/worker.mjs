@@ -14,7 +14,7 @@ import {resolveBundle,pluginMounts} from '../../bundle/manifest.mjs';
 const [logs,bundleRoot,socketPath,deadlineString]=process.argv.slice(2);
 const resolved=resolveBundle(bundleRoot),bundle=resolved.manifest;
 const recipe=JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json')));
-const benchmark=recipe.timePolicy==='benchmark-time-v1';
+const benchmark=['benchmark-time-v1','benchmark-time-v2'].includes(recipe.timePolicy);
 const started=Date.now();const deadline=benchmark?Number(deadlineString):Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
 if(!Number.isFinite(deadline))throw new Error('Explicit finite deadline required');
 const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));

@@ -16,7 +16,7 @@ from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.trial.errors import AgentTimeoutError
 from ...bundle.manifest import resolve
 from ...host.task_network import restrict_main
-from ...host.task_time import start_solver_clock
+from ...host.task_time import start_solver_clock, ActivityDeadlineError
 from ...process.binding import binding
 
 
@@ -69,7 +69,7 @@ class ProcessHarborAgent(BaseAgent):
         if result.return_code: raise RuntimeError('Candidate deployment failed: '+str(result.stderr))
     async def run(self,instruction,environment,context):
         if self.timing:
-            timing=start_solver_clock(self.timing,self.activity_deadline,time.time())
+            timing=start_solver_clock(self.timing,self.activity_deadline,time.time(),self.recipe.get('timePolicy'))
             self.deadline=timing['solverDeadline'];self.save('timing.json',timing)
         endpoints=[{'name':s.name,'transport':s.transport,'url':s.url} for s in self.mcp_servers]
         resources=self.recipe['processResources']
@@ -126,19 +126,27 @@ class ProcessHarborAgent(BaseAgent):
                 entry=self.bundle['project']['entrypoint'];argv=['/opt/harness/'+entry[0],*entry[1:]]
                 # argv is executed in main, never interpreted by the host shell.
                 args=['docker','exec','-w','/app','-e','PHYEXP_CONTEXT=/tmp/phyexp-context.json',self.main,*argv]
+                if time.time()>=self.deadline:raise asyncio.TimeoutError('Deadline reached during process preparation')
                 with (self.logs/'candidate.stdout').open('wb') as stdout,(self.logs/'candidate.stderr').open('wb') as stderr:
                     process=await asyncio.create_subprocess_exec(*args,stdout=stdout,stderr=stderr)
                     code=await asyncio.wait_for(process.wait(),max(.001,self.deadline-time.time()))
                 runtime.update(status='completed' if code==0 else 'nonzero_exit',exitCode=code)
+                if code:runtime['failureDetectedAt']=time.time()
                 if code: raise NonZeroAgentExitCodeError('Candidate exited '+str(code)+'; see phyexp/candidate.stderr')
             except (asyncio.TimeoutError,asyncio.CancelledError):
                 runtime['status']='timed_out' if time.time()>=self.deadline else 'cancelled'
-                if runtime['status']=='timed_out': raise AgentTimeoutError('Benchmark solver deadline reached')
+                if runtime['status']=='timed_out':
+                    if self.timing and timing.get('deadlineCause')=='campaign_deadline':
+                        runtime['status']='campaign_deadline'
+                        raise ActivityDeadlineError('Activity deadline reached during Solver execution')
+                    raise AgentTimeoutError('Benchmark solver deadline reached')
                 raise
             except Exception as error:
                 if runtime['status']=='running':runtime.update(status='error',exception={'type':type(error).__name__,'message':str(error)})
                 raise
             finally:
+                if self.timing:
+                    timing['solverFinishedAt']=time.time();self.save('timing.json',timing)
                 # External process ownership: all candidate children share main's
                 # private PID namespace. kill(-1) excludes PID 1 and the caller;
                 # no task sidecar or other Trial shares this namespace.

@@ -44,3 +44,26 @@ DeepSeek Harness 通过插件组合工具、模型服务、上下文和 agent �
 Cordis 管理的工具、监听器等注册会随所属插件卸载。自行创建的资源由 `ctx.effect()` 返回清理函数；异步工作应响应取消并等待清理完成。若在 `agent.ctx` 上注册行为，也要考虑插件先于 agent 卸载时的清理责任。作用域负责生命周期，外部 Runner 负责隔离。
 
 配置、源码和资产通过完整工程冻结。候选依赖在隔离构建安装；开发入口读取 overview 与 guides/process-harness.md。plugin-manifest 资料 ID 保留旧固定 Runner 的清单参考，不限制新工程。
+
+## 让用户在后续活动中组合插件
+
+当前 Meta 不访问用户历史插件库，也不替用户选择 H0。可在当前工程内修改所选插件、编写新插件；后台在检查/冻结源码时自动保存声明的插件目录，构建失败也保存源码。选择插件不带入其他活动的报告或成绩。
+
+希望供用户在当前 DSH 0.2.1-rc.2 基础模板中一键装配时，在插件目录的 plugin.json 中显式增加以下 assembly 声明：
+
+```json
+{
+  "assembly": {
+    "contract": "dsh-plugin-v1",
+    "entry": "index.mjs",
+    "requires": [],
+    "conflicts": [],
+    "configSchema": {"type": "object", "properties": {"note": {"type": "string"}}, "additionalProperties": false},
+    "defaultConfig": {"note": "说明"}
+  }
+}
+```
+
+entry 相对插件目录且必须在源码内。requires 是用户须一起确认的准确插件摘要列表；conflicts 可列插件名称或摘要。配置必须是 JSON 对象；configSchema 只能内联或引用本声明中的定义，不读取外部 schema 地址。runtimeContext 由启动器传入，包含 deadline/workspace/outputDirectory，不属于用户持久配置，不应拿它延长预算。框架服务仍由原生 inject/加载器解析，声明依赖不等于服务实际可用；组合构建会检查所选插件是否激活。
+
+需要第三方 npm 包时在插件目录提供 package.json 和准确 package-lock.json；安装仅发生在隔离构建内，不允许锁引用目录外本地文件。必要源码和资产都应放入已声明插件目录；不要依赖旧活动工作区或宿主文件。缺少装配声明的完整工程插件仍可保存和阅读，显示需要适配，不限制 Meta 自选框架和工程结构。插件通过构建或所在组合取得成绩不等于插件因果有效。

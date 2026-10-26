@@ -19,6 +19,12 @@ def digest(value):
     return hashlib.sha256(value).hexdigest()
 
 
+def source_composition_id(hashes, modes):
+    """Source-only identity used by user H0, independent of execution bindings."""
+    return digest(canonical({'version': 'user-h0-v1', 'files': {
+        name: {'sha256': sha, 'mode': modes.get(name, 0o644)} for name, sha in hashes.items()}}))
+
+
 def safe_relative(value):
     if not isinstance(value, str) or not value or '\\' in value:
         raise ValueError('Expected a safe relative path')
@@ -142,7 +148,10 @@ def resolve(root):
             _hashes_match(root, files)
         else:
             _hashes_match(root, {'recipe.json': raw['recipeDigest']})
-        return ResolvedBundle(root, {**raw, 'compositionId': raw['id'], 'files': files}, assets, objects, {})
+        sources = {name[len('candidate/'):]: sha for name, sha in files.items() if name.startswith('candidate/')}
+        modes = raw['buildReceipt'].get('inputs', {}).get('sourceModes', {})
+        source_identity = source_composition_id(sources, modes) if set(sources) <= set(modes) else None
+        return ResolvedBundle(root, {**raw, 'compositionId': raw['id'], 'sourceCompositionId': source_identity, 'files': files}, assets, objects, {})
     add_object(raw['adapter'], 'execution-adapter')
     add_object(raw['dependencies'], 'dependencies')
     lock = json.loads(assets['package-lock.json'].read_text())

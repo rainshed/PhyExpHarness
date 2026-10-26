@@ -37,6 +37,22 @@ class ReferencesTest(unittest.TestCase):
         if mode=='model':args['candidateId']=self.candidate
         else:args['harnessRef']='dsh-standard'
         return self.ref.call(self.c,'reference_'+axis+'_submit',args)
+    def test_late_start_policy_applies_to_main_and_reference_claims(self):
+        c=self.store.get('campaigns',self.c)
+        c['config'].update(resourcePolicy='meta-resource-planning-v1',executionTimePolicy={'version':'benchmark-time-v2'},
+            taskTimeLimits={PUBLIC_TASKS[0]:{'solverTimeSeconds':9000,'requiredTimeSeconds':10000}})
+        self.store.put('campaigns',c)
+        self.store.update_plan(self.c,{'parallelism':2,'closeoutReserveSeconds':0,'closeoutReserveTokens':0},'short window','plan',0)
+        self.h0();self.submit()
+        a=self.store.claim(self.c);b=self.store.claim(self.c)
+        self.assertTrue(a['id'].startswith('trial-'));self.assertTrue(b['id'].startswith('reference-run-'))
+        for t in (a,b):
+            self.assertEqual(t['deadline'],8200)
+            self.assertEqual(t['effectiveConditions']['solverTimeSeconds'],9000)
+            self.assertTrue(t['effectiveConditions']['interruptionRiskAtLaunch'])
+        self.store.clock=lambda:8200
+        self.assertIsNone(self.store.claim(self.c))
+
     def test_h0_reserves_first_and_one_pair_is_one_round(self):
         with self.assertRaisesRegex(Refused,'H0'):self.submit()
         self.h0();b=self.submit(repeats=2)

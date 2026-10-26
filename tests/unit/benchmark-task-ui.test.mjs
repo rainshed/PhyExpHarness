@@ -16,7 +16,7 @@ test('task selection renders API time limits and blocks tasks whose configuratio
  function text(n){if(n==null||typeof n==='boolean')return '';if(Array.isArray(n))return n.map(text).join('');if(typeof n!=='object')return String(n);if(typeof n.type==='function')return text(n.type(n.props));return text(n.props?.children);}
  let tree=sandbox.module.exports.CreateCampaign({w});
  assert.match(text(tree),/求解上限：1小时 2分 0秒.*评分上限：0小时 5分 0秒/);
- assert.match(text(tree),/准备环境和评分不占用求解时间/);
+ assert.match(text(tree),/实际运行受活动截止约束/);
  const choices=nodes(tree).filter(n=>n.type==='input'&&n.props.type==='checkbox');
  assert.equal(choices.length,5);assert.equal(choices.filter(n=>!n.props.disabled).length,1);
  catalog={...catalog,value:null,error:'offline'};tree=sandbox.module.exports.CreateCampaign({w});
@@ -24,4 +24,17 @@ test('task selection renders API time limits and blocks tasks whose configuratio
  assert.equal(nodes(tree).filter(n=>n.type==='input'&&n.props.type==='checkbox'&&!n.props.disabled).length,1,'unavailable selected task can still be deselected');
  nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
  assert.match(error,/配置尚不可用/);
+});
+
+test('trial time display distinguishes ceilings, windows, actual durations and missing phases',async()=>{
+ const bundle=await build({entryPoints:['packages/meta-workbench-studio/client/components/trial-list.tsx'],bundle:true,write:false,format:'cjs',platform:'browser',external:['react','react/jsx-runtime'],jsx:'automatic'});
+ const jsx=(type,props)=>({type,props});const sandbox={module:{exports:{}},exports:null,require:()=>({jsx,jsxs:jsx,useState(){}})};
+ sandbox.exports=sandbox.module.exports;vm.runInNewContext(bundle.outputFiles[0].text,sandbox);
+ const t={effectiveConditions:{timePolicy:'benchmark-time-v2',solverTimeSeconds:9000,availableTimeSeconds:1800,interruptionRiskAtLaunch:true},
+  timing:{availableTimeAtSolverStartSeconds:1740,preparationSeconds:60,solverSeconds:1020,verifierSeconds:null,executionTimeSeconds:1200}};
+ function text(n){if(n==null)return '';if(Array.isArray(n))return n.map(text).join('');if(typeof n!=='object')return String(n);return text(n.props?.children);}
+ const rendered=text(sandbox.module.exports.TrialTiming({trial:t}));
+ assert.match(rendered,/任务求解上限：2小时 30分 0秒/);assert.match(rendered,/启动可用：0小时 30分 0秒/);
+ assert.match(rendered,/实际准备：0小时 1分 0秒/);assert.match(rendered,/评分：未记录/);assert.match(rendered,/活动截止中断/);
+ assert.equal(sandbox.module.exports.TrialTiming({trial:{}}),null);
 });

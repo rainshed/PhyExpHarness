@@ -20,7 +20,7 @@ if(reference?.harnessRef&&reference.harnessRef!=='dsh-standard'){await runExtern
 const recipe=JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json')));
 if(reference){for(const k of ['provider','model','reasoningEffort','maxTokens','providerConfig'])delete recipe[k];Object.assign(recipe,reference.native?.call||reference.fixedSolver);}
 const standard=reference?.harnessRef==='dsh-standard';
-const benchmark=recipe.timePolicy==='benchmark-time-v1';
+const benchmark=['benchmark-time-v1','benchmark-time-v2'].includes(recipe.timePolicy);
 const started=Date.now();const deadline=benchmark?Number(deadlineString):Math.min(Number(deadlineString),started+recipe.agentTimeoutSec*1000);
 if(!Number.isFinite(deadline))throw new Error('Explicit finite deadline required');
 const connections=JSON.parse(fs.readFileSync(path.join(logs,'mcp-connections.json')));

@@ -1,3 +1,4 @@
+import {H0Summary} from '../components/plugin-library';
 import React,{useEffect} from 'react';
 import {Closeout} from '../components/closeout';
 import {api} from '@phyexp/meta-workbench-client';
@@ -22,7 +23,7 @@ export function Overview({w,tablesProps}:any){
  const limits=saved?.analysis?.brief?saved.analysis.limitations:recent?.limitations;
  const stamp=saved?.analysis?.brief?reportCampaign(saved).snapshotAt:recent?.factAt;
  const next=ended?null:recent?.nextStep;
- return <>
+ return <><H0Summary campaign={c}/>
   <PageIntro eyebrow="EVOLUTION / 研究方向与当前判断" title="这次进化，为什么这样走？">先理解发现与选择，再看每个版本的实验表现。</PageIntro>
   <section className="studio-reading-hero" aria-label="研究结论与当前选择">
    <div className="studio-hero-findings"><small className="studio-kicker">{saved?.analysis?.brief?'最新报告中的结论':'最近保存的研究认识'}</small>

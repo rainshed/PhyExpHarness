@@ -27,6 +27,7 @@ export function waitingReason(t,c={}) {
   if (c.state === 'paused') return '活动已暂停，等待恢复后调度';
   if (c.state === 'draft') return '活动尚未启动';
   if (['closing','finished','failed'].includes(c.state)) return '活动已收尾或结束，不再启动新实验';
+  if(t.scheduling?.lateStartAllowed&&t.scheduling.state==='currently_infeasible')return t.scheduling.reason==='campaign_deadline'?'活动已到截止时间，不再启动新实验':'剩余时间已进入收尾预留，等待调整计划';
   if (t.scheduling?.state === 'currently_infeasible' || t.conditionsRequired?.canShorten === false) return `当前剩余时间无法容纳完整任务（需要 ${Math.ceil(t.scheduling?.requiredSeconds??t.conditionsRequired?.requiredSeconds??0)} 秒，可用 ${Math.floor(t.scheduling?.availableSeconds??t.conditionsRequired?.availableSeconds??0)} 秒）；可撤回未启动项或调整活动截止时间` ;
   if (t.conditionsRequired) return '剩余可用时长不足，等待确认缩短本次实验或调整计划';
   if (c.config?.resourcePolicy === 'meta-resource-planning-v1' && !c.resourcePlanning?.plan)
@@ -37,6 +38,7 @@ export function waitingReason(t,c={}) {
   const reason = c.resourcePlanning?.schedulingWait?.reason;
   if (reason === 'closeout_time') return '剩余时间已进入收尾预留，等待调整计划';
   if (reason === 'token_capacity') return '可用 token 额度不足，等待用量结算或调整计划';
+  if(t.scheduling?.lateStartAllowed&&t.scheduling.interruptionRisk)return `等待后台调度；当前可用 ${Math.floor(t.scheduling.availableSeconds)} 秒，允许启动但可能受活动截止中断`;
   return c.historical ? '快照未记录具体等待原因' : '等待后台调度，未记录进一步原因';
 }
 export function trialTiming(t,c={},now=Date.now()/1000) {

@@ -38,9 +38,9 @@ Studio → 公共客户端 → 宿主 API 桥 → 独立控制后台
 |---|---|---|
 | 执行契约 / 组合格式 | `harbor-process-v1` / `harness-composition-v3` | [service.py](../../src/control/service.py)、[project.py](../../src/execution/bundle/project.py) |
 | Meta 组合 | `meta-composition-v2` | [composition-native.json](../../packages/meta-harness/composition-native.json) |
-| Meta 工具 / 系统模板 | `meta-tools-v10` / `meta-system-v12` | [meta_contracts.py](../../src/control/meta_contracts.py)、[meta_context.py](../../src/control/meta_context.py) |
+| Meta 工具 / 系统模板 | `meta-tools-v10` / `meta-system-v14` | [meta_contracts.py](../../src/control/meta_contracts.py)、[meta_context.py](../../src/control/meta_context.py) |
 | 模型访问 | `control-only-v1` | [model_access.py](../../src/control/model_access.py) |
-| 任务时限 / 资源计划 | `benchmark-time-v1` / `meta-resource-planning-v1` | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) |
+| 任务时限 / 资源计划 | `benchmark-time-v2` / `meta-resource-planning-v1` | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) |
 | 任务完成 / 版本选择 | `task-completion-v4` / `meta-selection-v1` | [outcomes.py](../../src/evidence/outcomes.py)、[store.py](../../src/control/store.py) |
 | 探索结束 / 存储 | `meta-closeout-v1` / `shared-artifacts-v1` | [stop_policy.py](../../src/control/stop_policy.py)、[objects.py](../../src/evidence/objects.py) |
 
