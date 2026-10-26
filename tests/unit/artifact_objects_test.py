@@ -4,6 +4,8 @@ import os
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from pathlib import Path
 from src.evidence.objects import Objects
 
@@ -46,6 +48,50 @@ class ArtifactObjectsTests(unittest.TestCase):
         link=self.objects.root/'.publishing-link';link.symlink_to(recent)
         self.objects.prune(set(),time.time()-60)
         self.assertFalse(stale.exists());self.assertTrue(recent.exists());self.assertTrue(link.is_symlink())
+
+    def test_directory_scan_does_not_block_concurrent_publication(self):
+        original = Path.glob
+        published = []
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            def scan(path, pattern):
+                if path == self.objects.root and pattern == '*/*':
+                    published.append(pool.submit(Objects(self.root).put, b'during scan').result(timeout=2))
+                yield from original(path, pattern)
+            with patch.object(Path, 'glob', scan):
+                self.objects.prune(set(), time.time() - 60)
+        self.assertEqual(published[0].read_bytes(), b'during scan')
+
+    def test_new_metadata_reference_after_discovery_prevents_deletion(self):
+        obj = self.objects.put(b'new reference');calls = []
+        def roots():
+            calls.append(True)
+            return set() if len(calls) == 1 else {obj.name}
+        self.assertEqual(self.objects.prune(roots, time.time() + 1), 0)
+        self.assertEqual(len(calls), 2);self.assertTrue(obj.exists())
+
+    def test_concurrent_file_changes_are_rechecked_before_deletion(self):
+        linked = self.objects.put(b'new link');recent = self.objects.put(b'renewed')
+        gone = self.objects.put(b'collected elsewhere');replaced = self.objects.put(b'now a link')
+        target = self.root/'outside';target.write_bytes(b'keep');calls = []
+        before = time.time() + 1
+        def roots():
+            calls.append(True)
+            if len(calls) == 2:
+                os.link(linked, self.root/'view');os.utime(recent, (before + 1, before + 1))
+                gone.unlink();replaced.unlink();replaced.symlink_to(target)
+            return set()
+        self.assertEqual(self.objects.prune(roots, before), 0)
+        self.assertTrue(linked.exists());self.assertTrue(recent.exists())
+        self.assertTrue(replaced.is_symlink());self.assertEqual(target.read_bytes(), b'keep')
+
+    def test_each_collection_batch_refreshes_reachability(self):
+        objects = [self.objects.put(str(n).encode()) for n in range(101)];calls = []
+        def roots():
+            calls.append(True)
+            return {p.name for p in objects} if len(calls) == 3 else set()
+        self.objects.prune(roots, time.time() + 1)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sum(p.exists() for p in objects), 1)
 
     def test_symlinks_and_missing_official_files_are_rejected(self):
         raw=self.root/'trial';raw.mkdir();(raw/'link').symlink_to('/etc/passwd')

@@ -142,17 +142,26 @@ class Objects:
         return result
 
     def prune(self, protected, before):
-        """Metadata roots plus filesystem references; publication and collection share a lock."""
+        """Discover outside the publication lock; recheck every deletion inside it."""
+        def eligible(file, temporary):
+            try:info = file.lstat()
+            except FileNotFoundError:return None
+            return info if stat.S_ISREG(info.st_mode) and info.st_mtime < before and (temporary or info.st_nlink == 1) else None
+
+        # An old reachability snapshot may retain garbage until the next pass,
+        # but must never authorize deletion. Large directory scans must not hold
+        # the lock shared by evidence publication, plugin saves and H0 creation.
+        roots = protected() if callable(protected) else protected
+        candidates = [(file, True) for file in self.root.glob('.publishing-*') if eligible(file, True)]
+        candidates += [(file, False) for file in self.root.glob('*/*')
+                       if re.fullmatch('[0-9a-f]{64}', file.name) and file.name not in roots and eligible(file, False)]
         removed = 0
-        with self.locked():
-            if callable(protected):protected=protected()
-            for file in self.root.glob('.publishing-*'):
-                info=file.lstat()
-                if stat.S_ISREG(info.st_mode) and info.st_mtime<before:
-                    file.unlink();removed+=info.st_blocks*512
-            for file in self.root.glob('*/*'):
-                if file.is_symlink() or not re.fullmatch('[0-9a-f]{64}', file.name): continue
-                info = file.stat()
-                if file.name not in protected and info.st_nlink == 1 and info.st_mtime < before:
-                    file.unlink(); removed += info.st_blocks * 512
+        for start in range(0, len(candidates), 100):
+            with self.locked():
+                roots = protected() if callable(protected) else protected
+                for file, temporary in candidates[start:start + 100]:
+                    if not temporary and file.name in roots:continue
+                    info = eligible(file, temporary)
+                    if info is not None:
+                        file.unlink(); removed += info.st_blocks * 512
         return removed
