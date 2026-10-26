@@ -17,6 +17,22 @@ build 验证 SDK 资料生成和 UI 打包。单元检查通过不表示容器�
 
 主项目 Python 使用 requirements-control.lock，输入为 requirements-control.txt；更新时执行 `uv pip compile requirements-control.txt --python-version 3.13 --generate-hashes --output-file requirements-control.lock`，并在新虚拟环境安装该锁及运行 `python -m pip check`。独立导出使用 templates/standalone 自己的锁，不将其安装到主项目环境。
 
+## 新克隆与安装流程
+
+[GitHub 检查](../../.github/workflows/project.yml)在 Ubuntu/macOS 分别执行 setup、doctor --project-only、重复安装复用断言、npm test 和[本地启动契约](../../tests/contracts/onboarding.py)。只缓存下载，不缓存项目 .venv/node_modules、实验数据或个人配置。工作流未在 GitHub 实际运行前，不将配置存在写成远端 CI 已通过。
+
+本地复现：
+
+```sh
+python3 scripts/phyexp.py setup --json
+python3 scripts/phyexp.py doctor --project-only --json
+.venv/bin/python tests/contracts/onboarding.py
+```
+
+启动契约使用临时数据与显式合成任务元数据，运行真实后台、宿主与 UI 桥，检查重复启动、只读模型/任务查询、首次计划复用及进程退出；不调用 Docker 或真实模型，也不声称已经跑通科学实验。单元测试使用[合成任务夹具](../../tests/fixtures/benchmark_tasks.py)，不要求仓库旁边存在 Quantum-Harbor。
+
+完整外部环境与真实模型按[Agent 安装流程](../guides/agent-installation.md)另验。隔离源码副本必须排除 .venv/node_modules、生成目录、本地数据和个人配置，并记录系统/架构；同一机器的临时目录不等于另一操作系统已经验证。浏览器人工检查单列，HTTP 桥成功不替代页面查看。
+
 ## 原生与容器契约
 
 ```sh

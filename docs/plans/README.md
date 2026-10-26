@@ -6,7 +6,7 @@
 
 ## 当前已确认的实现差距
 
-**Agent 安装与首次实验验收进行中。** 安装、自检、统一启动和活动命令已实现，当前用法见[Agent 安装流程](../guides/agent-installation.md)；CI 与完整验收范围见[实施计划](agent-installation.md)。
+**Agent 安装与首次实验仍有外部验证缺口。** 安装、自检、统一启动、活动命令、CI 配置和本地干净源码检查已完成，当前用法见[Agent 安装流程](../guides/agent-installation.md)。托管 CI、其他平台容器、真实首次实验和浏览器验收仍按[实施计划](agent-installation.md)分别记录。
 
 **Studio 创建表单仍保留旧基线次数校验。** 后台 service/store 对 harbor-process-v1 已取消全套 H0 前置及 maxTrials 必须覆盖所选任务数的要求；但[公共表单 configError](../../packages/meta-workbench-client/form.mjs)仍无条件要求 tasks.length ≤ maxTrials，且[现有 UI 测试](../../tests/unit/workbench.test.mjs)明确验证旧行为。当前指南已如实说明。
 

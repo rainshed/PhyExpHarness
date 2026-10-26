@@ -15,6 +15,7 @@
 |---|---|
 | `src/execution/` | 插件版本与组合解析、隔离 Runner、模型网关及 Harbor adapter |
 | `src/control/` | 独立后台、活动、运行限额、调度与 Meta 会话 |
+| `src/onboarding/` | 通用本地安装、自检、启动与首次实验命令 |
 | `src/evidence/`、`src/reporting/`、`src/exporting/` | 证据查询、报告生成与冻结项目导出 |
 | `src/runtime/`、`src/integrations/` | 历史命令与导入的兼容入口 |
 | `packages/meta-harness/` | Meta 工具插件 |

@@ -1,0 +1,46 @@
+name: Fresh installation and offline checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements-control.lock
+      - name: Install and diagnose a fresh checkout
+        run: |
+          python3 scripts/phyexp.py setup --json
+          python3 scripts/phyexp.py doctor --project-only --json
+      - name: Repeat setup and verify reuse
+        run: |
+          python3 scripts/phyexp.py setup --json > repeat-setup.json
+          python3 -c 'import json; assert json.load(open("repeat-setup.json"))["reusedDependencies"]'
+      - name: Offline unit checks
+        run: |
+          . .venv/bin/activate
+          npm test
+      - name: Real local control and UI lifecycle without models
+        run: .venv/bin/python tests/contracts/onboarding.py

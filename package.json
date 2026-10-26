@@ -17,7 +17,11 @@
     "test:references": "python3 scripts/reference-images.py && node --test tests/unit/reference-*.test.mjs tests/contracts/reference-harnesses.test.mjs && python3 -m unittest tests.unit.reference_plugins_test tests.unit.reference_runtime_test",
     "check:docs": "python3 scripts/check-docs.py",
     "setup": "python3 scripts/phyexp.py setup",
-    "doctor": "python3 scripts/phyexp.py doctor"
+    "doctor": "python3 scripts/phyexp.py doctor",
+    "start": "python3 scripts/phyexp.py start",
+    "status": "python3 scripts/phyexp.py status",
+    "experiment": "python3 scripts/phyexp.py experiment",
+    "test:onboarding": "python3 tests/contracts/onboarding.py"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

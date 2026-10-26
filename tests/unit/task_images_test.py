@@ -28,6 +28,7 @@ from src.control.task_images import POLICY, prepare_task_images, verify_locks, s
 from src.control.store import PUBLIC_TASKS, Refused
 from src.control.service import ControlService
 from src.execution.host.single_run import task_image_sources
+from tests.fixtures.benchmark_tasks import make_tasks
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -164,7 +165,8 @@ class CampaignPreparationTests(unittest.TestCase):
         self.meta=patch('src.control.service.freeze_meta',return_value={});self.meta.start();self.addCleanup(self.meta.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.data = Path(self.tmp.name)
-        self.service = ControlService(ROOT, self.data, ROOT.parent/'Quantum-Harbor', 'http://127.0.0.1:1')
+        quantum = make_tasks(self.data/'synthetic-quantum', PUBLIC_TASKS)
+        self.service = ControlService(ROOT, self.data, quantum, 'http://127.0.0.1:1')
         model = {'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'}
         self.config = {'solver':model,'meta':model,'tasks':list(PUBLIC_TASKS),'wallTimeSeconds':7200,'concurrency':1}
         digest = sources_digest(task_image_sources(self.service.quantum))
