@@ -2,6 +2,8 @@
 
 适用：主线源码、标准 Docker/Harbor、本地数据目录。先了解[核心概念](../product/concepts.md)，详细命令来源为[package.json](../../package.json)。
 
+当前安装与启动仍需按下文手动执行；统一安装、自检、启动和首次实验命令尚未提供，实施与验收范围见[Agent 安装计划](../plans/agent-installation.md)。已知主项目与独立包的 Python 版本声明存在差异，Linux 下 UI 启动器尚未读取 XDG_DATA_HOME；修复前应显式为两个终端设置相同的 PHYEXP_DATA_DIR。现有检查通过不等于新机器完整安装已验收。
+
 ## 安装与构建
 
 准备 Node.js 24.13+、Python 3.13、可运行 Linux 容器的 Docker，以及显式指定的 Quantum-Harbor checkout。Harbor Python 依赖由独立包锁固定为 0.18.0；DSH 由根 npm 锁固定为 0.2.1-rc.2。Quantum-Harbor 的任务、基础 agent/verifier 镜像仍须按其项目要求准备，PhyExpHarness 不附带这些外部资产。
