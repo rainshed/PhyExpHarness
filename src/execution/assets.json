@@ -40,6 +40,7 @@
         "files": [
           "src/execution/runner/boot.mjs",
           "src/execution/runner/isolated.mjs",
+          "src/execution/runner/bridge_stream.mjs",
           "src/execution/runner/gateway_plugin.mjs",
           "src/execution/runner/request_recovery.mjs",
           "src/execution/runner/dsh_session.mjs",
