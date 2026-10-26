@@ -78,11 +78,14 @@ UI 结构与交互逻辑有单元/宿主契约，真实浏览器阅读、窄屏�
 单元测试随 npm test 执行，覆盖库身份/发布恢复/补录/删除保留、历史 v1/v2/v3、H0 创建重放与权限；原生加载测试使用本机已锁定的 Node 依赖，且不调用模型。
 
 ```sh
+.venv/bin/python -m unittest -v tests.unit.h0_creation_test tests.unit.plugin_library_test
 node --test tests/contracts/process-strategies.test.mjs tests/contracts/plugin-library-boundary.test.mjs
 .venv/bin/python tests/contracts/plugin-library-h0.py --output /absolute/new-contract-output
 ```
 
-第一条核验普通恢复插件的模拟故障，以及 Meta 实际挂载的材料边界；后一项需要 Docker。第二条实际隔离构建含恢复/最小两种 H0，导出到独立目录，再仅挂载导出产物到无网络容器检查加载。它保留回执和日志，自动移除自身生成的大型合成产物；不运行科学任务、官方评分或真实模型。
+第一条核验 H0 冻结、库生命周期、主/研究子身份对库路由的拒绝、材料范围及派生新版本自动入库，使用临时数据库和合成构建回执。第二条核验普通恢复插件的模拟故障，以及 Meta 实际挂载的材料边界；后一项需要 Docker。第三条实际隔离构建含恢复/最小两种 H0，导出到独立目录，再仅挂载导出产物到无网络容器检查加载。它保留回执和日志，自动移除自身生成的大型合成产物；不运行科学任务、官方评分或真实模型。
+
+[H05 Meta 访问范围](../plans/plugin-library-and-h0.md#h05-meta-访问范围agent-技术验收)由 Agent 执行第一条及 `node --test tests/contracts/plugin-library-boundary.test.mjs`，提交接口、材料、派生入库和实际容器挂载证据。用户不负责执行权限探针或证明隔离；没有选库按钮和模型自称看不到插件库都不能替代这些检查。
 
 可运行合成 UI 验收实例（构建回执显式为 fixture，模型执行被禁用）：
 
@@ -91,4 +94,4 @@ node --test tests/contracts/process-strategies.test.mjs tests/contracts/plugin-l
 PHYEXP_DATA_DIR=/absolute/new-ui-fixture PHYEXP_CONTROL_URL=http://127.0.0.1:18572 PHYEXP_UI_PORT=18573 node scripts/workbench.mjs
 ```
 
-打开第二条命令打印的本地登录入口，从研究工作台进入插件库，按[H01–H05](../plans/plugin-library-and-h0.md#6-人类验收agent-准备用户确认)验收。端口已占用时换一对空闲端口，不能终止其他实例。该夹具可测试创建、删除和来源阅读；添加 `--pagination-versions 51` 可生成跨页的同名合成版本。不要把合成构建当作隔离构建或真实效果证据。
+打开第二条命令打印的本地登录入口，从研究工作台进入插件库，按[H01–H04](../plans/plugin-library-and-h0.md#6-人类验收agent-准备用户确认)验收操作和信息表达。端口已占用时换一对空闲端口，不能终止其他实例。该夹具可测试创建、删除和来源阅读；添加 `--pagination-versions 51` 可生成跨页的同名合成版本。不要把合成构建当作隔离构建或真实效果证据。

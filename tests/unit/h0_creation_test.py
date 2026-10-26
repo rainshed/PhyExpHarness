@@ -1,5 +1,6 @@
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -101,6 +102,44 @@ class H0CreationTests(unittest.TestCase):
         self.assertTrue(resolve_selection(self.service,self.selection)['plugins'])
         self.assertTrue(any(not s['available'] for s in lib.origins(lib.get(id)) if s.get('campaignId')==cid))
 
+    def test_selected_derivation_returns_to_library_without_exposing_other_origins(self):
+        from src.execution.bundle.project import SourceFiles
+        lib=self.service.plugin_library;materials=self.service.materials
+        files=SourceFiles();files['index.mjs']=b'export function apply() {} // SELECTED_H05_SOURCE'
+        manifest={'name':'h05-selected','version':'1','entry':'index.mjs',
+                  'assembly':{'contract':'dsh-plugin-v1','entry':'index.mjs','requires':[]}}
+        selected=lib.save(files,manifest,{'campaignId':'PRIVATE_SELECTED_ORIGIN'})
+        files['index.mjs']=b'export function apply() {} // UNSELECTED_H05_SOURCE'
+        secret=lib.save(files,{**manifest,'name':'h05-private'},{'campaignId':'PRIVATE_UNSELECTED_ORIGIN'})
+        selection={**self.selection,'plugins':[{'id':selected,'config':{}}]}
+        cid=self.create(selection)['id'];h0=self.service.build_candidate(cid,[],'H0')
+        project=self.service.workspace(cid)/'derived'
+        shutil.copytree(self.service.workspace(cid)/'h0',project)
+        spec=json.loads((project/'harness.json').read_text())
+        source=project/spec['plugins'][0]['path']/'index.mjs'
+        source.write_text('export function apply() {} // DERIVED_H05_SOURCE')
+        derived=self.service.build_candidate(cid,[],'Derived selected plugin',parent=h0['id'],project_path='derived')
+        new_id=derived['libraryCapture']['plugins'][0]['id']
+        self.assertNotEqual(selected,new_id)
+        detail=self.client.get('/plugin-library/'+new_id,params={'file':'index.mjs'})
+        self.assertEqual(detail.status_code,200);self.assertIn('DERIVED_H05_SOURCE',detail.json()['content'])
+        self.assertTrue(any(s.get('campaignId')==cid for s in lib.get(new_id)['sources']))
+        self.assertIn('SELECTED_H05_SOURCE',lib.detail(selected,'index.mjs')['content'])
+        self.assertEqual(self.service.store.get('campaigns',cid)['h0CandidateId'],h0['id'])
+        for candidate,marker in [(h0,'SELECTED_H05_SOURCE'),(derived,'DERIVED_H05_SOURCE')]:
+            matches=materials.search(cid,marker,kind='plugin',candidateId=candidate['id'])['matches']
+            self.assertEqual(len(matches),1)
+            self.assertIn(marker,materials.read(cid,matches[0]['ref'])['text'])
+        for marker in ['UNSELECTED_H05_SOURCE','PRIVATE_SELECTED_ORIGIN','PRIVATE_UNSELECTED_ORIGIN']:
+            for kind in ['activity','version','plugin']:
+                self.assertEqual(materials.search(cid,marker,kind=kind)['total'],0,(kind,marker))
+            self.assertNotIn(marker,json.dumps(derived))
+        for row in materials._records(cid,'plugin'):self.service.meta_api.files.material(cid,row)
+        published=b''.join(p.read_bytes() for p in self.service.meta_api.files.directory(cid).rglob('*') if p.is_file())
+        self.assertIn(b'DERIVED_H05_SOURCE',published);self.assertNotIn(b'UNSELECTED_H05_SOURCE',published)
+        for ref in ['plugin:'+secret+':index.mjs','plugin:'+derived['id']+':candidate/../../control.sqlite']:
+            with self.assertRaises(Refused):materials.read(cid,ref)
+
     def test_user_api_validation_and_meta_denial_before_lookup(self):
         c=self.create({**self.selection,'plugins':[]});cid=c['id']
         invalid=json.loads(json.dumps(self.selection));invalid['plugins'][0]['config']={}
@@ -109,8 +148,16 @@ class H0CreationTests(unittest.TestCase):
         for role in ('meta','meta-research'):
             _,token=self.service.lease(cid,role,self.service.store.clock()+100)
             headers={'Authorization':'Bearer '+token}
-            for route in ['/plugin-library','/plugin-library/h0/defaults','/campaigns/'+cid+'/h0','/plugin-library/'+'f'*64]:
+            selected=self.selection['plugins'][0]['id']
+            for route in ['/plugin-library','/plugin-library?query=request&offset=1&includeDeleted=true',
+                          '/plugin-library/h0/defaults','/campaigns/'+cid+'/h0','/plugin-library/jobs/unknown',
+                          '/plugin-library/'+selected,'/plugin-library/'+selected+'?file=plugin.json',
+                          '/plugin-library/'+selected+'/deletion','/plugin-library/'+'f'*64]:
                 self.assertEqual(self.client.get(route,headers=headers).status_code,403,route)
-            self.assertEqual(self.client.post('/plugin-library/h0/preview',json={'selection':invalid},headers=headers).status_code,403)
+            for route in ['/plugin-library/h0/preview','/plugin-library/rescan','/plugin-library/'+selected+'/change']:
+                self.assertEqual(self.client.post(route,json={},headers=headers).status_code,403,route)
+            existing=self.client.get('/plugin-library/'+selected,headers=headers)
+            missing=self.client.get('/plugin-library/'+'f'*64,headers=headers)
+            self.assertEqual(existing.json(),missing.json())
 
 if __name__=='__main__':unittest.main()
