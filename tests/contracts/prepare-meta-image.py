@@ -17,9 +17,16 @@ inputs={'base':base,'package':{k:locked[k] for k in ('version','resolved','integ
 key=hashlib.sha256(json.dumps(inputs,sort_keys=True).encode()).hexdigest();tag='phyexp-contract-meta:'+key
 context=args.output/key;context.mkdir(exist_ok=True)
 shutil.copytree(package,context/'package',dirs_exist_ok=True)
-(context/'Dockerfile').write_text('FROM '+base+'\nCOPY package/ /opt/phyexp/node_modules/@deepseek-ai/dsh-tool-cordis/\n')
+# BuildKit treats a bare config ID in FROM as a registry name. Give the local
+# immutable ID a fixture-only tag and verify it before and after the build.
+base_tag='phyexp-contract-meta-base:'+base.removeprefix('sha256:')
+subprocess.run(['docker','tag',base,base_tag],check=True)
+def base_id():return subprocess.check_output(['docker','image','inspect',base_tag,'--format','{{.Id}}'],text=True).strip()
+assert base_id()==base
+(context/'Dockerfile').write_text('FROM '+base_tag+'\nCOPY package/ /opt/phyexp/node_modules/@deepseek-ai/dsh-tool-cordis/\n')
 with (context/'build.log').open('w') as log:
  subprocess.run(['docker','build','-t',tag,str(context)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=600)
+assert base_id()==base
 image=subprocess.check_output(['docker','image','inspect',tag,'--format','{{.Id}}'],text=True).strip()
 receipt={'image':image,'inputs':inputs,'scope':'scripted native/legacy contracts only; no scientific execution change'}
 (args.output/'receipt.json').write_text(json.dumps(receipt,indent=2));print(image)

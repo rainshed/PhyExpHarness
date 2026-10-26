@@ -1,12 +1,12 @@
 """Real Docker boundary test, fake HTTP sidecar, no model or science task."""
-import unittest,subprocess,uuid,json
+import unittest,subprocess,uuid,json,os
 from src.execution.host.task_network import restrict_main,release,docker
 class Network(unittest.TestCase):
  def test_main_reaches_qsim_but_not_public_network_or_host(self):
   prefix='phyexp-net-'+uuid.uuid4().hex[:10];main=prefix+'-main';qsim=prefix+'-qsim';network=None
   try:
    docker('run','-d','--name',qsim,'--entrypoint','node','phyexp-runner:0.2.1-rc.2','-e',"require('http').createServer((q,s)=>s.end('qsim-fixture')).listen(8123,'0.0.0.0')")
-   docker('run','-d','--name',main,'--entrypoint','sleep','qiqcbench-agent:codex-0.118.0','60')
+   docker('run','-d','--name',main,'--entrypoint','sleep',os.environ.get('PHYEXP_TASK_TEST_IMAGE','qiqcbench-agent:latest'),'60')
    network=restrict_main(main,qsim)
    script="""import urllib.request,json,socket
 out={}
