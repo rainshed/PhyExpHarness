@@ -32,7 +32,7 @@ export function metaFailureReason(meta) {
 }
 export function campaignStatus(c={}) {
  if(c.deletion||c.state==='deleting')return {label:c.deletion?.state==='failed'?'删除失败，待重试':'正在删除',attention:false,recovering:false};
- const meta=currentMeta(c),live=['running','closing'].includes(c.state);
+ const meta=currentMeta(c),live=['running','closing'].includes(c.state)&&!(c.config?.stopPolicy==='meta-closeout-v1'&&c.finishAssessment?.summary);
  const attention=live&&['needs_attention','failed'].includes(meta?.state);
  const recovering=live&&meta?.state==='recovering';
  const manualRecovery=recovering&&(meta?.recovery?.userResumedAt!=null||meta?.recoveryRequested===true);

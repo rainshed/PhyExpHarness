@@ -73,7 +73,7 @@ export function reportGroups(reports=[], batches=[]) {
     return (batches.find(r=>r.id===b[0].batchId)?.round||0)-(batches.find(r=>r.id===a[0].batchId)?.round||0)||(b[0].createdAt||0)-(a[0].createdAt||0);
   });
 }
-export function reportTitle(r, batches=[]) {return r.kind==='status_summary'||r.status==='analysis_incomplete'?'阶段摘要 · 分析未完成':r.kind==='final'?'最终研究报告':`第 ${batches.find(b=>b.id===r.batchId)?.round ?? '—'} 轮报告`;}
+export function reportTitle(r, batches=[]) {return r.closeoutSubmitted?'收尾记录与最终事实':r.kind==='status_summary'||r.status==='analysis_incomplete'?'阶段摘要 · 分析未完成':r.kind==='final'?'最终研究报告':`第 ${batches.find(b=>b.id===r.batchId)?.round ?? '—'} 轮报告`;}
 export function reportCampaign(report) {
   return {...reportContext(report), comparisonCandidateId:report.batchId?report.tables?.rounds.find(r=>r.id===report.batchId)?.candidateId:null};
 }

@@ -1,10 +1,15 @@
 import {readWorkbenchUIs,selectWorkbenchUIs} from './workbench-uis.mjs';
+import {dataDirectory} from './local-paths.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const selectedUIs=selectWorkbenchUIs(readWorkbenchUIs(root),process.env.PHYEXP_UI_VARIANT);
-const data=process.env.PHYEXP_DATA_DIR||path.join(os.homedir(),process.platform==='darwin'?'Library/Application Support/PhyExpHarness':'.local/share/PhyExpHarness');
+const data=dataDirectory();
 process.env.PHYEXP_CONTROL_URL||='http://127.0.0.1:18402';
-if(!process.env.PHYEXP_USER_TOKEN)process.env.PHYEXP_USER_TOKEN=fs.readFileSync(path.join(data,'user-token'),'utf8').trim();
+if(!process.env.PHYEXP_USER_TOKEN){
+ const tokenFile=path.join(data,'user-token');
+ if(!fs.existsSync(tokenFile))throw new Error('控制后台尚未准备好，或两端数据目录不一致。请先启动后台并核对 PHYEXP_DATA_DIR：'+data);
+ process.env.PHYEXP_USER_TOKEN=fs.readFileSync(tokenFile,'utf8').trim();
+}
 const home=process.env.PHYEXP_UI_HOME||path.join(data,'ui');fs.mkdirSync(home,{recursive:true});
 const accessFile=path.join(home,'workbench-access.json');
 const access=fs.existsSync(accessFile)?JSON.parse(fs.readFileSync(accessFile,'utf8')):{};

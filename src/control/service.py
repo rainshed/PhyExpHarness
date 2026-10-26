@@ -38,7 +38,7 @@ from src.evidence.outcomes import evaluation, DEFAULT_RULE
 from src.evidence.materials import Materials,snapshot_tasks
 from .meta_context import activity_state
 from .meta_composition import freeze as freeze_meta, verify as verify_meta
-from .stop_policy import GOAL_POLICY, CONTROLLED_POLICIES
+from .stop_policy import META_POLICY, CONTROLLED_POLICIES
 from .stop_review import StopRuntime
 from .processes import reap_children
 from . import resource_planning as planning
@@ -115,7 +115,11 @@ class ControlService:
         return pack
     def _operation(self,campaign,kind,payload,fn):
         if hasattr(self,'storage') and not self.storage.permit(campaign,'build'):raise Refused('存储空间不足，暂不启动构建；释放空间后重试。')
-        row=self.store.put('operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
+        with self.store.connection(True) as db:
+            c=self.store._get(db,'campaigns',campaign)
+            if c['config'].get('stopPolicy')==META_POLICY and kind in ('candidate_check','freeze') and (c['state']!='running' or c['explorationClosed']):
+                raise Refused('Search writes closed')
+            row=self.store._save(db,'operations',{'id':identity('operation'),'campaignId':campaign,'kind':kind,'payload':payload,'state':'running','startedAt':time.time()})
         def work():
             with self.access.enter(campaign):
                 if self.store.deletion(campaign):return
@@ -187,8 +191,8 @@ class ControlService:
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
             runtime_defaults={'executionContract':'harbor-process-v1',
                 'executionResources':json.loads((self.source/'schemas/execution/process-resources.json').read_text())} if not replay else {}
-            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':GOAL_POLICY}) if not replay else None
-            campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':GOAL_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
+            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':META_POLICY}) if not replay else None
+            campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':META_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **time_defaults,**runtime_defaults,
                 **({'storageDeployment':storage_profile()} if storage_profile() else {}),
                 'modelCatalogRevision':catalog['revision'],
@@ -254,7 +258,7 @@ class ControlService:
         evidence=self.evidence.overview(campaign)
         value.update(candidates=self.store.list('candidates',campaign),batches=self.store.list('batches',campaign),
             trials=planning.pending_view(value,trial_diagnostics(self.store.list('trials',campaign),self.data,value['config']),self.store.clock()),operations=self.store.list('operations',campaign),
-            reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status']} for r in self.store.report_heads(campaign)],
+            reports=[{k:r[k] for k in ['id','kind','batchId','createdAt','analysisRevision','status','closeoutSubmitted'] if k in r} for r in self.store.report_heads(campaign)],
             stopReviews=self.store.list('stop_reviews',campaign),metaObservations=self.store.list('meta_observations',campaign),
             exports=self.store.list('exports',campaign),metaSessions=self.store.list('meta_sessions',campaign),metaQuestions=self.store.list('meta_questions',campaign),
             evidence=evidence['items'],evidenceIndex={k:v for k,v in evidence.items() if k!='items'})
@@ -354,6 +358,8 @@ class ControlService:
     def control(self,campaign,action,key,expected_revision=None,changes=None):
         self.store.writable(campaign)
         c=self.store.get('campaigns',campaign)
+        if action=='finish' and c['config'].get('stopPolicy')==META_POLICY:
+            raise Refused('Only authenticated main Meta may submit its closeout; user controls use stop')
         if action=='start' and c['state']=='draft':
             # H0 is saved before reference images are built. Do not admit work
             # (or probe model endpoints) until the whole preparation has ended.
@@ -624,7 +630,8 @@ class ControlService:
                     if self.meta_driver:self.meta_driver.interrupt(id,'storage_capacity')
                 if self.meta_driver:self.meta_driver.tick(id)
                 elif c['state']=='closing' and c['counts']['activeTrials']==0 and c['counts']['collectingTrials']==0:
-                    self.store.finalize(id,summary_reason='达到活动上限；Meta 分析尚未完成。')
+                    if cfg.get('stopPolicy')==META_POLICY and (c['counts']['reservedTrials'] or any(o['state']=='running' for o in self.store.list('operations',id))):continue
+                    self.store.finalize(id,summary_reason='活动已结束；系统保留最终事实，Meta 收尾理由与总结以实际提交记录为准。')
         finally:self.tick_lock.release()
     def export(self,campaign,candidate):
         self.store.writable(campaign)
@@ -712,6 +719,12 @@ class ControlService:
                 **{key:args.get(key) for key in ['tradeoffs','limitations','reconsiderWhen','expectedSelectionRevision']})
         if operation=='export_create':return self.export(campaign,args['candidateId'])
         if operation=='campaign_finish':
+            if c['config'].get('stopPolicy')==META_POLICY:
+                # The same control transaction can be recovered after a lost API receipt.
+                if not isinstance(args.get('idempotencyKey'),str) or not args['idempotencyKey'].strip() or len(args['idempotencyKey'])>200:
+                    raise Refused('Invalid idempotency key')
+                key=hashlib.sha256(encoded([campaign,operation,args.get('idempotencyKey')]).encode()).hexdigest()
+                return self.store.control(campaign,'finish','meta-finish-'+key,changes=args)
             reason=args.get('reason')
             if not isinstance(reason,str) or not reason.strip() or len(reason)>16000:raise Refused('A concise evidence-based stop reason is required')
             return self.store.control(campaign,'finish','meta-finish-'+hashlib.sha256(encoded(args).encode()).hexdigest(),changes=args if c['config'].get('stopPolicy') in CONTROLLED_POLICIES else {'reason':reason})

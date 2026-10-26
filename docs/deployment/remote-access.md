@@ -1,6 +1,6 @@
 # 可选远程访问入口
 
-本文件从保存基线 `7973de6` 的部署资料提取，适用于 `deploy/tensortrain2`。主线运行接口见[运行说明](../operations/meta-harness.md)。本次拆分未连接服务器、切换服务或转换活动数据。
+本文件从保存基线 `7973de6` 的部署资料提取，适用于 `deploy/tensortrain2`。主线运行接口见[运行说明](../guides/quickstart.md)。本次拆分未连接服务器、切换服务或转换活动数据。
 
 ### 使用 Tailscale 从手机访问
 

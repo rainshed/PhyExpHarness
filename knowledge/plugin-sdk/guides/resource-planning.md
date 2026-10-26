@@ -4,7 +4,7 @@
 
 ## 提交和修改计划
 
-首先读取 `campaign_status` 的完整状态文件。`resourcePlanning.configurationSources` 说明限制来源，`suggestions` 是建议，`planRevision` 是当前计划版本。首次调用 `campaign_plan_update` 后，后台自动受理全部所选任务各一次的 H0 基线，无须重复提交基线批次。
+首先读取 `campaign_status` 的完整状态文件。`resourcePlanning.configurationSources` 说明限制来源，`suggestions` 是建议，`planRevision` 是当前计划版本。首次调用 `campaign_plan_update` 后，新 process 活动由 Meta 自主提交批次；不会自动受理全部任务的 H0，也不强制全套基线顺序。旧固定 Runner 活动才可能采用自动基线。
 
 当前原生工具直接接收对象参数：
 
@@ -36,7 +36,7 @@
 
 ## 准入等待和结果
 
-模型请求不经过 token 预留或结算。`storage_capacity_wait` 表示存储空间不足，`control_unavailable` 表示控制服务暂时不可用；等待不发起模型请求，仍受取消及原任务截止时间约束。凭证和协议错误属于平台控制问题，不归为模型供应商故障。
+新活动模型请求不经过 token 预留或结算。以下等待码适用于 Meta/受控宿主的访问检查；process Solver 使用独立本地通道，不逐请求依赖控制数据库。`storage_capacity_wait` 表示存储空间不足，`control_unavailable` 表示控制服务暂时不可用；等待不发起模型请求，仍受取消及原任务截止时间约束。凭证和协议错误属于平台控制问题，不归为模型供应商故障。
 
 新活动不发送 `closeoutReserveTokens`、总 token 阈值或参考插件 token 子额度。原始 usage 可存在于轨迹中，不能据此要求平台生成累计成本。历史活动按其冻结的工具与资料执行。
 

@@ -59,6 +59,29 @@ class DeploymentStorageTests(unittest.TestCase):
         self.assertEqual(runtime_cache(path),path)
         self.assertEqual(task_storage(self.root/'other'),{})
 
+    def test_current_meta_closeout_uses_split_state_and_persistent_roots(self):
+        from src.control.service import ControlService
+        from src.control.meta import MetaDriver
+        from src.control.meta_native_composition import freeze
+        from src.control.stop_policy import META_POLICY
+        root=Path(__file__).resolve().parents[2]
+        service=ControlService(root,self.data,root.parent/'Quantum-Harbor','http://127.0.0.1:1')
+        self.addCleanup(service.pool.shutdown,wait=True)
+        model={'provider':'openai-codex','model':'gpt-6-luna','reasoningEffort':'medium'}
+        c=service.store.create({'solver':model,'meta':model,'tasks':['time_budgeted_hamlearn_10q'],
+            'concurrency':1,'wallTimeSeconds':7200,'stopPolicy':META_POLICY,'objective':'解释已有结果'},'fixture')
+        with patch('src.control.meta_native_composition.prepare_image',return_value='sha256:'+'a'*64):
+            c['config']['metaComposition']=freeze(root,self.data,c['config'])
+        service.store.put('campaigns',c);service.store.control(c['id'],'start','start')
+        result=service.meta_api.call(c['id'],'campaign_finish',{'reason':'无需新增实验','summary':'保留已有证据与限制','idempotencyKey':'finish'})
+        self.assertEqual(result['state'],'closing')
+        driver=MetaDriver(service)
+        with patch.object(driver,'start',side_effect=AssertionError('Closeout must not restart Meta')):
+            driver.tick(c['id'])
+        self.assertEqual(service.store.status(c['id'])['state'],'finished')
+        self.assertEqual(service.store.path,self.root/'stateRoot/control.sqlite')
+        self.assertFalse((self.data/'control.sqlite').exists())
+
     def test_closed_body_is_shared_without_copy_and_corruption_is_rejected(self):
         source=self.data/'output';source.write_bytes(b'original result'*1000)
         inode=source.stat().st_ino

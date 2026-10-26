@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from .store import Refused, encoded
-from .stop_policy import REVIEW_POLICY, GOAL_POLICY
+from .stop_policy import REVIEW_POLICY, GOAL_POLICY, META_POLICY
 
 POLICY=REVIEW_POLICY
 VERSION='meta-composition-v1'
@@ -39,9 +39,10 @@ def freeze(source,data,config):
     # A caller may select declarative settings, never an arbitrary host path or source upload.
     if config.get('metaCompositionConfig') is not None:manifest=validate(json.loads(json.dumps(config['metaCompositionConfig'])),plugin)
     stop_policy=config.get('stopPolicy',GOAL_POLICY)
-    if stop_policy==GOAL_POLICY:
+    if stop_policy in (GOAL_POLICY,META_POLICY):
         for p in manifest['plugins']:
             if p['id']=='stop-review':p['enabled']=False
+            if stop_policy==META_POLICY and p['module']=='actions.mjs':p['config']['closeoutPolicy']=META_POLICY
         validate(manifest,plugin)
     system=system_prompt({**config,'stopPolicy':stop_policy})
     reviewer=(plugin/'reviewer.md').read_text()

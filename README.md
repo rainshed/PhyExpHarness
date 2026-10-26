@@ -1,26 +1,18 @@
 # PhyExpHarness
 
-当前是 `deploy/tensortrain2` 部署分支。部署资料与分支维护方式见[部署说明](docs/deployment/README.md)；标准项目使用 `main`。
+当前为 `deploy/tensortrain2` 部署分支，服务器更新与运行方式见[部署说明](docs/deployment/README.md)。
 
-新活动的执行策略已交给 Meta：候选是包含源码、依赖、入口与配置的完整工程，在 Quantum Harbor main 内运行。平台提供隔离构建、固定 Solver 通道、外部监督和官方评分；默认工具、会话与异常恢复均可由候选修改。用法见[完整工程运行说明](docs/operations/meta-harness.md#完整执行工程新活动默认)，实现与验收见[重构计划](docs/plans/execution-harness-refactor.md)。
+PhyExpHarness 研究如何在固定 Solver 模型与调用设置的条件下，通过改进执行 Harness 帮助模型完成任务，并让人理解改进过程。
 
-PhyExpHarness 研究如何在给定任务范围、固定 Solver 及其模型和调用设置的情况下，构建和优化执行 Harness，使它更好地帮助 Solver 完成科学实验任务，并让人理解这一改进过程。
+Meta 使用通用 Agent 能力开发插件、组织完整候选工程、安排 Quantum Harbor 实验、读取证据并解释版本选择。候选拥有自己的框架、依赖、工具、上下文和恢复策略；平台负责固定模型、隔离、外部运行限制、官方评分与证据保存。选定候选可以导出为独立项目。
 
-我们遵循 DeepSeek Harness 的 “Everything is Plug-in” 原则，从最小可运行的执行 Harness 出发，让 Meta Harness 自主设计职责清楚的执行插件。具体的插件版本及其配置组成不同的 Harness 版本，通过可比较的任务实验评估通过率、稳定性和资源消耗，持续寻找更有效的组合。插件化使 Meta 能够围绕具体能力进行有针对性的优化，也为理解能力组合与任务表现之间的关系提供基础。
+实验保留成功、失败、未执行和未评分的区别。插件用途、Meta 的判断和实测效果分别呈现；工程检查通过不代表科学效果或跨任务泛化已获证明。
 
-进化过程的可读性与可解释性是项目的核心目标之一。我们希望人能看懂每个插件的作用与设计动机，理解组合如何演变、实验发现了什么，以及为什么保留、修改或放弃某个版本。先呈现容易理解的研究脉络，再按需查看具体证据与实现；保留失败、回退和不确定性，用实验核查插件贡献与相互作用。完整理念见[项目设计哲学](docs/design/design-philosophy.md)。
+主线维护项目功能、标准 Docker/Harbor 执行环境、本地证据存储及通用配置契约。具体机器的运行环境适配、远程存储、服务托管、网络接入和实例发布由独立部署分支维护。
 
-项目以自主探索、受控执行和证据可追溯为基本原则，关注可复用的方法与跨任务的泛化。选定成果可以导出为可独立运行、继续维护的项目。
+- 了解目标：[设计哲学](docs/product/philosophy.md)、[产品要求](docs/product/requirements.md)。
+- 安装使用：[Agent 安装流程](docs/guides/agent-installation.md)、[快速开始](docs/guides/quickstart.md)、[活动操作](docs/guides/campaigns.md)。
+- 修改项目：[架构总览](docs/architecture/overview.md)、[开发流程](docs/development/workflow.md)。
+- 查找专题：[完整文档导航](docs/README.md)、[实现核对表](docs/development/implementation-audit.md)。
 
-主分支维护项目功能、标准执行环境和通用运行接口。具体机器的环境适配、存储迁移、服务托管与发布方案在独立部署分支维护，职责见[开发导航](AGENTS.md#项目与部署边界)。
-
-后续研究也希望将相同方法用于 Meta Harness 自身：比较不同 Meta 插件组合设计执行 Harness 的能力，通过重复实验和消融判断其贡献，保留有作用、成本合理的能力。
-
-当前支持两个可选参考实验插件：参考模型取自 DeepSeek Harness 原生配置，参考 Harness 可选择 Codex、Claude Code 和 DeepSeek 标准模式。UI 可独立开关、多选并授权 Meta 在兼容范围内自主组合；参考成绩独立保存、成本计入活动总账。使用方式与接入限制见[参考实验插件](docs/operations/meta-harness.md#参考实验插件)。
-
-## 了解与参与
-
-- [项目设计哲学](docs/design/design-philosophy.md)
-- [产品目标与需求](docs/requirements/meta-harness.md)
-- [安装、使用与当前限制](docs/operations/meta-harness.md)
-- [项目结构与开发导航](AGENTS.md)
+历史活动、运行结果和本地验收日志不随源码提交；新克隆没有这些记录是正常的。

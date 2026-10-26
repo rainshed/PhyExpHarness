@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from .stop_policy import CONTROLLED_POLICIES
+from .stop_policy import CONTROLLED_POLICIES, META_POLICY
 from .defaults import effective_objective
 from src.execution.host.models import supported_model,load_model_config,provider_route,campaign_model_config
 from src.evidence.diagnostics import trial_diagnostics
@@ -264,7 +264,7 @@ class Store:
             return json.loads(body)
         return value
     def report_heads(self,campaign):
-        fields=('id','campaignId','kind','batchId','createdAt','analysisRevision','status','factsSha256','author','analysis','metaRequest','reportRef','tasks','candidateIds','revision')
+        fields=('id','campaignId','kind','batchId','createdAt','analysisRevision','status','factsSha256','author','analysis','metaRequest','reportRef','tasks','candidateIds','revision','closeoutSubmitted')
         projection=','.join("'%s',json_extract(data,'$.%s')"%(key,key) for key in fields)
         with self.connection() as db:
             return [json.loads(r[0]) for r in db.execute('SELECT json_object('+projection+') FROM reports WHERE campaign=? ORDER BY rowid',(campaign,))]
@@ -760,6 +760,9 @@ class Store:
             counts=self._counts(db,campaign)
             if counts['activeTrials'] or counts['collectingTrials']:raise Refused('Cannot finalize while a Trial is active or collecting results')
             if c['state']=='finished':return c
+            if c['config'].get('stopPolicy')==META_POLICY:
+                if c['state']!='closing' or counts['reservedTrials'] or any(o['state']=='running' for o in self._list(db,'operations',campaign)):
+                    raise Refused('Close admission and settle pending work before finalizing')
             c.update(state='finished',explorationClosed=True,finishedAt=self.clock(),
                 stopReason=reason or c['stopReason'] or 'completed',finalCandidateId=c['retainedCandidateId'])
             c=self._save(db,'campaigns',c)

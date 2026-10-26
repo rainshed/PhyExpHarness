@@ -7,7 +7,7 @@
     "smoke:luna": "node tests/smoke/luna/run.mjs",
     "smoke:harbor": "python3 tests/smoke/harbor/run.py",
     "h0": "python3 src/integrations/quantum_harbor/run.py",
-    "pretest": "npm run build:knowledge && python3 scripts/check-boundaries.py",
+    "pretest": "npm run build:knowledge && python3 scripts/check-boundaries.py && npm run check:docs",
     "check:project": "python3 scripts/check-boundaries.py --project",
     "test": "node --test tests/unit/*.test.mjs && python3 -m unittest discover -s tests/unit -p '*_test.py'",
     "build": "npm run build:knowledge && npm run build:workbench",
@@ -15,6 +15,13 @@
     "build:workbench": "node scripts/build-workbench.mjs",
     "test:contracts": "node --test tests/contracts/*.test.mjs",
     "test:references": "python3 scripts/reference-images.py && node --test tests/unit/reference-*.test.mjs tests/contracts/reference-harnesses.test.mjs && python3 -m unittest tests.unit.reference_plugins_test tests.unit.reference_runtime_test",
+    "check:docs": "python3 scripts/check-docs.py",
+    "setup": "python3 scripts/phyexp.py setup",
+    "doctor": "python3 scripts/phyexp.py doctor",
+    "start": "python3 scripts/phyexp.py start",
+    "status": "python3 scripts/phyexp.py status",
+    "experiment": "python3 scripts/phyexp.py experiment",
+    "test:onboarding": "python3 tests/contracts/onboarding.py",
     "check:deployment": "python3 scripts/check-boundaries.py && python3 -m unittest tests.unit.container_runtime_test tests.unit.cold_archive_test tests.unit.deployment_storage_test tests.unit.deployment_reporting_test"
   },
   "devDependencies": {
@@ -25,5 +32,8 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "engines": {
+    "node": ">=24.13.0 <25"
+  }
 }

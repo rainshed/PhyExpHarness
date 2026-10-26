@@ -130,10 +130,12 @@ class Reports:
         return self._persist(record,expected_revision)
     def status_summary(self,campaign,reason,meta_request=None):
         facts=self.facts(campaign)
+        submitted=bool((facts['campaign'].get('finishAssessment') or {}).get('summary'))
         return self._persist({'id':identity('report'),'campaignId':campaign,'batchId':None,'kind':'status_summary','author':'system',
+            **({'closeoutSubmitted':True} if submitted else {}),
             'status':'analysis_incomplete',**({'metaRequest':meta_request} if meta_request else {}),'facts':facts,'factsSha256':hashlib.sha256(encoded(facts).encode()).hexdigest(),
-            'analysis':{'summary':reason,'observations':[],'hypotheses':[],'limitations':['Meta 完整分析尚未完成。'],
-                        'decision':'保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
+            'analysis':{'summary':reason,'observations':[],'hypotheses':[],'limitations':['本摘要由系统归集事实；Meta 的收尾理由与实验总结单独列示。' if submitted else 'Meta 完整分析尚未完成。'],
+                        'decision':'保留最终事实；结束决定由 Meta 提交，不代表平台认证目标达成。' if submitted else '保留已有事实与版本，等待后续处理。','evidenceRefs':[]},'createdAt':self.store.clock(),
             'tables':self.tables(campaign,context=facts['campaign'])})
     def _persist(self,record,expected_revision=None):
         self.store.track_artifact(record['campaignId'],self.root/record['id'],'report')

@@ -49,8 +49,9 @@ class MaterialTests(unittest.TestCase):
         config=self.store.get('campaigns',self.c)['config']
         self.assertEqual(config['executionTimePolicy']['version'],'benchmark-time-v1')
         frozen=json.loads((self.service.data/'meta-compositions'/config['metaComposition']['id']/'manifest.json').read_text())
-        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v11')
-        self.assertEqual(config['stopPolicy'],'goal-or-budget-v1')
+        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v12')
+        self.assertEqual(config['stopPolicy'],'meta-closeout-v1')
+        self.assertEqual(next(p for p in frozen['composition']['plugins'] if p['module']=='actions.mjs')['config']['closeoutPolicy'],'meta-closeout-v1')
         self.assertNotIn('benchmark 原始配置',frozen['systemPrompt']['text'])
         self.assertNotIn('trial_conditions_accept',frozen['systemPrompt']['text'])
         self.assertEqual(config['taskTimeLimits'][TASK],{k:v for k,v in task.items() if k!='id'})

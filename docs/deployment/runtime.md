@@ -1,6 +1,6 @@
 # 容器运行与证据归档
 
-本文件从保存基线 `7973de6` 的部署资料提取，适用于 `deploy/tensortrain2`。主线运行接口见[运行说明](../operations/meta-harness.md)。本次拆分未连接服务器、切换服务或转换活动数据。
+本文件从保存基线 `7973de6` 的部署资料提取，适用于 `deploy/tensortrain2`。主线运行接口见[运行说明](../guides/quickstart.md)。本次拆分未连接服务器、切换服务或转换活动数据。
 
 ## 单 UID Podman 运行
 

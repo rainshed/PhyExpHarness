@@ -1,5 +1,7 @@
 """Full frozen Meta host + authenticated controller + goal completion (legacy reviewer), using only loopback synthetic SSE."""
-import hashlib,json,os,socket,sys,tempfile,threading,time
+import hashlib,json,os,shutil,socket,sys,tempfile,threading,time
+from contextlib import nullcontext
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT))
@@ -7,6 +9,7 @@ from src.control.service import ControlService
 from src.control.server import make_app
 from src.control.meta import MetaDriver
 from src.control.meta_composition import freeze
+from src.control.meta_contracts import binding
 import uvicorn
 PLANNING='--resource-planning' in sys.argv
 NATIVE='--native' in sys.argv
@@ -80,6 +83,7 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
          'metaCompositionConfig':json.loads((ROOT/'packages/meta-harness/composition.json').read_text())}
     if NATIVE:
         cfg.pop('metaCompositionConfig')
+        cfg['stopPolicy']='goal-or-budget-v1'
         cfg['objective']='User objective with literal {{Solver配置}}'
         cfg['stabilityRule']={'minTrialsPerTask':2,'minimumOfficialScore':1}
     else:cfg['stopPolicy']='stop-review-v1'
@@ -87,7 +91,20 @@ with tempfile.TemporaryDirectory(prefix='phyexp-meta-runtime-') as temporary:
     # The sixth request cannot reserve 300,000 tokens for the final model reply.
     if CLOSEOUT_DENIAL:cfg.update(softTokenLimit=300048,reserveTokens=0)
     if PLANNING:cfg.update(resourcePolicy='meta-resource-planning-v1',wallTimeSeconds=1200)
-    composition=freeze(ROOT,data,cfg);campaign=service.store.create(cfg,'fixture',defaults={'stopPolicy':composition['stopPolicy'],'metaComposition':composition})
+    # This fixture exercises historical stable/report gates. Materialize the
+    # exact v9 tools rather than pairing today's tools with an old policy.
+    historical=data/'historical-source'
+    if NATIVE:
+        for name in ['packages/meta-harness','src/control','src/execution']:
+            shutil.copytree(ROOT/name,historical/name,ignore=shutil.ignore_patterns('__pycache__','node_modules'))
+        for name in ['package.json','package-lock.json']:shutil.copyfile(ROOT/name,historical/name)
+        (historical/'node_modules').symlink_to(ROOT/'node_modules',target_is_directory=True)
+        for name in binding('meta-tools-v9')['files']:
+            shutil.copyfile(ROOT/'packages/meta-harness/protocols/meta-tools-v9'/name,historical/'packages/meta-harness'/name)
+    image=os.environ.get('PHYEXP_META_TEST_IMAGE')
+    with (patch('src.control.meta_contracts.binding',return_value=binding('meta-tools-v9')) if NATIVE else nullcontext()), (patch('src.control.meta_native_composition.prepare_image',return_value=image) if NATIVE and image else nullcontext()):
+        composition=freeze(historical if NATIVE else ROOT,data,cfg)
+    campaign=service.store.create(cfg,'fixture',defaults={'stopPolicy':composition['stopPolicy'],'metaComposition':composition})
     c=campaign['id'];service.store.control(c,'start','start');candidate=service.store.candidate(c,{'id':'fixture','path':str(data/'nonexistent-bundle'),'plugins':[]},'Synthetic H0',check={'status':'passed'})
     if PLANNING:service.store.update_plan(c,PLAN,'Initial fixture plan','initial-plan',0,source='operator')
     batch=service.store.submit(c,candidate['id'],cfg['tasks'],2 if NATIVE else 1,'fixture')

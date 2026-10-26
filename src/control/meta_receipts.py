@@ -99,6 +99,13 @@ class Receipts:
         from src.evidence.catalog import EvidenceCatalog
         return EvidenceCatalog(self).tree(campaign,filters)
     def closeout(self,campaign):
+        from .stop_policy import META_POLICY
+        c=self.store.get('campaigns',campaign)
+        if c['config'].get('stopPolicy')==META_POLICY:
+            submitted=bool(c.get('finishAssessment'))
+            return {'complete':submitted,'summaryStatus':'submitted' if submitted else 'missing',
+                'requiredFields':['reason','summary'],'reportsRequired':False,'nextReport':None,
+                'rule':'Meta decides when to end and submits a reason and activity summary. No stability, candidate, evidence or report prerequisite; ending does not certify success.'}
         reports=self.store.report_heads(campaign);batches=self.store.list('batches',campaign)
         missing=[b['id'] for b in batches if not any(r['batchId']==b['id'] and r['status']=='analysis' for r in reports)]
         final=not any(r['kind']=='final' and r['status']=='analysis' for r in reports)
@@ -122,6 +129,8 @@ class Receipts:
         usage=c['usage'];plan=c.get('resourcePlanning') or {}
         unresolved=sum(r['state'] not in ['completed','rejected'] for r in requests)+sum(o['state'] in ['running','outcome_unknown'] for o in operations)
         summary='当前活动状态与待处理事项；文件为完整快照或分层索引，按 reading 和 file.path 遍历。'
+        if c['state']=='closing' and 'summaryStatus' in closeout:
+            summary=('收尾理由和实验总结已保存；后台正在处理在途工作，无需再次提交或继续研究。' if closeout['complete'] else '活动已关闭探索，可调用 campaign_finish 提交结束理由和实验总结；不要求补齐单独报告。')
         if c['state']=='closing' and closeout['nextReport'] and not (c['counts']['activeTrials'] or c['counts']['reservedTrials']):
             target=closeout['nextReport']['batchId']
             summary='活动已关闭探索，无需再调用 campaign_finish。尚缺 '+str(len(closeout['missingRoundBatchIds']))+' 份每轮报告'+('及总报告' if closeout['finalReportRequired'] else '')+'。下一份：report_get_facts('+encoded({'batchId':target} if target else {})+')，然后 report_save（expectedReportRevision=0）。失败实验也须单独报告；总报告不能代替每轮报告。完整清单见快照 data.closeout。'

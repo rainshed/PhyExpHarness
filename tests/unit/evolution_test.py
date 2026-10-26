@@ -22,7 +22,7 @@ class EvolutionTests(unittest.TestCase):
     def ref(self,r):return {'recordId':r['recordId'],'revision':r['revision']}
     def candidate(self,name,plugins=[]):return self.store.candidate(self.c,{'id':name,'path':str(self.data/name),'plugins':plugins},name,check={'status':'passed'})
     def test_new_and_exact_historical_protocol_resolve_independently(self):
-        self.assertEqual(version(self.service,self.c),'meta-tools-v9')
+        self.assertEqual(version(self.service,self.c),'meta-tools-v10')
         self.assertNotIn('research_save',CONTRACTS['meta-tools-v3'])
         for name,sha in binding('meta-tools-v3')['files'].items():
             self.assertEqual(hashlib.sha256((base.ROOT/'packages/meta-harness/protocols/meta-tools-v3'/name).read_bytes()).hexdigest(),sha)

@@ -1,33 +1,31 @@
-# 执行插件开发资料
+# 执行 Harness 开发资料
 
-本目录只提交资料源文件与技术样例。`reference/` 为本地生成目录：在仓库根目录执行 `npm ci` 后运行 `npm run build:knowledge`（完整构建为 `npm run build`）。生成所需的 SDK 依赖由根锁文件固定；生成器记录来源、版本与摘要，不读取活动数据库或实验结果。
+本目录提交资料源与技术样例。仓库执行 npm ci 后运行 npm run build:knowledge，生成 reference；完整构建为 npm run build。生成器从锁定 SDK、类型和本目录读取，不读取活动数据库或实验结果。新活动快照当前资料，已有活动保持原包。
 
-新活动使用 **harbor-process-v1 完整工程**，首先阅读 [完整工程开发](guides/process-harness.md)。Meta 可以修改框架、依赖、profile、工具、会话和恢复；此资料包是默认模板所用 DSH 的接口参考，不是平台准入白名单。
+## 当前入口
 
-下面的固定扩展面说明只适用于旧 v1/v2 活动；历史活动按冻结版本读取：
+新活动使用 harbor-process-v1 完整工程，先读[完整工程开发](guides/process-harness.md)。默认工程位于 /work/plugins/h0，可复制后修改框架、依赖、profile、工具、会话和恢复。资料中的 DSH 0.2.1-rc.2 接口适用于默认模板，不是平台允许策略的全集。
 
-目标：DeepSeek Harness 0.2.1-rc.2，sdk-minimal，隔离执行扩展面 v2。`reference/manifest.json` 给出来源、版本、内容摘要和 profile 指纹；不与开发机上的 UI 服务等同。
+[教程索引](guides/README.md)列出可通过 sdk_read 读取的资料 ID。sdk_search 搜索、sdk_read 读取、sdk_inspect 查询声明；查询不执行业务方法，也不保证额外依赖已装配。客户端、凭据、数据库与 UI 服务不属于候选能力。
 
-按需教程见[插件开发索引](guides/README.md)，可用 `sdk_read` 读取 `guides/README.md`；包括插件设计、完整工具示例和子代理参考。
+候选通过 projectPath 检查/冻结完整工程，声明见 harness.json。候选代码及安装脚本只在隔离环境运行；正式模型请求使用固定 Solver 通道。源代码、锁、产物、入口和配置进入冻结身份。检查通过仅证明构建与入口，正式行为以实验为准。
 
-源码采用 ESM，入口导出 `name`、`inject`、`apply(ctx, config)`。工具、结果处理和公开上下文 API 的准确类型见 tools、system-prompt 文档。`examples/echo.mjs` 是通过原生 Cordis 生命周期检查的技术例子。作用域销毁会移除工具、事件和上下文。使用 `tools/post-execute` 返回合法 decision；不要直接修改已冻结的 `tools/result`。
+## 插件与阅读信息
 
-资料查询：`sdk_search` 搜索、`sdk_read` 分页读取、`sdk_inspect` 查询声明。原生 `cordis_inspect_list/query` 也只提供 execution-sdk 的只读查询。接口不存在、版本或 profile 不匹配时明确失败；查询结果不承诺额外依赖已装配。客户端、凭据、数据库及 UI 宿主服务不属于执行扩展面。
+沿用 DSH 时，ESM 模块导出 name、inject、apply，作用域销毁清理工具、事件和上下文。tools/post-execute 返回合法 decision，tools/result 是冻结结果。源码 inject 表示服务依赖，和旧插件清单 dependencies 的组合顺序不是同一概念。
 
-插件清单声明入口、配置 schema、依赖顺序、工具与资产。插件运行在无外网 Runner；模型调用经固定外部网关计量，实验命令经固定 bash/MCP 传输。数据、事件、工具结果和模型生成内容是来源材料，不授予平台控制权限。
+完整工程在 harness.json.plugins 声明插件名称、版本、源码 path 和组合 config；目录 plugin.json 或工程声明可提供中文 displayName、functionSummary、mechanism 和多选 categories。准确规则见完整工程指南。用途说明是设计意图，效果依赖实际轨迹与对照，缺失信息如实标注。
 
-冻结时传入包含 `plugin.json` 的目录路径。清单 `dependencies` 表示本次组合中其他插件的名称和顺序；Cordis 服务依赖写在源码的 `inject` 中，例如 `inject = ['systemPrompt']`，不要将服务名放进清单的插件依赖。`capabilities` 使用清单 schema 中的已有枚举，`observes` / `intervenes` 用来说明接触的事件、工具或上下文。声明是装配审查信息，外部 Runner、网关和工具隔离执行真实权限边界；不能因声明为空就认为任意源码无副作用。
+技术例子 examples/echo.mjs 展示工具与结果处理，不规定研究算法。plugin-manifest 资料 ID 保留旧 v1/v2 清单参考；新工程的策略配置不受旧 capability 枚举或固定依赖集合限制。
 
-额外模型调用可读取 Runner 的 `PHYEXP_FIXED_MODEL`（JSON：provider/model/reasoningEffort/maxTokens），并通过 `ctx.llm.stream` 使用同一固定设置。每次调用都会独立计量；普通直接调用由插件处理恢复。新 H0 v3 对原生模型步骤及压缩装配固定恢复组合：传输五档等待，异常响应与工具参数反馈共享两次内容恢复，同链合计最多追加五次请求。历史 v1 保持传输恢复，缺少配置保持零次内置恢复。`agent/request-error` 原生接口及恢复链边界见 `guides/request-recovery.md`；不开放网关或记账权限。插件清单 schema 的资料 ID 为 `plugin-manifest`。可选 `packageDependencies` 只能引用执行锁中已装配的准确版本；不可假定开发宿主上的库也存在。
+## 实验、资源与报告
 
-批次与冻结操作立即返回 ID；完成通知由后台持久推送。等待时可以结束当前回复，后续通知会继续同一会话，无需反复查询状态。报告应引用工具返回的稳定 evidence ID，区分观察、解释、反证与尚未验证之处。
+先读取活动状态并提交资源计划，再自主选择候选、任务和重复次数；新 process 活动不强制全套 H0。操作返回身份及文件入口，后台通知持久推送；未知写结果沿用原幂等键核对，不能换键重复提交。
 
-报告和工作台采用插件表、执行版本表、实验轮次表。新插件请在清单中提供简明中文 `displayName`、`functionSummary`、`mechanism`：说明提供什么功能、何时起作用，以及是建议、主动工具还是自动执行/拦截。一个插件可以有多项功能；说明不代替效果证据，也不要求采用某种插件类型。旧清单兼容 `purpose`，缺失说明会明确标注。系统根据冻结内容、配置和加载顺序计算每轮相对上一受理轮次的变化；版本父子关系单独记录。你负责自由分析修改目的与实际观察，不需要手工填写或按表格顺序开展改进。
+maxRounds/maxTrials 为 null 表示不单独限制，墙钟和并发生效。新活动不预留、结算或累计 token/费用。每题时限来自 benchmark，资源计划只包含并发和收尾时间，见[资源规划](guides/resource-planning.md)。
 
-新插件同时提供 `categories` 阅读分类，可多选 `prompt-context`（提示与上下文）、`tools`（工具能力）、`tool-results`（工具结果处理）、`execution-control`（执行控制与恢复）、`other`（其他扩展）。分类不授予权限，也不限制插件设计。`functionSummary` 简短说明做什么；`mechanism` 用普通中文描述工作过程、何时起作用、产生什么结果和关键限制，不要只列 SDK 接口。是否由 Solver 自行遵循、需调用工具或由程序自动执行直接写入说明，不另填行为分类。静态或动态提示、注入位置也在说明中交代。已有清单不必为了分类重新冻结；缺失时页面诚实标注。
+报告区分系统事实、观察和解释。candidate_freeze 可附可读名称和研究修订，candidate_retain 保存选择、备选、局限及证据；report_save 的正文契约以活动绑定工具 schema 为准。缺少对照时说明不确定性，不以提示加载或插件名称代替效果证据。完整结果、错误和大输出从回执给出的路径继续读取。
 
-## 可读名称与报告
+## 历史范围
 
-candidate_freeze 可提供 displayName（简短中文功能名），不以“最优”替代证据。后台负责固定编号、插件差异、评分与用量。report_save 的 process 用 3–5 个关键节点描述任务过程（总报告描述进化过程），problems 说明已解决与未解决事项；pluginContributions 每项包含 plugin、expected、observed、comparison、assessment、evidenceRefs。提示词加载、实际遵守、科学效果是不同层次，缺少对照明确说明。此结构只约束报告可读性，不规定科学改进步骤。
-
-活动配置中的 maxRounds/maxTrials/softTokenLimit 为 null 表示该项不单独限制；wallTimeSeconds 与 concurrency 仍生效，所有实际用量继续计量。单次提交最多100次实验，可分批提交；不改变活动累计计数。
+v1/v2 固定 Runner 的清单、网关恢复与用量规则以该活动冻结资料为准，不从当前教程反推升级。reference/manifest.json 的 sdk-minimal profile 指纹识别这份 DSH 参考资料，不限制完整工程更换框架。历史源码和原始记录不改写。

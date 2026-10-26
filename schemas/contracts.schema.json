@@ -842,7 +842,8 @@
         "stopPolicy": {
           "enum": [
             "stop-review-v1",
-            "goal-or-budget-v1"
+            "goal-or-budget-v1",
+            "meta-closeout-v1"
           ]
         },
         "preset": {

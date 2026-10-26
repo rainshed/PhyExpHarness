@@ -85,8 +85,9 @@ class DeploymentReportingTests(unittest.TestCase):
         facts={'campaign':{'id':'c'},'trials':[],'evidence':[{k:v for k,v in row.items() if k!='path'}]}
         self.service.reports=SimpleNamespace(facts=lambda *args:facts)
         api=MetaAPI(self.service)
-        with patch('src.control.meta_api.version',return_value='meta-tools-v9'),patch.object(api.files,'publish',side_effect=AssertionError('Discarded raw view should not be published')):
-            result=api._call('c','report_get_facts',{})
+        for protocol in ('meta-tools-v9','meta-tools-v10'):
+            with self.subTest(protocol=protocol),patch('src.control.meta_api.version',return_value=protocol),patch.object(api.files,'publish',side_effect=AssertionError('Discarded raw view should not be published')):
+                result=api._call('c','report_get_facts',{})
         self.assertEqual(result['factsId'],hashlib.sha256(encoded(facts).encode()).hexdigest())
         saved=json.loads((self.data/'campaigns/c/report-facts'/(result['factsId']+'.json')).read_text())
         self.assertEqual(saved['facts'],facts)

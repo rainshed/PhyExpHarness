@@ -104,8 +104,10 @@ class V4OutcomesTests(unittest.TestCase):
 
 class V4IntegrationTests(unittest.TestCase):
     def setUp(self):
+        from tests.fixtures.benchmark_tasks import make_tasks
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.service=ControlService(ROOT,Path(self.temp.name),ROOT.parent/'Quantum-Harbor','http://127.0.0.1:1')
+        quantum=make_tasks(Path(self.temp.name)/'synthetic-quantum', CONFIG['tasks'])
+        self.service=ControlService(ROOT,Path(self.temp.name),quantum,'http://127.0.0.1:1')
         self.addCleanup(self.service.pool.shutdown,wait=True)
         self.client=TestClient(make_app(self.service,supervise=False));self.addCleanup(self.client.close)
         self.client.headers['Authorization']='Bearer '+self.service.user_token
