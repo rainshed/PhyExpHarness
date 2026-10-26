@@ -13,7 +13,8 @@ export function cliLaunch(config,port){
    env:{...env,CODEX_HOME:'/work/home/codex',PHYEXP_REFERENCE_KEY:'isolated-reference'},input:config.prompt};
  }
  if(config.harness!=='claude-code')throw new Error('Unknown reference CLI');
- // Grant the declared tools explicitly without bypassing the CLI permission checks.
+ // Single-UID rootless Podman maps its unprivileged host user to container UID 0.
+ // Use normal explicit tool grants so Claude's root bypass guard stays intact.
  const allowedTools=['Bash','Read','Write','Edit','Glob','Grep','NotebookEdit','TodoWrite','Agent','Task','Skill','ToolSearch',
   ...Object.keys(mcp).map(name=>'mcp__'+name+'__*')];
  return {executable:'claude',args:['-p','--output-format','stream-json','--verbose','--include-partial-messages','--no-session-persistence','--setting-sources','',

@@ -26,6 +26,8 @@ class Storage:
         self.scan_lock=threading.Lock();self.lock=threading.RLock();self.maintenance_lock=threading.Lock();self.worker=None;self.last_scan=0;self.last_maintenance=0;self.waiting={};self.samples=[]
         self.metrics={'bytes':0,'files':0,'groups':{},'campaigns':{},'observedAt':None}
         self.errors=[];self.reclaimed=0
+        from .archive import Archives
+        self.archive=Archives(service)
         self.policy_file=self.data/'storage-policy.json'
         self.policy={**DEFAULTS,**(json.loads(self.policy_file.read_text()) if self.policy_file.exists() else {})}
         self.validate(self.policy)
@@ -120,16 +122,20 @@ class Storage:
             return not waiting
 
     def view(self,campaign):
+        from src.evidence.cold import ColdArchive
         with self.lock:
             value=self.pressure(campaign);growth=self.metrics.get('growthBytesPerSecond')
             available=max(0,min(self.policy['maxDataBytes']-self.metrics['bytes'],self.policy['maxCampaignBytes']-value['campaignBytes'],*[d['free']-self.policy['minFreeBytes']-value['reservedBytes'] for d in value['disks']]))
             return {**value,'policy':POLICY,'dataBytes':self.metrics['bytes'],'maxDataBytes':self.policy['maxDataBytes'],'maxCampaignBytes':self.policy['maxCampaignBytes'],
                 'fileCount':self.metrics['files'],'groups':self.metrics['groups'],'observedAt':self.metrics['observedAt'],'reclaimedBytes':self.reclaimed,
-                'growthBytesPerSecond':growth,'estimatedSecondsRemaining':available/growth if growth and growth>0 else None,'errors':self.errors[-5:]}
+                'growthBytesPerSecond':growth,'estimatedSecondsRemaining':available/growth if growth and growth>0 else None,'errors':self.errors[-5:],'archive':ColdArchive(self.data).snapshot()}
 
-    def snapshot(self):return {'policy':self.policy,'usage':self.view(None)}
+    def snapshot(self):
+        from src.evidence.cold import ColdArchive
+        return {'policy':self.policy,'usage':self.view(None),'archive':ColdArchive(self.data).snapshot()}
 
     def schedule(self):
+        self.archive.schedule()
         with self.lock:
             if time.time()-self.last_maintenance<self.policy['scanSeconds'] or self.worker and self.worker.is_alive():return
             def run():

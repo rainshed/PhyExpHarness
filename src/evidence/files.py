@@ -68,14 +68,15 @@ class FileViews:
         if row['campaignId']!=campaign:raise Refused('Cross-Campaign evidence')
         file=Path(row['path'])
         if enabled(self.store.get('campaigns',campaign)['config']):
-            if file!=Objects(self.service.data).path(row['sha256']) or file.is_symlink() or file.stat().st_size!=row['bytes']:raise Refused('Evidence object identity mismatch')
+            if file!=Objects(self.service.data).path(row['sha256']):raise Refused('Evidence object identity mismatch')
+            from .cold import ColdArchive
+            cold=ColdArchive(self.service.data)
             suffix=Path(str(row.get('source',{}).get('archive',''))).suffix
             if not re.fullmatch(r'\.[a-zA-Z0-9]{1,12}',suffix):suffix='.txt'
             relative=Path('trials')/row['trialId']/(row['sha256']+suffix) if row.get('trialId') else Path('objects')/(row['sha256']+suffix)
             target=self.directory(campaign)/'evidence'/relative;target.parent.mkdir(parents=True,exist_ok=True)
-            try:os.link(file,target)
-            except FileExistsError:
-                if target.is_symlink() or not os.path.samefile(file,target):raise Refused('Evidence view integrity mismatch')
+            cold.link(row['sha256'],target)
+            if target.stat().st_size!=row['bytes']:raise Refused('Evidence object identity mismatch')
             return {'ref':'evidence:'+row['id'],'kind':'evidence','campaignId':campaign,'trialId':row['trialId'],'path':'/evidence/'+relative.as_posix(),
                 'mediaType':mimetypes.guess_type('file'+suffix)[0] or 'application/octet-stream','encoding':'binary' if suffix=='.gz' else row.get('encoding','utf-8'),
                 'bytes':row['bytes'],'sha256':row['sha256'],'source':row['source'],'version':row['policy'],'viewVersion':VERSION,

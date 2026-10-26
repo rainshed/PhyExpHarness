@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--task',required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--hide-path',type=Path,action='append',default=[])
+    parser.add_argument('--podman-config',type=Path)
     args=parser.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=False)
     origin=resolve(args.bundle);cfg=json.loads(args.config.read_text());assert args.task in cfg['tasks']
     assert origin.manifest['schemaVersion']==3
@@ -41,11 +42,17 @@ def main():
     with zipfile.ZipFile(export['archive']) as archive:archive.extractall(relocated)
     project=relocated/'harness';assert resolve(project).manifest['id']==frozen['id']
     environment={k:v for k,v in os.environ.items() if k not in ('PYTHONPATH','PYTHONHOME','VIRTUAL_ENV')}
+    tools=out/'host-tools';tools.mkdir()
+    if args.podman_config:
+        # Declared host container-engine compatibility client; no original repo imports.
+        shutil.copyfile(ROOT/'scripts/podman-single-uid.py',tools/'docker')
+        (tools/'docker').chmod(0o755)
+        environment['PHYEXP_PODMAN_CONFIG']=str(args.podman_config.resolve())
     with (out/'installation.log').open('w') as log:
         subprocess.run(['uv','venv','--python','3.13',str(out/'.venv')],env=environment,stdout=log,stderr=subprocess.STDOUT,check=True)
         python=str(out/'.venv/bin/python')
         subprocess.run(['uv','pip','install','--python',python,'--require-hashes','-r',str(project/'requirements.lock')],env=environment,stdout=log,stderr=subprocess.STDOUT,check=True)
-    environment['PATH']=str(out/'.venv/bin')+':'+environment['PATH']
+    environment['PATH']=str(out/'.venv/bin')+':'+str(tools)+':'+environment['PATH']
     lock=out/'task-lock.json';lock.write_text(json.dumps(cfg['taskImageLocks'][args.task]))
     hidden=sorted(set([ROOT.resolve(),args.bundle.resolve().parent,source,out/'objects',Path(export['path']).parent,*[p.resolve() for p in args.hide_path]]),key=str)
     hidden=[p for p in hidden if not any(p!=q and p.is_relative_to(q) for q in hidden)]

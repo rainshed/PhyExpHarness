@@ -17,7 +17,7 @@ python3 -m venv .venv
   --task-image-lock /path/to/TASK.image-lock.json --output /path/to/new-run --timeout 22000
 ```
 
-任务来源和镜像必须与锁一致。运行环境须满足包内声明的 Docker/Harbor 依赖与镜像身份。输出目录必须不存在。活动期限必须容纳 benchmark 原生 Solver、verifier 与环境准备阶段；构建等待不会缩短 Solver 时限。单次入口只启动一个 Trial，不隐式重试。
+任务来源和镜像必须与锁一致。Podman 单 UID 环境须沿用同版本兼容客户端和 `PHYEXP_CONTAINER_RUNTIME=podman-single-uid-v1`；这属于外部运行条件。输出目录必须不存在。活动期限必须容纳 benchmark 原生 Solver、verifier 与环境准备阶段；构建等待不会缩短 Solver 时限。单次入口只启动一个 Trial，不隐式重试。
 
 候选在 Harbor main 的 `/opt/harness` 中启动，工作区 `/app`；`PHYEXP_CONTEXT` 指向本次公开运行上下文。main 只能连接任务侧车与模型代理。退出、到期或取消时收回候选子进程和模型通道；官方 verifier 按 Harbor 原生生命周期运行。
 

@@ -1,5 +1,7 @@
 # PhyExpHarness
 
+当前是 `deploy/tensortrain2` 部署分支。部署资料与分支维护方式见[部署说明](docs/deployment/README.md)；标准项目使用 `main`。
+
 新活动的执行策略已交给 Meta：候选是包含源码、依赖、入口与配置的完整工程，在 Quantum Harbor main 内运行。平台提供隔离构建、固定 Solver 通道、外部监督和官方评分；默认工具、会话与异常恢复均可由候选修改。用法见[完整工程运行说明](docs/operations/meta-harness.md#完整执行工程新活动默认)，实现与验收见[重构计划](docs/plans/execution-harness-refactor.md)。
 
 PhyExpHarness 研究如何在给定任务范围、固定 Solver 及其模型和调用设置的情况下，构建和优化执行 Harness，使它更好地帮助 Solver 完成科学实验任务，并让人理解这一改进过程。

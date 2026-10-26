@@ -230,6 +230,8 @@ class Deletions:
         # plan and deterministic trash names recover a crash after any rename.
         for path in trash.iterdir():remove_path(self.service.data,str(path))
         remove_path(self.service.data,str(trash))
+        from src.evidence.cold import ColdArchive
+        ColdArchive(self.service.data).delete_campaign(campaign,self.store)
         with self.store.connection(True) as db:
             for row in db.execute("SELECT key,result FROM commands WHERE campaign='global' AND kind='create'").fetchall():
                 if json.loads(row['result']).get('id') == campaign:

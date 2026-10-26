@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .store import PUBLIC_TASKS, encoded
 from src.execution.host.single_run import task_image_sources, validate_task_image_lock, write_json
+from src.execution.host.container_runtime import policy, require_tasks, verify_image
 
 POLICY = 'campaign-pinned-v1'
 ROLES = ('main', 'qsim', 'verifier')
@@ -39,6 +40,7 @@ def image_id(reference):
             raise ValueError('Task image unavailable: '+reference+'; restore this exact frozen image or select the Docker context containing it')
         raise ValueError('Task image unavailable: '+reference+'; install the official Quantum-Harbor images first')
     image = result.stdout.strip()
+    verify_image(image)
     return image
 
 
@@ -68,6 +70,7 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
     """
     root, cache, log_path = map(Path, (root, cache, log_path))
     tasks = list(dict.fromkeys(tasks))
+    require_tasks(tasks)
     if not tasks or any(task not in PUBLIC_TASKS for task in tasks):
         raise ValueError('Select supported public tasks for image preparation')
     cache.mkdir(parents=True, exist_ok=True)
@@ -85,7 +88,7 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
             subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
 
         def cached_build(role, key, arguments):
-            key = {**key, 'containerRuntime': 'docker'}
+            key = {**key, 'containerRuntime': policy()}
             key = sources_digest(key)
             tag = 'phyexp-task:'+role+'-'+key[:24]
             receipt = cache/(role+'-'+key+'.json')
@@ -125,8 +128,8 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
             locks[task] = {'schemaVersion': 2, 'task': task, 'taskSourcesDigest': digest,
                            'images': {'main': main, 'qsim': qsim, 'verifier': verifier, 'verifierSource': reference},
                            'agentBaseImage': base,
-                           'containerRuntime': 'docker',
-                           'source': 'Official task/scorer sources; docker image provisioning.'}
+                           'containerRuntime': policy(),
+                           'source': 'Official task/scorer sources; '+policy()+' image provisioning.'}
         # Check both source stability during builds and availability before publishing
         # any Campaign lock. The cache is never the authority for an existing Campaign.
         verify_locks(root, tasks, locks)
