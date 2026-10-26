@@ -7,14 +7,15 @@
     "smoke:luna": "node tests/smoke/luna/run.mjs",
     "smoke:harbor": "python3 tests/smoke/harbor/run.py",
     "h0": "python3 src/integrations/quantum_harbor/run.py",
-    "pretest": "npm run build:knowledge && npm run check:project",
+    "pretest": "npm run build:knowledge && npm run check:project && npm run check:docs",
     "check:project": "python3 scripts/check-boundaries.py --project",
     "test": "node --test tests/unit/*.test.mjs && python3 -m unittest discover -s tests/unit -p '*_test.py'",
     "build": "npm run build:knowledge && npm run build:workbench",
     "build:knowledge": "python3 scripts/build-knowledge.py knowledge/plugin-sdk/reference",
     "build:workbench": "node scripts/build-workbench.mjs",
     "test:contracts": "node --test tests/contracts/*.test.mjs",
-    "test:references": "python3 scripts/reference-images.py && node --test tests/unit/reference-*.test.mjs tests/contracts/reference-harnesses.test.mjs && python3 -m unittest tests.unit.reference_plugins_test tests.unit.reference_runtime_test"
+    "test:references": "python3 scripts/reference-images.py && node --test tests/unit/reference-*.test.mjs tests/contracts/reference-harnesses.test.mjs && python3 -m unittest tests.unit.reference_plugins_test tests.unit.reference_runtime_test",
+    "check:docs": "python3 scripts/check-docs.py"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

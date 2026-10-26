@@ -1,20 +1,20 @@
 # 开发导航
 
-按当前用户授权范围工作；项目设计哲学与具体开发约束见下列对应文档。
+按当前用户授权范围工作；项目设计哲学与具体开发约束见下列对应文档。历史计划不构成额外实施授权。
 
 ## 项目与部署边界
 
 - 主分支只维护项目功能、标准 Docker/Harbor 执行环境、本地证据存储及通用配置契约。
 - 机器专属容器兼容层、远程存储迁移与恢复、服务托管、网络接入、实例发布和现场记录由独立部署分支维护，不进入主线源码、默认 UI、测试依赖或导出包。
 - 通用改进先进入主线，部署分支再同步；部署专属改动不整体合回主线。部署数据转换与既有实例切换由部署侧独立执行。
-- 提交前运行 `npm run check:project`。详细职责和文档归属见[开发任务书第 12 节](docs/plans/meta-harness-development.md#12-版本管理与文档维护)。
+- 提交前运行 `npm run check:project`；文档变更运行 `npm run check:docs`。详细职责和文档归属见[开发流程](docs/development/workflow.md)。
 
 ## 目录安排
 
 | 目录 | 内容 |
 |---|---|
 | `src/execution/` | 插件版本与组合解析、隔离 Runner、模型网关及 Harbor adapter |
-| `src/control/` | 独立后台、活动、预算、调度与 Meta 会话 |
+| `src/control/` | 独立后台、活动、运行限额、调度与 Meta 会话 |
 | `src/evidence/`、`src/reporting/`、`src/exporting/` | 证据查询、报告生成与冻结项目导出 |
 | `src/runtime/`、`src/integrations/` | 历史命令与导入的兼容入口 |
 | `packages/meta-harness/` | Meta 工具插件 |
@@ -26,41 +26,20 @@
 | `templates/standalone/` | 独立交付模板及专用依赖锁 |
 | `scripts/`、`tests/`、`docs/` | 构建维护脚本、测试与正式文档 |
 
-## 去哪里找
+## 文档入口
 
-| 要了解的内容 | 入口 |
-|---|---|
-| 固定 Solver、插件组合优化与可理解的进化 | [项目设计哲学](docs/design/design-philosophy.md) |
-| 项目目标与产品要求 | [README](README.md)、[需求文档](docs/requirements/meta-harness.md) |
-| 完整执行工程、Meta 策略所有权与官方评分重构 | [职责设计](docs/design/execution-harness-boundary.md)、[验收计划](docs/plans/execution-harness-refactor.md) |
-| 架构、依赖边界与迁移约定 | [实现方案](docs/design/meta-harness-implementation.md) |
-| Meta 执行策略自主权、全链路限制取舍与 Harbor 接入重构 | [职责设计](docs/design/execution-harness-boundary.md)、[实施计划](docs/plans/execution-harness-refactor.md) |
-| 长活动存储共享、快照、压缩与容量保护 | [存储管理设计](docs/design/storage-management.md) |
-| 长活动归集阻塞、证据规模与调度诊断 | [修复计划](docs/plans/control-plane-scalability.md) |
-| 插件版本保存、组合清单与按需导出 | [专项方案](docs/design/plugin-versioning-and-export.md) |
-| 单次活动永久删除、停止与共享数据清理 | [删除设计](docs/design/campaign-deletion.md) |
-| Meta 插件组合、停止审查与可比较性基础 | [专题设计](docs/design/meta-harness-composition.md) |
-| 可独立移除的参考模型与参考 Harness 插件 | [完整设计](docs/design/meta-reference-experiments.md)、[开发计划](docs/plans/meta-reference-experiments.md) |
-| Meta 通用 Agent 能力、完整证据路径与会话恢复 | [完整设计方案](docs/design/meta-agent-and-evidence.md) |
-| 进化方向可读性、开发动机、选择解释与证据来源 | [进化可读性设计](docs/design/evolution-readability.md) |
-| Studio 页面与阅读体验 | [新工作台设计](docs/design/meta-workbench-studio.md) |
-| UI 公共能力、版本独立与增删边界 | [UI 模块化设计](docs/design/meta-workbench-modularity.md) |
-| 开发推进、验证与验收规则 | [开发任务书](docs/plans/meta-harness-development.md) |
-| 安装、构建、运行、恢复与已知限制 | [运行说明](docs/operations/meta-harness.md) |
-| 模型流保护、失败诊断与离线回放 | [运行说明](docs/operations/meta-harness.md#模型请求保护与故障诊断) |
-| 执行 Harness 恢复协调、策略组合与错误反馈 | [完整设计](docs/design/execution-recovery.md) |
-| 模型请求恢复与故障零分增量 | [专项计划](docs/plans/model-request-recovery.md) |
-| 已结束未评分尝试计失败与历史计分兼容 | [任务完成规则 v4](docs/design/task-completion-v4.md) |
-| 移除用量账本、统计与 token 预算 | [当前方案](docs/design/model-access-without-accounting.md) |
-| Meta 自主资源规划与限额执行修改 | [专项计划](docs/plans/meta-resource-planning.md) |
-| 执行插件开发接口与样例 | [SDK 资料](knowledge/plugin-sdk/README.md) |
-| Meta 系统职责与默认目标 | [系统模板](src/control/prompts/meta-system.md)、[默认值](schemas/meta-defaults.json) |
-| 实际命令与提交范围 | [package.json](package.json)、[.gitignore](.gitignore)；约定见开发任务书第 12 节 |
+- [完整文档导航](docs/README.md)：按了解、使用、开发三条路线阅读。
+- [设计哲学](docs/product/philosophy.md)、[产品要求](docs/product/requirements.md)：目标与不可削弱的边界。
+- [架构总览](docs/architecture/overview.md)：模块、依赖与当前默认契约。
+- [开发流程](docs/development/workflow.md)、[验证说明](docs/development/testing.md)：推进、提交与验收。
+- [快速开始](docs/guides/quickstart.md)、[维护指南](docs/guides/maintenance.md)：构建、运行、恢复和排障。
+- [实现核对表](docs/development/implementation-audit.md)：功能与代码/测试的对应；[兼容规则](docs/architecture/compatibility.md)说明旧活动。
+- [SDK 资料源](knowledge/plugin-sdk/README.md)、[系统模板](src/control/prompts/meta-system-process.md)、[目标默认值](schemas/meta-defaults.json)。
 
-本地开发进度与检查记录位于 `reports/development/meta-harness/`；历史运行与状态位于 `runs/`、`reports/`、`.runtime/`，新活动数据位置见运行说明。这些内容不提交，新克隆没有它们是正常的；按代码、正式文档及可执行检查核实现状。
+本地开发进度与检查记录位于 `reports/development/meta-harness/`；历史运行与状态位于 `runs/`、`reports/`、`.runtime/`，新活动数据位置见快速开始。这些内容不提交，新克隆没有它们是正常的；按代码、正式文档及可执行检查核实现状。
 
 ## Git 提交规范
 
 - 每完成一个独立功能或修复并通过相关验证后，立即本地提交一次，无需再次确认。独立文档、配置修改同样适用。
 - 提交标题采用 `<type>(<scope>): <中文说明>`。
-- 入库范围见 [.gitignore](.gitignore) 和[开发任务书第 12 节](docs/plans/meta-harness-development.md#12-版本管理与文档维护)。
+- 入库范围见 [.gitignore](.gitignore) 和[开发流程](docs/development/workflow.md)。

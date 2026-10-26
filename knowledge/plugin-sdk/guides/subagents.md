@@ -1,6 +1,6 @@
 # 子代理与任务委派
 
-来源：官方[Subagent 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.md)，以及 `0.2.1-rc.2` 的 `dsh-subagent`、`dsh-subagent-spawn-in-process` 包说明和类型。当前状态：本项目执行 profile 尚未加载标准 subagent 组合，以下是接口参考，不是已接入的执行能力。
+来源：官方[Subagent 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.md)，以及 `0.2.1-rc.2` 的 `dsh-subagent`、`dsh-subagent-spawn-in-process` 包说明和类型。适用：默认 DSH 候选模板未预装标准 subagent 组合；新完整工程可以自行装配并验证。Meta 自身已使用原生普通研究委派，与候选 Solver 的配置是不同职责。
 
 ## 三种不同机制
 
@@ -41,4 +41,4 @@ Service 管理子代理及其生命周期，provider 实现创建方式，工具
 
 ## 本项目接入前提
 
-需先在冻结执行环境中装配并验证所需服务，确认子代理遵循固定 Solver 设置、网关计量、当前任务材料边界、取消与截止规则，并保留可读轨迹。包已安装或上游支持不代表这些条件已经满足。当前不会因为读取本教程而启用委派，也不开放宿主安装入口。
+需先在冻结执行环境中装配并验证所需服务，确认子代理遵循固定 Solver 设置、模型通道、当前任务材料边界、取消与截止规则，并保留可读轨迹。包已安装或上游支持不代表这些条件已经满足。当前不会因为读取本教程而启用委派，候选依赖须通过完整工程的隔离构建安装，不在可信宿主加载。
