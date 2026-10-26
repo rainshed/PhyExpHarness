@@ -42,6 +42,7 @@
 - [文档维护](development/documentation.md)：权威来源、迁移规则、链接检查。
 - [实现核对表](development/implementation-audit.md)：功能声明对应的代码、测试和验证边界。
 - [待办与验证缺口](plans/README.md)：仍需单独验证或设计的事项。
+- [插件库与用户组合 H0：Agent 实施任务书](plans/plugin-library-and-h0.md)：待实施工作包、自动检查、人类验收和交付条件；不含 Meta 自主选库。
 - [历史文档索引](archive/README.md)：被替代的设计、计划及旧运行说明。
 
 执行 SDK 的资料源继续在 [knowledge/plugin-sdk](../knowledge/plugin-sdk/README.md)，字段契约继续在 [schemas](../schemas/contracts.schema.json)，命令继续以 [package.json](../package.json) 为准。完整导航只在此维护。
