@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import state_path
 """User-owned model settings and write-only credentials. Never exposed to Meta tools."""
 import base64
 import contextlib
@@ -20,7 +21,7 @@ class ProviderSettings:
     def __init__(self, service):
         self.service = service
         self.base = copy.deepcopy(service.store.model_config)
-        self.path = service.data / 'provider-settings.sqlite'
+        self.path = state_path(service.data / 'provider-settings.sqlite')
         self.lock = threading.RLock()
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)

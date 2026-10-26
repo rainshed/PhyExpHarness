@@ -184,6 +184,11 @@ class MetaAPI:
         if op=='report_get_facts':
             facts=service.reports.facts(campaign,args.get('batchId'));id=hashlib.sha256(encoded(facts).encode()).hexdigest()
             atomic_json(service.data/'campaigns'/campaign/'report-facts'/(id+'.json'),{'facts':facts,'batchId':args.get('batchId')})
+            from src.execution.host.storage_layout import managed
+            if managed(service.data) and version(service,campaign) in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9'):
+                # The v3+ boundary immediately publishes the authorized path view.
+                # Preserve the signed source snapshot, skip its discarded second copy.
+                return {'factsId':id,'batchId':args.get('batchId')}
             return {'factsId':id,'batchId':args.get('batchId'),'file':self.files.publish(campaign,'facts:'+id,encoded(facts),kind='facts',source='controller',version=id)}
         if op=='report_save':
             id=args['factsId']

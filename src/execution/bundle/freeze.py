@@ -1,5 +1,8 @@
+from src.execution.host.storage_layout import managed
 """Content-addressed assembly. Generated code is copied and checked, never imported on the host."""
 import json
+import os
+import hashlib
 import re
 import shutil
 import tempfile
@@ -136,7 +139,12 @@ def _publish(store, identity, contents, on_publish=None, kind='object'):
             for name, data in contents.items():
                 target = stage / safe_relative(name)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
+                if isinstance(data, Path):
+                    try: os.link(data, target)
+                    except OSError as error:
+                        if error.errno != errno.EXDEV: raise
+                        shutil.copyfile(data, target)
+                else: target.write_bytes(data)
                 target.chmod(0o444)
             try:
                 stage.rename(destination)
@@ -146,9 +154,13 @@ def _publish(store, identity, contents, on_publish=None, kind='object'):
     return destination
 
 
+def _body_digest(data):
+    if not isinstance(data, Path): return digest(data)
+    with data.open('rb') as stream: return hashlib.file_digest(stream,'sha256').hexdigest()
+
 def _object(store, kind, contents, on_publish=None):
     descriptor = {'schemaVersion': 1, 'kind': kind,
-                  'files': {name: digest(data) for name, data in contents.items()}}
+                  'files': {name: _body_digest(data) for name, data in contents.items()}}
     identity = digest(canonical(descriptor))
     _publish(store, identity, {'object.json': canonical(descriptor) + b'\n',
                              **{'assets/' + name: data for name, data in contents.items()}},on_publish)

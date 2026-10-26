@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Immutable paged evidence trees, reusable by frozen native Meta protocols."""
 import fcntl
 import hashlib
@@ -15,7 +16,7 @@ class EvidenceCatalog:
         filters=filters or {};key=hashlib.sha256(encoded(filters).encode()).hexdigest()
         directory=self.service.data/'campaigns'/campaign/'evidence-catalogs'
         directory.mkdir(parents=True,exist_ok=True)
-        with (directory/(key+'.lock')).open('a') as lock:
+        with (lock_path(directory/(key+'.lock'))).open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             with self.store.read_snapshot(),self.store.connection() as db:
                 version=db.execute('SELECT version FROM evidence_versions WHERE campaign=?',(campaign,)).fetchone()
@@ -27,15 +28,27 @@ class EvidenceCatalog:
                     if value['revision']==revision:return value
                 tree=Snapshots(self.receipts.files,campaign);shards=[];offset=0;unavailable=0;total=0;legacy=[]
                 shared=enabled(self.store.get('campaigns',campaign)['config'])
+                from src.execution.host.storage_layout import managed
+                cursor=None
+                if managed(self.service.data):
+                    clause,parameters=self.service.evidence.query_scope(campaign,**filters)
+                    cursor=db.execute('SELECT data FROM evidence WHERE '+clause+' ORDER BY rowid',parameters)
                 while True:
-                    page=self.service.evidence.page(campaign,**filters,offset=offset,limit=100)
-                    values=[self.receipts.evidence(campaign,e) for e in page['items']]
-                    unavailable+=sum(e['availability']!='available' for e in values);total=page['total']
+                    if cursor is not None:
+                        rows=[json.loads(r[0]) for r in cursor.fetchmany(512)]
+                        if not rows:break
+                        values=self.receipts.evidence_many(campaign,rows);total+=len(rows)
+                    else:
+                        page=self.service.evidence.page(campaign,**filters,offset=offset,limit=100)
+                        values=[self.receipts.evidence(campaign,e) for e in page['items']];total=page['total']
+                    unavailable+=sum(e['availability']!='available' for e in values)
                     if not shared:legacy.extend(values)
                     if shared and values:shards.append({'bucket':str(offset),**tree.save({'format':'query-tree-v1','kind':'items',
-                        'items':[{'position':offset+i,'value':tree.node(e)} for i,e in enumerate(values)]})})
-                    if page['nextOffset'] is None:break
-                    offset=page['nextOffset']
+                        'items':[{'position':offset+i,'value':tree.node(e,inline_limit=65536 if cursor is not None else 4096)} for i,e in enumerate(values)]})})
+                    if cursor is not None:offset+=len(values)
+                    else:
+                        if page['nextOffset'] is None:break
+                        offset=page['nextOffset']
                 result={'revision':revision,'total':total,'unavailableCount':unavailable,
                     'items':tree.save({'format':'query-tree-v1','kind':'list','count':total,'shards':shards}) if shared else legacy}
                 atomic_json(cache,result)

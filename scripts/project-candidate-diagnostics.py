@@ -13,7 +13,8 @@ from src.evidence.objects import atomic_json
 p=argparse.ArgumentParser();p.add_argument('--data',type=Path,required=True);p.add_argument('--campaign',required=True);p.add_argument('--write',action='store_true');args=p.parse_args()
 file=args.data/'failure-diagnoses.json'
 result=json.loads(file.read_text()) if file.exists() else {'trials':{}}
-db=sqlite3.connect('file:'+str(args.data/'control.sqlite')+'?mode=ro',uri=True)
+from src.execution.host.storage_layout import state_path
+db=sqlite3.connect('file:'+str(state_path(args.data/'control.sqlite'))+'?mode=ro',uri=True)
 count=0
 for raw, in db.execute('SELECT data FROM trials WHERE campaign=?',(args.campaign,)):
     t=json.loads(raw)

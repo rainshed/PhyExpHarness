@@ -83,18 +83,20 @@ class Reports:
         research=self.store.list('research_records',campaign)
         research_refs={a['evidenceId'] for r in research for a in r['record'].get('anchors',[])+[a for o in r['record'].get('observations',[]) for a in o['anchors']]}
         decision_refs={ref for d in decisions for ref in d['evidenceRefs']}
+        evidence_refs=decision_refs|research_refs
         by_role={role:{'confirmedTokens':sum(r.get('confirmedTokens') or 0 for r in usage if roles.get(r['leaseId'])==role),
             'unknownReservedTokens':sum(r['reservedTokens'] for r in usage if roles.get(r['leaseId'])==role and r['status']=='unknown')}
             for role in ['solver','meta']}
         references=trial_diagnostics(self.store.list('reference_runs',campaign),self.root.parent,c['config'])
         for row in references:row.pop('summary',None)
+        evidence_trials={t['id'] for t in trials+references}
         return {'referenceExperiments':{'batches':self.store.list('reference_batches',campaign),'runs':references,'scoreScope':'separate; excluded from primary results','attribution':'joint-reference does not isolate model or harness causality'},'stopReviews':self.store.list('stop_reviews',campaign),'metaObservations':self.store.list('meta_observations',campaign),
             'metaSessions':self.store.list('meta_sessions',campaign),'metaComposition':c['config'].get('metaComposition'),
             'campaign':c,'batches':batches,'trials':trials,'candidates':candidates,**({} if control_only(c['config']) else {'usageByRole':by_role}),
             'taskEvaluation':evaluation(trials,c['config']['tasks'],candidates,c['config']),
             'comparisonIssues':comparison_issues(trials),'comparisonDiagnostics':comparison_diagnostics(trials),
             'evidenceCompleteness':{t['id']:t.get('evidenceIndex',{'state':'legacy_unknown'}) for t in trials+references},
-            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in decision_refs|research_refs or any(e['trialId']==t['id'] for t in trials+references)],
+            'evidence':[{k:v for k,v in e.items() if k!='path'} for e in self.store.list('evidence',campaign) if e['id'] in evidence_refs or e.get('trialId') in evidence_trials],
             'selectionDecisions':decisions,'researchRecords':research,'researchLinks':self.store.list('research_links',campaign),
             'generalization':'当前公开任务仅用于开发/回归；没有独立任务或实例上的泛化验证。',
             'comparisonRule':retention_rule_description(c['config'])}
@@ -150,7 +152,8 @@ class Reports:
                         'markdownPath':str(directory/'report.md'),'schemaVersion':1,'revision':record.get('revision',0)+1}
                 # Render, serialize and write all bodies before taking the writer lock.
                 (pending/'report.md').write_text(render(result))
-                report_body=(json.dumps(result,ensure_ascii=False,indent=2)+'\n').encode()
+                from src.execution.host.storage_layout import managed
+                report_body=((encoded(result) if managed(self.root.parent) else json.dumps(result,ensure_ascii=False,indent=2))+'\n').encode()
                 (pending/'report.json').write_bytes(report_body)
                 head_record={k:v for k,v in result.items() if k not in ('facts','tables','reading')}
                 head_record.update(reportRef={'version':'immutable-report-v1','sha256':hashlib.sha256(report_body).hexdigest(),'bytes':len(report_body)},

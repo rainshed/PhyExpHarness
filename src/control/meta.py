@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Persisted Meta sessions and event delivery. No scientific improvement procedure is prescribed."""
 import json
 import os
@@ -37,7 +38,7 @@ class MetaDriver:
         # The persisted row and process launch are one host-owned admission window.
         self.store.get('campaigns',campaign)
         lockfile=self.service.data/'campaigns'/campaign/'meta-start.lock';lockfile.parent.mkdir(parents=True,exist_ok=True)
-        with lockfile.open('a') as lock:
+        with lock_path(lockfile).open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return
             return self._start(campaign)

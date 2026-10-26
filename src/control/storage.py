@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path, profile as storage_profile
 """Host-owned storage maintenance and reversible capacity admission for new activities."""
 import fcntl
 import json
@@ -25,7 +26,7 @@ class Storage:
         self.service=service;self.data=Path(service.data).resolve();self.store=service.store;self.objects=Objects(self.data)
         self.scan_lock=threading.Lock();self.lock=threading.RLock();self.maintenance_lock=threading.Lock();self.worker=None;self.last_scan=0;self.last_maintenance=0;self.waiting={};self.samples=[]
         self.metrics={'bytes':0,'files':0,'groups':{},'campaigns':{},'observedAt':None}
-        self.errors=[];self.reclaimed=0
+        self.cache_bytes=0;self.errors=[];self.reclaimed=0;self.disk_probe=None;self.disk_values=[];self.disk_observed=0
         from .archive import Archives
         self.archive=Archives(service)
         self.policy_file=self.data/'storage-policy.json'
@@ -77,6 +78,16 @@ class Storage:
                 for row in self.store.list('evidence',c):
                     try:s=Path(row['path']).stat();campaign_sets[c][(s.st_dev,s.st_ino)]=s.st_blocks*512
                     except (FileNotFoundError,KeyError):continue
+            if storage_profile():
+                root=Path(storage_profile()['cacheRoot']);seen_cache=set();self.cache_bytes=0
+                for directory,dirs,names in os.walk(root,followlinks=False):
+                    dirs[:]=[d for d in dirs if not Path(directory,d).is_symlink()]
+                    for name in names:
+                        path=Path(directory,name)
+                        try: info=path.lstat()
+                        except FileNotFoundError: continue
+                        key=(info.st_dev,info.st_ino)
+                        if key not in seen_cache and not path.is_symlink():self.cache_bytes+=info.st_blocks*512;seen_cache.add(key)
             size=sum(groups.values());self.samples.append((now,size));self.samples=[x for x in self.samples if now-x[0]<=86400][-1441:]
             growth=None
             if len(self.samples)>1 and now-self.samples[0][0]>=3600:
@@ -85,6 +96,19 @@ class Storage:
             self.last_scan=now
 
     def disks(self):
+        if not storage_profile(): return self._read_disks()
+        now=time.time()
+        if now-self.disk_observed>15 and not (self.disk_probe and self.disk_probe.is_alive()):
+            def probe():
+                values=self._read_disks()
+                self.disk_values=values;self.disk_observed=time.time()
+            self.disk_probe=threading.Thread(target=probe,name='phyexp-storage-probe',daemon=True)
+            self.disk_probe.start()
+        if not self.disk_values or now-self.disk_observed>90:
+            return [{'label':'storage-probe-unavailable','free':0,'total':0,'freeInodes':0,'pending':True}]
+        return self.disk_values
+
+    def _read_disks(self):
         values=[];seen=set()
         for index,p in enumerate([str(self.data),*self.policy['additionalPaths']]):
             try:
@@ -107,9 +131,11 @@ class Storage:
         if any(d['free']<=p['minFreeBytes']+reserve+margin for d in disks):reasons.append('磁盘剩余空间不足，需保留在途任务收尾容量')
         if any(d['freeInodes']<10000 for d in disks):reasons.append('文件系统可用文件数量不足')
         if self.metrics['bytes']+reserve+margin>=p['maxDataBytes']:reasons.append('活动数据达到全局存储预算')
+        layout=storage_profile()
+        if layout and self.cache_bytes>=layout.get('cacheMaxBytes',4*GiB):reasons.append('本地运行缓存达到部署容量上限')
         used=self.metrics['campaigns'].get(campaign,0)
         if campaign and used+extra+margin>=p['maxCampaignBytes']:reasons.append('本活动达到存储预算')
-        return {'waiting':bool(reasons),'reasons':reasons,'reservedBytes':reserve,'disks':disks,'critical':any(d['free']<p['criticalFreeBytes'] for d in disks),'campaignBytes':used}
+        return {'waiting':bool(reasons),'reasons':reasons,'reservedBytes':reserve,'disks':disks,'critical':any(d['free']<p['criticalFreeBytes'] and not d.get('pending') for d in disks),'campaignBytes':used}
 
     def permit(self,campaign,kind='request'):
         if not enabled(self.store.get('campaigns',campaign)['config']):return True
@@ -132,9 +158,11 @@ class Storage:
 
     def snapshot(self):
         from src.evidence.cold import ColdArchive
-        return {'policy':self.policy,'usage':self.view(None),'archive':ColdArchive(self.data).snapshot()}
+        return {'policy':self.policy,'usage':self.view(None),'archive':ColdArchive(self.data).snapshot(),
+            **({'deployment':{'layout':storage_profile()['version'],'persistentRoot':str(self.data),'stateRoot':storage_profile()['stateRoot'],'localCacheBytes':self.cache_bytes,'cacheMaxBytes':storage_profile().get('cacheMaxBytes',4*GiB)}} if storage_profile() else {})}
 
     def schedule(self):
+        if storage_profile(): self.disks()
         self.archive.schedule()
         with self.lock:
             if time.time()-self.last_maintenance<self.policy['scanSeconds'] or self.worker and self.worker.is_alive():return
@@ -176,7 +204,9 @@ class Storage:
             except (OSError,ValueError,KeyError):pass  # Unknown reachability: collect nothing.
             # Only old noncurrent generations. Active jobs and unknown process state protect caches.
             active=any(t['state'] in ACTIVE for c in self.store.list('campaigns') for t in self.store.runs(c['id'])) or any(s.get('state') in ACTIVE for s in self.store.list('meta_sessions')) or any(o.get('state')=='running' for o in self.store.list('operations'))
-            if not active and listing is not None:self.prune_caches(listing,now)
+            if not active and listing is not None:
+                self.prune_caches(listing,now)
+                self.prune_deployment_cache(listing,now)
             self.errors=self.errors[-20:];self.inventory(force=True)
 
     def prune_caches(self,listing,now):
@@ -187,7 +217,7 @@ class Storage:
                 match=re.fullmatch('([a-f0-9]{64})-[a-f0-9]{32}',directory.name)
                 if not match or directory.is_symlink() or not directory.is_dir() or now-directory.stat().st_mtime<self.policy['cacheAgeSeconds']:continue
                 key=match[1]
-                with (parent/(key+'.lock')).open('a') as lock:
+                with (lock_path(parent/(key+'.lock'))).open('a') as lock:
                     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
                     except BlockingIOError:continue
                     try:current=json.loads((parent/(key+'.json')).read_text())['generation']
@@ -201,3 +231,20 @@ class Storage:
                         if linked:break
                     if linked:continue
                     shutil.rmtree(directory)
+
+    def prune_deployment_cache(self,listing,now):
+        layout=storage_profile()
+        if not layout:return
+        parent=Path(layout['cacheRoot'])/'execution/process-adapters'
+        if not parent.is_dir():return
+        for directory in parent.iterdir():
+            match=re.fullmatch('([a-f0-9]{64})-[a-f0-9]{32}',directory.name)
+            if not match or directory.is_symlink() or not directory.is_dir():continue
+            if now-directory.stat().st_mtime<self.policy['cacheAgeSeconds'] or str(directory) in listing:continue
+            key=match[1]
+            with (parent/(key+'.lock')).open('a') as mutex:
+                try:fcntl.flock(mutex,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                except BlockingIOError:continue
+                shutil.rmtree(directory)
+                receipt=parent/(key+'.json')
+                if receipt.exists() and json.loads(receipt.read_text()).get('generation')==directory.name:receipt.unlink()

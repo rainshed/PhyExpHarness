@@ -5,6 +5,7 @@
 ## 资料入口
 
 - [容器运行与证据归档](runtime.md)：单 UID Podman、镜像转换、网络隔离及 NFS 归档/恢复。
+- [NFS 主存储布局与更新](nfs-primary.md)：持久数据、本地状态、现场补丁来源及同布局发布流程。
 - [可选远程访问入口](remote-access.md)：Tailscale 接入操作。
 - [历史发布与现场检查](history.md)：既有实例的发布及归档记录。
 - [完整执行工程的历史验收](execution-acceptance.md)：原验收矩阵、真实活动结果与失败说明。

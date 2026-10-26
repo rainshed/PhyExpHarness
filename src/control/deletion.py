@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Durable user-authorized Campaign deletion, independent of UI lifetime."""
 import contextlib
 import fcntl
@@ -152,7 +153,7 @@ class Deletions:
                 if not acquired:return
                 # Coordinate explicit legacy migration/restore as well as API work.
                 lockfile = safe_path(self.service.data,self.service.data/'history-storage.lock')
-                with lockfile.open('a') as lock:
+                with lock_path(lockfile).open('a') as lock:
                     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
                     except BlockingIOError:return
                     if not self.service.storage.maintenance_lock.acquire(blocking=False):return
@@ -201,7 +202,7 @@ class Deletions:
                 if not (path.startswith('cache/project-builds/') and path.endswith('.lock')):continue
                 target=safe_path(self.service.data,path)
                 if target not in keep and target.exists():
-                    stream=locks.enter_context(target.open('r'))
+                    stream=locks.enter_context(lock_path(target).open('a'))
                     try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
                     except BlockingIOError:raise Refused('构建缓存仍在使用，请结束构建后重试：'+str(target))
             begin_write(db)

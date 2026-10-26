@@ -49,6 +49,13 @@ class EvidenceLibrary:
 
     def page(self,campaign,*,trialId=None,batchId=None,offset=0,limit=50,query=None,kind=None,task=None,candidateId=None):
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=100:raise Refused('Invalid evidence page')
+        clause,values=self.query_scope(campaign,trialId=trialId,batchId=batchId,query=query,kind=kind,task=task,candidateId=candidateId)
+        with self.store.read_snapshot(),self.store.connection() as db:
+            total=db.execute('SELECT count(*) FROM evidence WHERE '+clause,values).fetchone()[0]
+            rows=[json.loads(x['data']) for x in db.execute('SELECT data FROM evidence WHERE '+clause+' ORDER BY rowid LIMIT ? OFFSET ?',[*values,limit,offset])]
+        return {'items':rows,'offset':offset,'total':total,'nextOffset':offset+len(rows) if offset+len(rows)<total else None}
+
+    def query_scope(self,campaign,*,trialId=None,batchId=None,query=None,kind=None,task=None,candidateId=None):
         where=['campaign=?'];values=[campaign]
         if trialId:where.append("json_extract(data,'$.trialId')=?");values.append(trialId)
         if batchId:
@@ -63,11 +70,7 @@ class EvidenceLibrary:
         if query:
             where.append("(id LIKE ? OR json_extract(data,'$.trialId') LIKE ? OR json_extract(data,'$.source.archive') LIKE ?)")
             values.extend(['%'+query+'%']*3)
-        clause=' AND '.join(where)
-        with self.store.read_snapshot(),self.store.connection() as db:
-            total=db.execute('SELECT count(*) FROM evidence WHERE '+clause,values).fetchone()[0]
-            rows=[json.loads(x['data']) for x in db.execute('SELECT data FROM evidence WHERE '+clause+' ORDER BY rowid LIMIT ? OFFSET ?',[*values,limit,offset])]
-        return {'items':rows,'offset':offset,'total':total,'nextOffset':offset+len(rows) if offset+len(rows)<total else None}
+        return ' AND '.join(where),values
     def overview(self,campaign):
         # One navigation anchor per attempt; the full directory is paged separately.
         with self.store.connection() as db:

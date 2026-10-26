@@ -1,3 +1,5 @@
+from src.execution.host.storage_layout import profile as storage_profile
+from src.execution.host.storage_layout import lock_path
 from .accounting import reconcile_audit
 from .model_access import POLICY as MODEL_ACCESS_POLICY, control_only, check_config, environment as model_environment
 """Independent control service: owns scheduling, recovery and admission; never executes generated code."""
@@ -188,6 +190,7 @@ class ControlService:
             composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':GOAL_POLICY}) if not replay else None
             campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':GOAL_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
                 **time_defaults,**runtime_defaults,
+                **({'storageDeployment':storage_profile()} if storage_profile() else {}),
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
         id=campaign['id'];self.workspace(id)
@@ -324,7 +327,7 @@ class ControlService:
         directory=Path(bundle['path']);logs=self.data/'campaigns'/campaign/'checks'/identity('check');logs.mkdir(parents=True)
         locks=self.data/'locks';locks.mkdir(exist_ok=True)
         try:
-            with (locks/(bundle['id']+'.lock')).open('a') as lock,(logs/'installation.log').open('w') as log:
+            with (lock_path(locks/(bundle['id']+'.lock'))).open('a') as lock,(logs/'installation.log').open('w') as log:
                 fcntl.flock(lock,fcntl.LOCK_EX)
                 runtime=prepare_runtime(directory,self.data/'cache',log)
                 if bundle['manifest'].get('schemaVersion',1)==1:

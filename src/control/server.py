@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Local authenticated API. UI and Meta are clients; supervision belongs to this process and its children."""
 import argparse
 import asyncio
@@ -315,7 +316,7 @@ def main():
     parser.add_argument('--quantum-harbor',type=Path,required=True)
     parser.add_argument('--port',type=int,default=18402)
     args=parser.parse_args();data=data_dir(args.data_dir);data.mkdir(parents=True,exist_ok=True)
-    lock=(data/'control.lock').open('a')
+    lock=lock_path(data/'control.lock').open('a')
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except BlockingIOError:raise SystemExit('A control service already owns this data directory')
     if args.model_config:

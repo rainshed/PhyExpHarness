@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Prepare shared Runner images without invalidating IDs already used by Trials."""
 import fcntl
 import hashlib
@@ -46,7 +47,7 @@ def prepare_runner_image(bundle_path, cache, log):
     cache.mkdir(parents=True, exist_ok=True)
     # Different plugin Bundles share a tag; locking by Bundle ID is insufficient.
     lock_key = hashlib.sha256(tag.encode()).hexdigest()
-    with (cache/(lock_key+'.lock')).open('a') as mutex:
+    with (lock_path(cache/(lock_key+'.lock'))).open('a') as mutex:
         fcntl.flock(mutex, fcntl.LOCK_EX)
         receipt = cache/(lock_key+'-'+key+'.json')
 

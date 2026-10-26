@@ -1,5 +1,7 @@
+from src.execution.host.storage_layout import lock_path, managed
 """Freeze complete candidate projects; build code runs only in disposable containers."""
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -114,6 +116,9 @@ def supervised_command(argv,log,seconds,cancel):
         if process.poll() is None:process.kill();process.wait()
 
 
+def file_digest(file):
+    with Path(file).open('rb') as stream: return hashlib.file_digest(stream,'sha256').hexdigest()
+
 def build(contents, spec, cache, log, resources, *, cancel=None, on_publish=None):
     """Content cache holds tar files, never imports generated code into the host."""
     cache = Path(cache); cache.mkdir(parents=True, exist_ok=True)
@@ -129,14 +134,14 @@ def build(contents, spec, cache, log, resources, *, cancel=None, on_publish=None
     key = digest(canonical(inputs)); record = cache / (key + '.json'); artifact = cache / (key + '.tar')
     if on_publish:
         for path in (record,artifact,cache/(key+'.lock')):on_publish(path,'project_build')
-    with (cache / (key + '.lock')).open('a') as mutex:
+    with (lock_path(cache / (key + '.lock'))).open('a') as mutex:
         while True:
             check_cancel(cancel)
             try:fcntl.flock(mutex,fcntl.LOCK_EX|fcntl.LOCK_NB);break
             except BlockingIOError:time.sleep(.1)
         if record.exists() and artifact.exists():
             receipt = json.loads(record.read_text())
-            if receipt['artifactSha256'] == digest(artifact.read_bytes()):
+            if receipt['artifactSha256'] == file_digest(artifact):
                 log.write('Reused isolated build ' + key + '\n'); return artifact, receipt
         name = 'phyexp-build-' + uuid.uuid4().hex
         log.write('Build container '+name+'\n');log.flush()
@@ -180,7 +185,7 @@ def build(contents, spec, cache, log, resources, *, cancel=None, on_publish=None
                         copied.stdout.close()
                 validate_artifact(stage / 'artifact.tar', spec['entrypoint'], resources['artifactBytes'])
                 (stage / 'artifact.tar').replace(artifact)
-                receipt = {'inputs': inputs, 'artifactSha256': digest(artifact.read_bytes()), 'status': 'passed', 'checkKind': 'isolated-build-and-entrypoint'}
+                receipt = {'inputs': inputs, 'artifactSha256': file_digest(artifact), 'status': 'passed', 'checkKind': 'isolated-build-and-entrypoint'}
                 record.write_bytes(canonical(receipt) + b'\n')
                 return artifact, receipt
             finally:
@@ -195,7 +200,7 @@ def freeze_project(source_root, store, directory, recipe, cache, log, resources,
     check_cancel(cancel)
     store = Path(store); store.mkdir(parents=True, exist_ok=True)
     source_ref, _ = _object(store, 'harness-sources', contents, on_publish)
-    built_ref, _ = _object(store, 'harness-artifact', {'candidate.tar': artifact.read_bytes()}, on_publish)
+    built_ref, _ = _object(store, 'harness-artifact', {'candidate.tar': artifact if managed(artifact) else artifact.read_bytes()}, on_publish)
     delivery = json.loads((Path(source_root) / 'src/execution/process-assets.json').read_text())
     adapter_contents = {name: (Path(source_root) / source).read_bytes() for name, source in delivery.items()}
     adapter_ref, _ = _object(store, 'execution-adapter-v3', adapter_contents, on_publish)

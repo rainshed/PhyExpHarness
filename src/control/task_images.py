@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Prepare official task images before a Campaign; Trials only consume frozen IDs."""
 import fcntl
 import hashlib
@@ -75,7 +76,7 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
         raise ValueError('Select supported public tasks for image preparation')
     cache.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with (cache/'prepare.lock').open('a') as mutex, log_path.open('a') as log:
+    with (lock_path(cache/'prepare.lock')).open('a') as mutex, log_path.open('a') as log:
         fcntl.flock(mutex, fcntl.LOCK_EX)
         sources = task_image_sources(root)
         digest = sources_digest(sources)

@@ -27,6 +27,7 @@ def public(value):
     if isinstance(value,dict):return {k:(v if k=='pointer' else public(v)) for k,v in value.items() if k not in ['_load']}
     if isinstance(value,list):return [public(v) for v in value]
     if isinstance(value,str):
+        if '/' not in value:return value
         # Container paths are the only absolute locations exposed by this protocol.
         if value.startswith('/') and not value.startswith(('/materials/','/evidence/','/sdk/','/versions/','/outputs/','/work/')):
             return {'availability':'unavailable','reason':'host-only metadata; use the associated file reference'}
@@ -82,6 +83,18 @@ class Receipts:
         base={k:v for k,v in row.items() if k!='path'}
         try:return public({**base,'file':stable(self.files.evidence(campaign,row)),'availability':'available'})
         except (OSError,ValueError):return public({**base,'availability':'unavailable','reason':'Original missing or integrity validation failed'})
+    def evidence_many(self,campaign,rows):
+        from src.execution.host.storage_layout import managed
+        current=self.store.get('campaigns',campaign)
+        if not managed(self.service.data) or not enabled(current['config']) or current['state'] in ('finished','failed','deleting'):
+            return [self.evidence(campaign,row) for row in rows]
+        from src.evidence.deployment_views import EvidenceViews
+        views=EvidenceViews(self.files,campaign);result=[]
+        for row in rows:
+            base={k:v for k,v in row.items() if k!='path'}
+            try:result.append(public({**base,'file':stable(views.project(row)),'availability':'available'}))
+            except (OSError,ValueError):result.append(public({**base,'availability':'unavailable','reason':'Original missing or integrity validation failed'}))
+        return result
     def evidence_catalog(self,campaign,filters=None):
         from src.evidence.catalog import EvidenceCatalog
         return EvidenceCatalog(self).tree(campaign,filters)
@@ -147,6 +160,10 @@ class Receipts:
     def research(self,campaign,row):
         return receipt(row['record']['summary'],self.publish(campaign,'research:'+row['id'],row),recordId=row['recordId'],revision=row['revision'])
     def report(self,campaign,row):
+        from src.execution.host.storage_layout import managed
+        if managed(self.service.data):
+            from .deployment_facts import report_view
+            return receipt('分析报告已保存；完整事实与证据元数据见分层索引。',report_view(self,campaign,row),reportId=row['id'],analysisRevision=row['analysisRevision'],factsId=row['factsSha256'])
         return receipt('分析报告已保存。',self.publish(campaign,'report:'+row['id'],row),reportId=row['id'],analysisRevision=row['analysisRevision'],factsId=row['factsSha256'])
     def decision(self,campaign,row):
         return receipt('候选保留决定已记录。',self.publish(campaign,'decision:'+row['id'],row),candidateId=row['candidateId'],decisionId=row['id'],selectionRevision=row['selectionRevision'])
@@ -238,7 +255,8 @@ class Receipts:
             return receipt('已定位当前冻结知识包的完整文档；使用原生文件工具读取，同版本导航见 /sdk/index.json。',file,documentId=id,knowledgePackId=pack.manifest['id'],sdkVersion=pack.manifest['dshVersion'])
         if op=='results_compare':
             result=self.api._call(campaign,op,args)
-            result['evidence']=[self.evidence(campaign,e) for e in self.store.list('evidence',campaign) if e['trialId'] in {t['id'] for t in result['attempts']}]
+            ids={t['id'] for t in result['attempts']}
+            result['evidence']=self.evidence_many(campaign,[e for e in self.store.list('evidence',campaign) if e['trialId'] in ids])
             trials=result['attempts'];scored=sum(t.get('score') is not None for t in trials);failed=sum(t['state']=='failed' for t in trials)
             from .store import comparison_issues
             issues=comparison_issues(trials);result['comparisonLimitations']=issues
@@ -250,6 +268,11 @@ class Receipts:
             self.store.retain(campaign,args['candidateId'],args['reason'],args['evidenceRefs'],**{k:args[k] for k in ['tradeoffs','limitations','reconsiderWhen','expectedSelectionRevision']},meta_request=request,**{k:args[k] for k in ['summary','alternatives','researchRefs'] if k in args})
             return self.reconciled(campaign,op,request)
         if op=='report_save':return self.save_report(campaign,args,request)
+        if op=='report_get_facts':
+            from src.execution.host.storage_layout import managed
+            if managed(self.service.data):
+                from .deployment_facts import global_facts
+                return global_facts(self.api,campaign,args.get('batchId'))
         result=self.api._call(campaign,op,args)
         if op=='research_save':return self.research(campaign,result)
         if op in ['research_list','research_read','evidence_excerpt']:
@@ -257,7 +280,16 @@ class Receipts:
         if op=='report_get_facts':
             # Keep the original facts identity, publish a derived view with usable paths.
             facts=json.loads((self.service.data/'campaigns'/campaign/'report-facts'/(result['factsId']+'.json')).read_text())['facts']
-            result['file']=compact(self.publish(campaign,'facts:'+result['factsId'],{**facts,'fileView':{'kind':'path-projection','sourceFactsId':result['factsId']},'evidence':[self.evidence(campaign,self.store.get('evidence',e['id'])) for e in facts['evidence']]}))
+            from src.execution.host.storage_layout import managed
+            if managed(self.service.data):
+                from src.evidence.objects import Objects
+                objects=Objects(self.service.data)
+                rows=[{**e,'path':str(objects.path(e['sha256']))} for e in facts['evidence']]
+            else:rows=[self.store.get('evidence',e['id']) for e in facts['evidence']]
+            projected=self.evidence_many(campaign,rows)
+            metadata=public({k:v for k,v in facts.items() if k!='evidence'})
+            metadata.update(fileView={'kind':'path-projection','sourceFactsId':result['factsId']},evidence=projected)
+            result['file']=compact(self.files.publish(campaign,'facts:'+result['factsId'],encoded(metadata),kind='query',source={'archive':'query.json'}))
             result.update(self.report_navigation(campaign))
         if op=='report_get':return self.report(campaign,self.store.get('reports',args['reportId']))
         return result

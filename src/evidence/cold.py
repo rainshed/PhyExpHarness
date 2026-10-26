@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import state_path, lock_path
 """Verified NFS copies with a local locator database and conservative cache eviction.
 
 Only closed Trial files are eligible. Network I/O runs in the archive worker;
@@ -28,10 +29,10 @@ TERMINAL = {'finished','failed','cancelled','unknown'}
 class ColdArchive:
     def __init__(self, data):
         self.data = Path(data).absolute()
-        self.policy_file = self.data/'archive-policy.json'
+        self.policy_file = state_path(self.data/'archive-policy.json')
         self.policy = json.loads(self.policy_file.read_text()) if self.policy_file.exists() else None
-        self.index = self.data/'archive-index.sqlite'
-        self.state = self.data/'archive-state.json'
+        self.index = state_path(self.data/'archive-index.sqlite')
+        self.state = state_path(self.data/'archive-state.json')
 
     def configured(self):
         return bool(self.policy and self.policy.get('enabled'))
@@ -73,8 +74,8 @@ class ColdArchive:
     @contextlib.contextmanager
     def lock(self, sha):
         if not re.fullmatch('[a-f0-9]{64}',sha):raise ValueError('Invalid artifact digest')
-        folder=self.data/'locks'/'cold';folder.mkdir(parents=True,exist_ok=True)
-        with (folder/sha).open('a') as stream:
+        file=lock_path(self.data/'locks'/'cold'/sha);file.parent.mkdir(parents=True,exist_ok=True)
+        with file.open('a') as stream:
             deadline=time.monotonic()+(self.policy or {}).get('lockTimeoutSeconds',5)
             while True:
                 try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB);break

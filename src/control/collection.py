@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Durable process workers for verified results and complete evidence indexing.
 
 No model execution. The database row is the queue; a per-job flock is the
@@ -39,7 +40,7 @@ class Collections:
             self.store._save_run(db,current)
             return self.store._save(db,'collection_jobs',{'id':key,'campaignId':trial['campaignId'],
                 'trialId':trial['id'],'state':'queued','stage':'verify','attempts':0,'createdAt':time.time(),
-                'lockPath':str(directory/(key+'.lock'))})
+                'lockPath':str(lock_path(directory/(key+'.lock')))})
 
     def pid(self,job):
         child=self.children.get(job['id'])
@@ -75,7 +76,8 @@ class Collections:
                 if current['revision']!=job['revision']:continue
                 job=self.store._save(db,'collection_jobs',{**current,'state':'running',
                     'attempts':current['attempts']+1,'workerStage':stage,'startedAt':time.time()})
-            log=Path(job['lockPath']).with_suffix('.log')
+            log=self.service.data/'campaigns'/job['campaignId']/'collections'/(job['id']+'.log')
+            log.parent.mkdir(parents=True,exist_ok=True)
             with log.open('a') as stream:
                 child=subprocess.Popen([sys.executable,'-m','src.control.collection',str(self.service.data),
                     str(self.service.source),job['id'],job['lockPath']],cwd=self.service.source,
@@ -115,7 +117,7 @@ def work(data, source, id, lockpath):
     service.data=Path(data);service.source=Path(source);service.store=Store(Path(data)/'control.sqlite')
     service.evidence=EvidenceLibrary(service.store,data)
     store=service.store
-    with Path(lockpath).open('a') as lock:
+    with lock_path(Path(lockpath)).open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
         lock.seek(0);lock.truncate();json.dump({'pid':os.getpid()},lock);lock.flush();os.fsync(lock.fileno())

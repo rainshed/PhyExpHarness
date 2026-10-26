@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path, managed
 """Immutable, content-addressed artifact bodies; paths are read-only reference views."""
 import contextlib
 import fcntl
@@ -43,7 +44,7 @@ class Objects:
     @contextlib.contextmanager
     def locked(self):
         self.root.mkdir(parents=True, exist_ok=True)
-        with (self.root.parent / 'objects.lock').open('a') as lock:
+        with (lock_path(self.root.parent / 'objects.lock')).open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
@@ -78,6 +79,8 @@ class Objects:
     def share(self, source, expected=None):
         """Only call for a closed producer. Detect changes before replacing its view."""
         source = Path(source)
+        if managed(source):
+            return self._share_closed(source, expected)
         with self.locked():
             before = source.lstat()
             if not stat.S_ISREG(before.st_mode): raise ValueError('Archive source must be a regular file')
@@ -94,6 +97,32 @@ class Objects:
                 finally:
                     if os.path.exists(pending): os.unlink(pending)
             return {'sha256': target.name, 'bytes': after.st_size}
+
+    def _share_closed(self, source, expected):
+        before = source.lstat()
+        if not stat.S_ISREG(before.st_mode): raise ValueError('Archive source must be a regular file')
+        sha = digest_file(source)
+        if expected is not None and sha != expected: raise ValueError('Artifact digest mismatch')
+        target = self.path(sha)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Verify bytes before taking the publication lock; no copy through local disk.
+        if target.exists() and (target.is_symlink() or digest_file(target) != sha):
+            raise ValueError('Stored artifact is damaged')
+        with self.locked():
+            after = source.lstat()
+            if (before.st_ino,before.st_dev,before.st_size,before.st_mtime_ns) != (after.st_ino,after.st_dev,after.st_size,after.st_mtime_ns):
+                raise ValueError('Archive source changed during publication')
+            try: os.link(source,target)
+            except FileExistsError: pass
+            os.chmod(target,0o444)
+            if not os.path.samefile(source,target):
+                fd,pending=tempfile.mkstemp(prefix='.sharing-',dir=source.parent)
+                os.close(fd);os.unlink(pending)
+                try:
+                    os.link(target,pending);os.replace(pending,source)
+                finally:
+                    if os.path.exists(pending):os.unlink(pending)
+        return {'sha256':sha,'bytes':before.st_size}
 
     def archive(self, directory):
         """Called after producer exit and accounting; preserves the original byte layout."""

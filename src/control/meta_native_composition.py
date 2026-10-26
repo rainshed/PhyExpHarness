@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """v2 Meta compositions: exact content refs, shared blobs and rebuildable runtime cache."""
 import hashlib
 import json
@@ -73,7 +74,7 @@ def prepare_image(source,data):
     arch=subprocess.run(['docker','info','--format','{{.Architecture}}'],text=True,capture_output=True,check=True,timeout=30).stdout.strip()
     arch={'aarch64':'arm64','x86_64':'amd64'}.get(arch,arch)
     key=digest({'inputs':inputs,'architecture':arch});tag='phyexp-meta:'+key;directory=data/'cache/meta-images';directory.mkdir(parents=True,exist_ok=True)
-    with (directory/(key+'.lock')).open('a') as lock:
+    with (lock_path(directory/(key+'.lock'))).open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         def inspect():return subprocess.run(['docker','image','inspect',tag,'--format','{{.Id}}'],text=True,capture_output=True,timeout=30)
         image=inspect()

@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import task_storage, profile as storage_profile
 """Use Campaign-frozen images with Harbor's unchanged mounts, network and verifier lifecycle."""
 import asyncio
 import json
@@ -31,7 +32,7 @@ class PinnedDockerEnvironment(DockerEnvironment):
         # prevents fallback execution. Apply the overlay to separate verifiers too.
         overlay = Path(self._pin_dir.name) / 'images.json'
         overlay.write_text(json.dumps({'services': {
-            role: {'image': expected, 'pull_policy': 'never', **compose_security(role,
+            role: {'image': expected, 'pull_policy': 'never', **task_storage(self.trial_paths.trial_dir,verifier=verifier).get(role,{}), **compose_security(role,
                 cpus=self._effective_cpus, memory_mb=self._effective_memory_mb)}
             for role, expected in self._expected_images.items()
         }}))
@@ -146,7 +147,7 @@ class PinnedDockerEnvironment(DockerEnvironment):
             if image != expected: raise ValueError('Running task image differs from frozen identity: '+role)
             actual[role] = image
             mounts = json.loads(await self._docker_output(['inspect', containers[0], '--format', '{{json .Mounts}}']))
-            resources[role] = {'container': containers[0], 'volumes': sorted(m['Name'] for m in mounts if m['Type']=='volume')}
+            resources[role] = {'container': containers[0], 'volumes': sorted(m['Name'] for m in mounts if m['Type']=='volume'), 'mounts':[{'type':m['Type'],'source':m.get('Source'),'destination':m.get('Destination'),'rw':m.get('RW')} for m in mounts], 'storageLayout':(storage_profile() or {}).get('version')}
         evidence = self.trial_paths.trial_dir / 'phyexp'
         evidence.mkdir(exist_ok=True)
         (evidence / ('pinned-images-'+self._pin_role+'.json')).write_text(json.dumps(actual, indent=2)+'\n')

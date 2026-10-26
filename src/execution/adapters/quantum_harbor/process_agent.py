@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import managed
 """Thin Harbor adapter: deploy a candidate process, supervise, preserve native exit semantics."""
 import asyncio
 import base64
@@ -63,7 +64,7 @@ class ProcessHarborAgent(BaseAgent):
             'artifact':self.bundle['artifact'],'project':self.bundle['project'],'adapter':self.bundle['adapter']})
         (self.logs/'container-images.txt').write_text(await docker('inspect',self.main,self.qsim,'--format','{{json .Name}} {{json .Image}}'))
         await environment.upload_file(self.resolved.asset('candidate.tar'),'/tmp/phyexp-candidate.tar')
-        command="import tarfile,hashlib; p='/tmp/phyexp-candidate.tar'; assert hashlib.file_digest(open(p,'rb'),'sha256').hexdigest()=="+repr(self.bundle['buildReceipt']['artifactSha256'])+"; tarfile.open(p).extractall('/opt/harness',filter='data')"
+        command="import tarfile,hashlib,os; p='/tmp/phyexp-candidate.tar'; assert hashlib.file_digest(open(p,'rb'),'sha256').hexdigest()=="+repr(self.bundle['buildReceipt']['artifactSha256'])+"; tarfile.open(p).extractall('/opt/harness',filter='data'); os.unlink(p)"
         result=await environment.exec(command='python3 -c '+shlex.quote(command),cwd='/app',timeout_sec=120)
         if result.return_code: raise RuntimeError('Candidate deployment failed: '+str(result.stderr))
     async def run(self,instruction,environment,context):
@@ -151,6 +152,7 @@ class ProcessHarborAgent(BaseAgent):
                 self.save('runtime-summary.json',runtime)
                 # Candidate diagnostics are optional, and cannot veto verification.
                 (self.logs/'candidate-output').mkdir(exist_ok=True)
-                copied=await docker('cp',self.main+':/tmp/phyexp-output/.',str(self.logs/'candidate-output'),check=False)
+                if not managed(self.logs):
+                    await docker('cp',self.main+':/tmp/phyexp-output/.',str(self.logs/'candidate-output'),check=False)
                 events=self.logs/'candidate-output/events.json'
                 if events.is_file(): (self.logs/'events.json').write_bytes(events.read_bytes())

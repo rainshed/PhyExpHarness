@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path, state_path
 """Explicit, resumable storage deduplication for closed legacy Campaigns.
 
 Keep the original Bundle bytes, IDs and paths. Content objects own the shared
@@ -33,7 +34,7 @@ def write_json(file, value):
 
 @contextmanager
 def database(data):
-    db = sqlite3.connect((Path(data) / 'control.sqlite').as_uri() + '?mode=ro', uri=True)
+    db = sqlite3.connect(state_path(Path(data) / 'control.sqlite').as_uri() + '?mode=ro', uri=True)
     try:
         db.execute('PRAGMA busy_timeout=10000')
         db.execute('BEGIN')
@@ -247,7 +248,7 @@ def apply(session):
     value = json.loads((session / 'plan.json').read_text())
     data = Path(value['data'])
     # Serializes migration/resume/restore; candidate locks also coordinate builders.
-    with (data / 'history-storage.lock').open('a') as mutex, (session / 'migration.log').open('a') as log:
+    with (lock_path(data / 'history-storage.lock')).open('a') as mutex, (session / 'migration.log').open('a') as log:
         fcntl.flock(mutex, fcntl.LOCK_EX)
         results = []
         for entry in value['bundles']:
@@ -255,7 +256,7 @@ def apply(session):
             journal = session / 'entries' / (id + '.json')
             state = json.loads(journal.read_text()) if journal.exists() else None
             lock = data / 'locks' / (id + '.lock');lock.parent.mkdir(exist_ok=True)
-            with lock.open('a') as candidate_mutex:
+            with lock_path(lock).open('a') as candidate_mutex:
                 fcntl.flock(candidate_mutex, fcntl.LOCK_EX)
                 _assert_idle(data, entry)
                 if not state:
@@ -319,7 +320,7 @@ def restore(session, bundle_id):
     if len(bundle_id) != 64 or any(c not in '0123456789abcdef' for c in bundle_id):
         raise ValueError('Invalid Bundle ID')
     journal = session / 'entries' / (bundle_id + '.json')
-    with (data / 'history-storage.lock').open('a') as mutex:
+    with (lock_path(data / 'history-storage.lock')).open('a') as mutex:
         fcntl.flock(mutex, fcntl.LOCK_EX)
         state = json.loads(journal.read_text())
         _assert_idle(data, state['entry'])

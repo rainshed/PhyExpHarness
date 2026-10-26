@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import state_path, lock_path
 """Transactional authority for Campaigns, accepted batches and request accounting."""
 import contextlib
 import hashlib
@@ -192,7 +193,7 @@ def validate_config(config,model_config=None):
 class Store:
     def __init__(self,path,clock=time.time,model_config=None):
         self.model_config=load_model_config() if model_config is None else model_config
-        self._read_local=threading.local();self.path=Path(path);self.path.parent.mkdir(parents=True,exist_ok=True);self.clock=clock
+        self._read_local=threading.local();self.data=Path(path).parent;self.path=state_path(path);self.path.parent.mkdir(parents=True,exist_ok=True);self.clock=clock
         with self.connection() as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute('CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY)')
@@ -257,7 +258,7 @@ class Store:
     def _decode(self,table,data):
         value=json.loads(data)
         if table=='reports' and value.get('reportRef'):
-            ref=value['reportRef'];path=self.path.parent/'reports'/value['id']/'report.json'
+            ref=value['reportRef'];path=self.data/'reports'/value['id']/'report.json'
             body=path.read_bytes()
             if hashlib.sha256(body).hexdigest()!=ref['sha256']:raise Refused('Report snapshot integrity mismatch')
             return json.loads(body)
@@ -382,7 +383,7 @@ class Store:
             if payload.get('reviewId'):
                 review=self.get('stop_reviews',payload['reviewId'])
                 if review['campaignId']==id:payload={**payload,'review':review}
-            ColdArchive(self.path.parent).prepare_references(self,id,payload)
+            ColdArchive(self.data).prepare_references(self,id,payload)
         payload={'action':action,'expectedRevision':expected_revision,'changes':changes}
         with self.connection(True) as db:
             prior=self._idem(db,id,'control',key,payload)
@@ -450,7 +451,7 @@ class Store:
             existing=[x for x in self._list(db,'candidates',campaign) if x['bundleId']==bundle['id']]
             if research_refs is not None:
                 from .research import Research
-                research=Research(self,self.path.parent);research.resolve(db,campaign,research_refs)
+                research=Research(self,self.data);research.resolve(db,campaign,research_refs)
             if existing:
                 if research_refs is not None:research.bind_candidate(db,campaign,existing[0],research_refs)
                 return existing[0]
@@ -750,10 +751,10 @@ class Store:
     def finalize(self,campaign,reason=None,summary_reason=None):
         job=None
         if summary_reason:
-            directory=self.path.parent/'campaigns'/campaign/'collections';directory.mkdir(parents=True,exist_ok=True)
+            directory=self.data/'campaigns'/campaign/'collections';directory.mkdir(parents=True,exist_ok=True)
             key='collection-report-'+hashlib.sha256(campaign.encode()).hexdigest()
             job={'id':key,'campaignId':campaign,'kind':'report-summary','stage':'report','state':'queued','attempts':0,
-                'reason':summary_reason,'createdAt':self.clock(),'lockPath':str(directory/(key+'.lock'))}
+                'reason':summary_reason,'createdAt':self.clock(),'lockPath':str(lock_path(directory/(key+'.lock')))}
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
             counts=self._counts(db,campaign)
@@ -766,7 +767,7 @@ class Store:
             self._event(db,campaign,'finished',reason=c['stopReason']);return c
     def retain(self,campaign,candidate,reason,refs,*,tradeoffs=None,limitations=None,reconsiderWhen=None,expectedSelectionRevision=None,meta_request=None,summary=None,alternatives=None,researchRefs=None):
         from src.evidence.cold import ColdArchive
-        ColdArchive(self.path.parent).prepare_references(self,campaign,{'evidenceRefs':refs,'alternatives':alternatives})
+        ColdArchive(self.data).prepare_references(self,campaign,{'evidenceRefs':refs,'alternatives':alternatives})
         rejection=None
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
@@ -818,8 +819,8 @@ class Store:
                     extra={}
                     if summary is not None:
                         from .research import Research
-                        extra=Research(self,self.path.parent).selection(db,c,selected,summary,alternatives,researchRefs)
-                    audit=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
+                        extra=Research(self,self.data).selection(db,c,selected,summary,alternatives,researchRefs)
+                    audit=selection_assessment(c['config'],trial_diagnostics(previous,self.data,c['config']),trial_diagnostics(trials,self.data,c['config']),bool(previous_id))
                     decision=self._save(db,'selection_decisions',{'id':identity('selection'),'campaignId':campaign,
                         'candidateId':candidate,'bundleId':selected['bundleId'],'previousCandidateId':previous_id,
                         'previousDecisionId':c.get('selectionDecisionId'),'createdAt':self.clock(),'source':'meta-analysis','rule':rule,
@@ -853,10 +854,10 @@ class Store:
         extra={}
         if summary is not None:
             from .research import Research
-            extra=Research(self,self.path.parent).selection(db,c,selected,summary,alternatives,research_refs)
+            extra=Research(self,self.data).selection(db,c,selected,summary,alternatives,research_refs)
         previous_id=c.get('retainedCandidateId')
         previous=[t for t in self._list(db,'trials',c['id']) if t['candidateId']==previous_id] if previous_id else []
-        assessment=selection_assessment(c['config'],trial_diagnostics(previous,self.path.parent,c['config']),trial_diagnostics(trials,self.path.parent,c['config']),bool(previous_id))
+        assessment=selection_assessment(c['config'],trial_diagnostics(previous,self.data,c['config']),trial_diagnostics(trials,self.data,c['config']),bool(previous_id))
         decision=self._save(db,'selection_decisions',{'id':identity('selection'),'campaignId':c['id'],
             'candidateId':selected['id'],'bundleId':selected['bundleId'],'previousCandidateId':previous_id,
             **({'metaRequest':meta_request,'selectionRevision':len(self._list(db,'selection_decisions',c['id']))+1} if meta_request else {}),

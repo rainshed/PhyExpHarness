@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """One independent archive process; NFS stalls never hold the control tick."""
 import fcntl
 import json
@@ -16,8 +17,8 @@ class Archives:
         cold=ColdArchive(self.service.data)
         if not cold.configured() or time.time()-self.last<60:return
         if self.child and self.child.poll() is None:return
-        lockfile=Path(self.service.data)/'archive-worker.lock'
-        with lockfile.open('a') as lock:
+        lockfile=lock_path(Path(self.service.data)/'archive-worker.lock')
+        with lock_path(lockfile).open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return
         self.last=time.time()
@@ -28,7 +29,7 @@ class Archives:
 def work(data):
     from .store import Store
     data=Path(data);cold=ColdArchive(data)
-    with (data/'archive-worker.lock').open('a') as lock:
+    with (lock_path(data/'archive-worker.lock')).open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
         lock.seek(0);lock.truncate();json.dump({'pid':os.getpid(),'startedAt':time.time()},lock);lock.flush()

@@ -1,3 +1,5 @@
+from src.execution.host.storage_layout import runtime_cache, profile as storage_profile
+from src.execution.host.storage_layout import lock_path
 """Shared, verified host installations and adapter code; never candidate state.
 
 Cache repair publishes a new generation. Old paths are not overwritten or
@@ -19,7 +21,7 @@ from src.execution.bundle.manifest import canonical, digest, hashes, resolve, ch
 @contextmanager
 def _lock(parent, key):
     parent.mkdir(parents=True, exist_ok=True)
-    with (parent / (key + '.lock')).open('a') as lock:
+    with (lock_path(parent / (key + '.lock'))).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
@@ -115,7 +117,7 @@ def prepare_dependencies(resolved, cache, log):
 
 def prepare_runtime(bundle_root, cache, log=None, *, install=True):
     resolved = resolve(bundle_root)
-    cache = Path(cache).resolve()
+    cache = runtime_cache(cache).resolve()
     if resolved.manifest.get('schemaVersion') == 3:
         # Trusted adapter files only; candidate sources and built artifacts are
         # resolved separately and are never installed/imported on the host.
@@ -126,6 +128,11 @@ def prepare_runtime(bundle_root, cache, log=None, *, install=True):
             expected = {p: digest(v) for p, v in contents.items()}
             existing = _current(parent, key)
             if existing and hashes(existing) == expected: return existing
+            layout=storage_profile()
+            if layout:
+                total=sum(p.stat().st_size for p in cache.rglob('*') if p.is_file() and not p.is_symlink())
+                if total+sum(map(len,contents.values()))>layout.get('cacheMaxBytes',4*1024**3):
+                    raise ValueError('Local runtime cache capacity exceeded; release unused generations')
             with tempfile.TemporaryDirectory(prefix='.preparing-', dir=parent) as temporary:
                 stage = Path(temporary) / 'adapter'; stage.mkdir()
                 for name, value in contents.items():

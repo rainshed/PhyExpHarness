@@ -1,3 +1,4 @@
+from src.execution.host.storage_layout import lock_path
 """Frozen, reconstructible reference adapter runtime; credentials stay outside it."""
 import hashlib
 import json
@@ -47,7 +48,7 @@ def prepare_image(source,data,harness,base,log):
     key=hashlib.sha256(encoded({'base':base,'files':files}).encode()).hexdigest()
     tag='phyexp-reference:'+harness+'-'+key[:20]
     mutex=Path(data)/'reference-image-locks';mutex.mkdir(parents=True,exist_ok=True)
-    with (mutex/(key+'.lock')).open('a') as lock:
+    with (lock_path(mutex/(key+'.lock'))).open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         check=subprocess.run(['docker','image','inspect',tag,'--format','{{.Id}}'],capture_output=True,text=True)
         if check.returncode:
