@@ -49,7 +49,7 @@ class MaterialTests(unittest.TestCase):
         config=self.store.get('campaigns',self.c)['config']
         self.assertEqual(config['executionTimePolicy']['version'],'benchmark-time-v2')
         frozen=json.loads((self.service.data/'meta-compositions'/config['metaComposition']['id']/'manifest.json').read_text())
-        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v13')
+        self.assertEqual(frozen['systemPrompt']['version'],'meta-system-v14')
         self.assertEqual(config['stopPolicy'],'meta-closeout-v1')
         self.assertEqual(next(p for p in frozen['composition']['plugins'] if p['module']=='actions.mjs')['config']['closeoutPolicy'],'meta-closeout-v1')
         self.assertNotIn('benchmark 原始配置',frozen['systemPrompt']['text'])
@@ -127,7 +127,7 @@ class MaterialTests(unittest.TestCase):
 
     def test_driver_archives_rendered_prompt_on_each_new_session_without_model_call(self):
         driver=MetaDriver(self.service)
-        with patch('src.control.meta.subprocess.Popen') as process:
+        with patch.object(self.service.storage,'permit',return_value=True),patch('src.control.meta.subprocess.Popen') as process:
             process.return_value.pid=123
             driver.start(self.c)
             driver.start(self.c)

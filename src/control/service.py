@@ -97,6 +97,16 @@ class ControlService:
         self.store.writable(campaign)
         self.store.get('campaigns',campaign)
         path=self.data/'campaigns'/campaign/'workspace';path.mkdir(parents=True,exist_ok=True);return path
+    def baseline(self,campaign):
+        c=self.store.get('campaigns',campaign)
+        candidates=self.store.list('candidates',campaign)
+        if c.get('h0CandidateId'):
+            return next((x for x in candidates if x['id']==c['h0CandidateId']),None)
+        if c['config'].get('h0Policy'):return None
+        if c['config'].get('executionContract')=='harbor-process-v1':
+            return candidates[0] if candidates and candidates[0]['check']['status']=='passed' else None
+        return next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
+
     def knowledge_for(self,campaign):
         config=self.store.get('campaigns',campaign)['config']
         candidates=self.store.list('candidates',campaign)
@@ -141,7 +151,7 @@ class ControlService:
         if not isinstance(key,str) or not 1<=len(key)<=200:raise Refused('Idempotency key required')
         # Server-owned defaults are outside the idempotency request. Cache changes
         # and create replays must never replace an existing Campaign's snapshot.
-        with self.providers.lock:
+        with self.providers.lock, self.plugin_library.locked():
             with self.providers.connection() as db:
                 catalog=self.providers.document(db)
             # A successful create replay uses its original snapshot, even after a catalog edit.
@@ -162,6 +172,7 @@ class ControlService:
                     raise Refused('New activities require benchmark resource planning')
                 if config.get('trialTimeSeconds') is not None:
                     raise Refused('求解时限由 benchmark 决定，请移除单次时限设置。')
+                if any(k in config for k in ('h0Policy','h0CompositionId')):raise Refused('H0 身份由后台生成')
                 if 'taskTimeLimits' in config or 'executionTimePolicy' in config:
                     raise Refused('Benchmark time configuration is server-owned')
             if not replay or json.loads(replay['payload']).get('resourcePolicy'):
@@ -189,9 +200,12 @@ class ControlService:
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
             runtime_defaults={'executionContract':'harbor-process-v1',
                 'executionResources':json.loads((self.source/'schemas/execution/process-resources.json').read_text())} if not replay else {}
-            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,'stopPolicy':META_POLICY}) if not replay else None
+            from .h0 import resolve_selection, POLICY as H0_POLICY
+            resolved=resolve_selection(self,config.get('h0Selection')) if not replay else None
+            h0_defaults={'h0Policy':H0_POLICY,'h0Selection':resolved['selection'],'h0CompositionId':resolved['compositionId']} if resolved else {}
+            composition=freeze_meta(self.source,self.data,{**config,**time_defaults,**runtime_defaults,**h0_defaults,'stopPolicy':META_POLICY}) if not replay else None
             campaign=self.store.create(config,key,defaults={**reference_defaults,'storagePolicy':STORAGE_POLICY,'metaComposition':composition,'stopPolicy':META_POLICY,'knowledgePackId':knowledge.manifest['id'] if knowledge else None,'materialVersion':1,
-                **time_defaults,**runtime_defaults,
+                **time_defaults,**runtime_defaults,**h0_defaults,
                 'modelCatalogRevision':catalog['revision'],
                 'taskImagePolicy':TASK_IMAGE_POLICY,'taskImageLocks':{},'taskImageSourcesDigest':sources_digest(task_image_sources(self.quantum))})
         id=campaign['id'];self.workspace(id)
@@ -225,7 +239,7 @@ class ControlService:
                     self.store._event(db,campaign,'task_images_prepared',tasks=c['config']['tasks'],log=str(log))
             except Exception as error:
                 raise Refused('Task image preparation failed: '+str(error)+'; log: '+str(log)) from error
-        candidate=self.build_candidate(campaign,[],'H0：固定执行基线')
+        candidate=self.build_candidate(campaign,[],'H0：本次活动选定的起点')
         if c['config'].get('referenceBindings'):
             from .reference.runtime import prepare_images
             prepare_images(self,campaign,verify(candidate['bundlePath']))
@@ -276,7 +290,8 @@ class ControlService:
         return value
     def execution_policy(self,campaign):
         candidates=self.store.list('candidates',campaign)
-        baseline=candidates[0] if candidates else {}
+        c=self.store.get('campaigns',campaign)
+        baseline=next((x for x in candidates if x['id']==c.get('h0CandidateId')),candidates[0] if candidates else {})
         if not baseline or not (Path(baseline['bundlePath'])/'bundle.json').is_file():return None
         if json.loads((Path(baseline['bundlePath'])/'bundle.json').read_text()).get('schemaVersion')==3:
             from src.execution.bundle.plugin_reading import project_sources
@@ -371,7 +386,7 @@ class ControlService:
             reference_preflight(self,campaign)
         if action=='start':
             candidates=self.store.list('candidates',campaign)
-            h0=next((x for x in candidates if not x['plugins'] and x['check']['status']=='passed'),None)
+            h0=self.baseline(campaign)
             if not h0:raise Refused('H0 assembly is not ready')
             self._verify_task_images(c['config'])
             if c['state']=='draft' and not self.launch_trial_override:
@@ -389,7 +404,7 @@ class ControlService:
             if c['config'].get('metaComposition'):
                 verify_meta(self.data,c['config']['metaComposition'],self.source)
         result=self.store.control(campaign,action,key,expected_revision,changes)
-        if action=='start' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
+        if action=='start' and c['config'].get('executionContract')!='harbor-process-v1' and (not planning.enabled(c['config']) or c.get('resourcePlan')):self.store.submit(campaign,h0['id'],c['config']['tasks'],1,'system-baseline')
         # User stop ends experiments but leaves the remaining Meta budget available for reports.
         if action=='pause' and self.meta_driver:self.meta_driver.interrupt(campaign,action)
         if action=='stop':
@@ -612,7 +627,7 @@ class ControlService:
                         except Exception as error:self.store.trial_update(trial['id'],lastCollectionError=str(error))
                 c=self.store.status(id);cfg=c['config'];now=time.time()
                 if cfg.get('executionContract')!='harbor-process-v1' and c['state']=='running' and not self.store.list('batches',id) and (not planning.enabled(cfg) or c.get('resourcePlan')):
-                    h0=next((x for x in self.store.list('candidates',id) if not x['plugins'] and x['check']['status']=='passed'),None)
+                    h0=self.baseline(id)
                     if h0:
                         try:self.store.submit(id,h0['id'],cfg['tasks'],1,'system-baseline')
                         except Refused:

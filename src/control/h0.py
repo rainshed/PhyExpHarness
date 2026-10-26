@@ -108,7 +108,7 @@ def resolve_selection(service,selection=None,*,frozen=False):
             spec['build']['argv']=['/bin/sh','-c',spec['build']['argv'][2].replace(' && node check-assembly.mjs','')+' && node build-plugins.mjs && node check-assembly.mjs']
             spec['build']['locks']+=locks
         files['harness.json']=canonical(spec)+b'\n'
-        composition=digest(canonical({'version':POLICY,'files':{n:{'sha256':digest(v),'mode':files.modes.get(n,0o644)} for n,v in files.items()}}))
+        composition=composition_id(files)
         normalized={'version':POLICY,'templateId':selection['templateId'],'plugins':[{'id':id,'config':configs[id]} for id in ordered]}
         return {'selection':normalized,'compositionId':composition,'files':files,'project':spec,
                 'plugins':[{'id':id,'name':rows[id]['name'],'version':rows[id]['version'],'displayName':rows[id]['displayName']} for id in ordered]}
@@ -129,3 +129,21 @@ def materialize(service,selection,destination):
         finally:
             if staging.exists():shutil.rmtree(staging)
         return resolved
+
+
+def composition_id(files):
+    return digest(canonical({'version':POLICY,'files':{n:{'sha256':digest(v),'mode':files.modes.get(n,0o644)} for n,v in files.items()}}))
+
+
+def activity_summary(service,campaign):
+    c=service.store.get('campaigns',campaign);candidate=service.baseline(campaign)
+    plugins=[]
+    for chosen in c['config'].get('h0Selection',{}).get('plugins',[]):
+        row=service.plugin_library.get(chosen['id'])
+        plugins.append({**chosen,'name':row['name'],'displayName':row['displayName'],'version':row['version'],
+                        'sources':row['sources'],'deletedFromLibrary':row['deleted']})
+    runs=[t for t in service.store.list('trials',campaign) if candidate and t.get('candidateId')==candidate['id']]
+    return {'role':'H0','candidateId':candidate['id'] if candidate else None,'compositionId':c['config'].get('h0CompositionId'),
+            'templateId':c['config'].get('h0Selection',{}).get('templateId'),'plugins':plugins,
+            'validation':'本活动尚未验证' if not any(t.get('startedAt') for t in runs) else '本活动已尝试运行；结果见实验记录',
+            'legacy':not bool(c['config'].get('h0Policy'))}

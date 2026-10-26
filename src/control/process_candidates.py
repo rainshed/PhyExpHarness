@@ -23,7 +23,11 @@ def build_candidate(service,campaign,project_path,description,parent=None,displa
     workspace=service.workspace(campaign)
     if project_path is None:
         project=workspace/'h0'
-        if not project.exists(): shutil.copytree(service.source/'templates/harness/default',project)
+        if not project.exists():
+            if config.get('h0Selection'):
+                from .h0 import materialize
+                materialize(service,config['h0Selection'],project)
+            else:shutil.copytree(service.source/'templates/harness/default',project)
     else:
         project=workspace_path(workspace,project_path.removeprefix('/work/plugins/'))
     if not project.is_dir(): raise Refused('Candidate project directory is missing')
@@ -31,7 +35,11 @@ def build_candidate(service,campaign,project_path,description,parent=None,displa
             'processResources':config['executionResources']}
     logs=service.data/'campaigns'/campaign/'checks'/identity('check');logs.mkdir(parents=True)
     capture={};source={'campaignId':campaign,'checkId':logs.name}
+    initial_h0=project_path is None and bool(config.get('h0Policy'))
     def saved(contents,spec):
+        if initial_h0:
+            from .h0 import composition_id
+            if composition_id(contents)!=config['h0CompositionId']:raise Refused('H0 工作目录已偏离创建时选定内容')
         capture.update(service.plugin_library.capture(contents,spec,source))
         (logs/'library-capture.json').write_text(json.dumps(capture,ensure_ascii=False))
     try:
@@ -54,7 +62,7 @@ def build_candidate(service,campaign,project_path,description,parent=None,displa
         files=[service.meta_api.files.publish(campaign,'check:'+logs.name+':'+p.name,p.read_bytes(),
             kind='check',source={'archive':p.name},version=frozen['id']) for p in sorted(logs.iterdir()) if p.is_file()]
         return {'checkId':logs.name,'status':'passed','bundleId':frozen['id'],'files':files,'trialCreated':False}
-    row=service.store.candidate(campaign,frozen,description,parent,check,research_refs)
+    row=service.store.candidate(campaign,frozen,description,parent,check,research_refs,h0=initial_h0)
     row.update(project=frozen['manifest']['project'],candidateSources=frozen['manifest']['sources'],libraryCapture=capture,
                executionContract='harbor-process-v1')
     if display_name: row['displayName']=display_name.strip()[:80]

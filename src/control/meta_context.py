@@ -27,7 +27,9 @@ def system_prompt(config):
         text = re.sub(r'\{\{(活动目标|Solver配置)\}\}', lambda m: values[m[1]], template.read_text())
         if late_start(config):
             text+='\n\n实验时间策略 benchmark-time-v2：任务阶段上限不是预计耗时。先提交资源计划，再自主安排基线或候选实验；剩余时间不足以覆盖完整阶段上限也允许提交和启动。读取 taskTimeLimits、pendingTrials 和实际时间条件，自主判断中断风险。任务原始上限不变，活动硬截止仍有效；只有用户明确选择的 drain 模式允许截止前已启动任务有限延期。不能提高用户预算。收尾预留可在原边界内调整。比较实验时区分启动可用时间、求解开始时可用时间、各阶段实际耗时与截止原因；短窗口中断不单独证明插件退步。\n'
-        return {'version': 'meta-system-v13' if late_start(config) else 'meta-system-v12' if config.get('stopPolicy')==META_POLICY else 'meta-system-v11' if process else 'meta-system-v10' if control_only(config) else 'meta-system-v9', 'text': text,
+        if config.get('h0Policy')=='user-h0-v1':
+            text+='\n\nH0 是用户为本活动选定并冻结的起点，源码位于 /work/plugins/h0；它可能包含历史插件，但历史成绩不属于本活动。你只能读取选定插件、必要依赖与本活动后续成果，没有全库检索、读取或选择 H0 的权限。可复制并修改当前工程、移除插件、编写新插件或更换框架。新冻结源码由后台入库；不要从摘要推测其他活动内容。基线是否验证及次数由你根据任务决定；未运行时明确本活动尚未验证。\n'
+        return {'version': 'meta-system-v14' if config.get('h0Policy')=='user-h0-v1' else 'meta-system-v13' if late_start(config) else 'meta-system-v12' if config.get('stopPolicy')==META_POLICY else 'meta-system-v11' if process else 'meta-system-v10' if control_only(config) else 'meta-system-v9', 'text': text,
                 'sha256': hashlib.sha256(text.encode()).hexdigest()}
     values = {'活动目标': effective_objective(config),
               'Solver配置': json.dumps(config['solver'], ensure_ascii=False, sort_keys=True),
@@ -53,7 +55,7 @@ def activity_state(service, campaign):
     trials=trial_diagnostics(service.store.list('trials',campaign),service.data,config)
     return {'source': '固定控制后台的当前配置与运行状态', 'observedAt': service.store.clock(),
             **{k: c.get(k) for k in ('id', 'revision', 'state', 'deadline', 'stopReason',
-                'retainedCandidateId', 'finalCandidateId', 'explorationClosed', 'counts',
+                'h0CandidateId', 'retainedCandidateId', 'finalCandidateId', 'explorationClosed', 'counts',
                 'usage', 'remainingSeconds', 'elapsedSeconds', 'finishAssessment')},
             'objective': effective_objective(config), 'solver': config['solver'], 'meta': config['meta'],
             'tasks': config['tasks'], 'executionProtection':service.execution_policy(campaign), 'limits': {k: config.get(k) for k in LIMIT_KEYS if not control_only(config) or k not in TOKEN_FIELDS if k!='trialTimeSeconds' or not config.get('taskTimeLimits')},

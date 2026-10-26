@@ -47,3 +47,9 @@ process 执行退出后进入 collecting 并释放执行名额；[collection.py]
 存储统计在后台巡检，查询返回 observedAt，不在每次轮询中扫描全目录。首次生成完整目录、报告事实和全文搜索仍需处理对应规模的材料；轻量状态延迟不代表完整读取性能。
 
 完整会话恢复见[Meta](meta.md)，归档/删除见[证据与存储](evidence-storage.md)。核对测试：[控制状态](../../tests/unit/control_test.py)、[资源规划](../../tests/unit/resource_planning_test.py)、[模型访问](../../tests/unit/model_access_test.py)、[归集恢复](../../tests/unit/collection_workers_test.py)、[并发事务](../../tests/unit/database_concurrency_test.py)。
+
+## 用户选择 H0
+
+新活动创建绑定 `user-h0-v1`，由[组合器](../../src/control/h0.py)在创建事务前核验准确模板、插件与配置，并在同一发布锁内保存引用。配置保存 h0Selection/h0CompositionId；初次候选冻结事务明确保存 h0CandidateId。准备工作区若偏离该快照则拒绝冻结，不能悄悄替换起点。未知创建响应使用原键重放，重放不重新读取当前库选择。已有活动的引用保护已删除插件的源码。
+
+准备不启动活动计时、不创建 Trial、不调用模型。process 活动启动和资源计划更新不自动提交全套 H0；是否测试及次数由 Meta 决定。用户接口 `/plugin-library/h0/defaults`、`/plugin-library/h0/preview` 和 `/campaigns/{id}/h0` 分别提供准确预设、静态选择核对、活动起点与来源；实际加载检查仍在隔离构建中完成。这些接口只接受用户身份。

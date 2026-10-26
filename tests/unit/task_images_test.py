@@ -167,6 +167,7 @@ class CampaignPreparationTests(unittest.TestCase):
         self.data = Path(self.tmp.name)
         quantum = make_tasks(self.data/'synthetic-quantum', PUBLIC_TASKS)
         self.service = ControlService(ROOT, self.data, quantum, 'http://127.0.0.1:1')
+        capacity=patch.object(self.service.storage,'permit',return_value=True);capacity.start();self.addCleanup(capacity.stop)
         model = {'provider':'openai-codex','model':'gpt-6-sol','reasoningEffort':'medium'}
         self.config = {'solver':model,'meta':model,'tasks':list(PUBLIC_TASKS),'wallTimeSeconds':7200,'concurrency':1}
         digest = sources_digest(task_image_sources(self.service.quantum))

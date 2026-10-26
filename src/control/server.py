@@ -114,6 +114,22 @@ def make_app(service,supervise=True):
     @app.get('/plugin-library/jobs/{id}')
     def library_job(id:str,request:Request):
         user(request);return service.plugin_library.job(id)
+    @app.get('/plugin-library/h0/defaults')
+    def h0_defaults(request:Request):
+        user(request)
+        from .h0 import defaults
+        return defaults(service)
+    @app.post('/plugin-library/h0/preview')
+    def h0_preview(request:Request,body:dict):
+        user(request)
+        from .h0 import resolve_selection
+        result=resolve_selection(service,body['selection'])
+        return {k:result[k] for k in ('selection','compositionId','plugins')}
+    @app.get('/campaigns/{id}/h0')
+    def h0_summary(id:str,request:Request):
+        user(request)
+        from .h0 import activity_summary
+        return activity_summary(service,id)
     @app.get('/plugin-library/{id}')
     def library_detail(id:str,request:Request,file:str|None=None):
         user(request);return service.plugin_library.detail(id,file)

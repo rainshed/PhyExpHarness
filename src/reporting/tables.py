@@ -94,6 +94,7 @@ def plugin_changes(previous, current):
 def build_tables(candidates, batches, trials, campaign=None, annotations=None, batch_id=None):
     campaign, annotations = campaign or {}, annotations or {}
     candidates = sorted((candidate_view(c) for c in candidates), key=lambda c: (c.get('createdAt', 0), c['id']))
+    if campaign.get('h0CandidateId'):candidates.sort(key=lambda c:c['id']!=campaign['h0CandidateId'])
     batches = sorted(batches, key=lambda b: b['round'])
     batch_candidates={b['id']:b['candidateId'] for b in batches}
     trials=[{**t,'candidateId':t.get('candidateId',batch_candidates.get(t.get('batchId')))} for t in trials]
@@ -133,6 +134,7 @@ def build_tables(candidates, batches, trials, campaign=None, annotations=None, b
         parent = c.get('parentId')
         version_rows.append({'id': c['id'], 'label': labels[c['id']], 'description': c.get('description', ''),
             'displayName': labels[c['id']]+' · '+(c.get('displayName') or ('原始基线' if not members else '、'.join(plugin_rows[m['pluginId']]['displayName'] for m in members)+'版')),
+            'role':'H0' if c['id']==campaign.get('h0CandidateId') else None,'compositionId':c.get('compositionId'),
             'bundleId': c['bundleId'], 'project':c.get('project'), 'executionContract':c.get('executionContract'), 'parentId': parent, 'parentLabel': labels.get(parent), 'plugins': members,
             'final': c['id'] == campaign.get('finalCandidateId'), 'retained': c['id'] == campaign.get('retainedCandidateId'),
             'assemblyStatus': c.get('check', {}).get('status', 'unknown'),

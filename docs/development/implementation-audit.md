@@ -99,3 +99,7 @@
 2026-10-26，从 76d95a6 开始实施。[插件库](../../src/control/plugin_library.py)实现独立内容登记、历史补录进度、删除记录、修订与幂等、引用保护和宽限期清理；[候选接入](../../src/control/process_candidates.py)在构建前保存可定位插件，失败也保留源码。库 HTTP 路由仅用户可调用。
 
 [库专项](../../tests/unit/plugin_library_test.py) 7 项与[候选专项](../../tests/unit/process_candidates_test.py) 5 项通过，覆盖身份、失败源码、内容完整性、来源脱离、删除/恢复、依赖保留、重扫续接和用户/Meta 路由隔离；此前插件相关 22 项通过。尚未完成装配、H0 入口、完整并发/浏览器/容器验收；不把单元结果当作全部功能通过。后续按[任务书](../plans/plugin-library-and-h0.md)补齐验证。
+
+### 用户选择起点的冻结与重放
+
+[H0 组合器](../../src/control/h0.py)、[创建服务](../../src/control/service.py)及[候选事务](../../src/control/store.py)保存准确选择与显式 H0 引用；新 process 活动不自动提交基线。[创建专项](../../tests/unit/h0_creation_test.py)验证非空起点、创建后删除、原键重放、工作区偏离拒绝、多任务但一次实验上限以及用户/Meta API 边界。原生加载和恢复测试见[执行工程](../architecture/execution.md)；完整浏览器与交付验证仍按[任务书](../plans/plugin-library-and-h0.md)登记。

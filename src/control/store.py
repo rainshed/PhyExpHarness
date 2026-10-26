@@ -431,10 +431,11 @@ class Store:
             self._finish_batches(db,id)
             c=self._save(db,'campaigns',c);self._event(db,id,action,changes=changes)
             return self._remember(db,id,'control',key,payload,c)
-    def candidate(self,campaign,bundle,description,parent=None,check=None,research_refs=None):
+    def candidate(self,campaign,bundle,description,parent=None,check=None,research_refs=None,*,h0=False):
         with self.connection(True) as db:
             c=self._get(db,'campaigns',campaign)
             if c['explorationClosed'] or c['state'] not in ['draft','running']:raise Refused('Search writes are closed')
+            if h0 and (c.get('h0CandidateId') or c['state']!='draft'):raise Refused('H0 已冻结，不能重新选择')
             if parent and self._get(db,'candidates',parent)['campaignId']!=campaign:raise Refused('Candidate belongs to another Campaign')
             existing=[x for x in self._list(db,'candidates',campaign) if x['bundleId']==bundle['id']]
             if research_refs is not None:
@@ -446,6 +447,9 @@ class Store:
             row=self._save(db,'candidates',{'id':identity('candidate'),'campaignId':campaign,'bundleId':bundle['id'],
                 'bundlePath':bundle['path'],'plugins':bundle['plugins'],'metaCompositionId':c['config'].get('metaComposition',{}).get('id'),'parentId':parent,'description':description,
                 'check':check or {'status':'pending'},'createdAt':self.clock()})
+            if h0:
+                row.update(role='H0',compositionId=c['config']['h0CompositionId']);row=self._save(db,'candidates',row)
+                c['h0CandidateId']=row['id'];self._save(db,'campaigns',c)
             if research_refs is not None:research.bind_candidate(db,campaign,row,research_refs)
             self._event(db,campaign,'candidate_frozen',candidateId=row['id']);return row
     def update_plan(self,campaign,changes,reason,key,expected_revision,source='meta'):
