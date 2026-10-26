@@ -80,7 +80,11 @@ def validate_artifact(path, entrypoint, limit):
         files = set()
         for item in members:
             name = item.name.removeprefix('./').rstrip('/')
-            if not name: continue
+            # Docker's tar stream may include the copied directory itself as
+            # '.' or './'. Only a directory can stand for the artifact root.
+            if name in ('', '.'):
+                if item.isdir(): continue
+                raise ValueError('Artifact root must be a directory')
             safe_relative(name)
             if not (item.isfile() or item.isdir() or item.issym() or item.islnk()):
                 raise ValueError('Artifact contains a non-file object')

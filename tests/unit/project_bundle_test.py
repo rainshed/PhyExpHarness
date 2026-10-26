@@ -60,6 +60,21 @@ class ProjectTests(unittest.TestCase):
                 item = tarfile.TarInfo('run.sh'); item.type = kind; item.linkname = target; archive.addfile(item)
             with self.assertRaises(ValueError): validate_artifact(self.artifact, ['run.sh'], 10000)
 
+    def test_docker_tar_root_directory_is_valid_but_root_links_are_rejected(self):
+        for root_name in ('.', './'):
+            with self.subTest(root_name=root_name):
+                with tarfile.open(self.artifact, 'w') as archive:
+                    root = tarfile.TarInfo(root_name); root.type = tarfile.DIRTYPE
+                    archive.addfile(root)
+                    entry = tarfile.TarInfo('./run.sh'); entry.size = 2
+                    archive.addfile(entry, io.BytesIO(b'ok'))
+                validate_artifact(self.artifact, ['run.sh'], 10000)
+        with tarfile.open(self.artifact, 'w') as archive:
+            root = tarfile.TarInfo('.'); root.type = tarfile.SYMTYPE; root.linkname = '/outside'
+            archive.addfile(root)
+        with self.assertRaisesRegex(ValueError, 'root must be a directory'):
+            validate_artifact(self.artifact, ['run.sh'], 10000)
+
     def test_frozen_artifact_tampering_rejected(self):
         frozen = self.frozen(); artifact = resolve(frozen['path']).asset('candidate.tar')
         artifact.chmod(0o644); artifact.write_bytes(b'changed')
