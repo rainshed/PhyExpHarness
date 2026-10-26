@@ -88,7 +88,7 @@ def settings(args, root=ROOT):
     parsed = urlsplit(url)
     if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost') or parsed.username or parsed.password or parsed.path not in ('', '/') or parsed.query or parsed.fragment:
         raise Problem('nonlocal_control_url', '本地命令只连接回环 HTTP 后台。', '核对 PHYEXP_CONTROL_URL；远端接入由部署侧负责。')
-    if parsed.port and parsed.port != control_port:
+    if (parsed.port or 80) != control_port:
         raise Problem('control_port_mismatch', 'PHYEXP_CONTROL_URL 与后台端口不一致。', '同时明确 --control-port，或清除冲突的环境变量。')
     return {'source': str(Path(root).resolve()), 'data_dir': str(data),
             'quantum_harbor': location('quantum_harbor', 'PHYEXP_QUANTUM_HARBOR'),

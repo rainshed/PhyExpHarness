@@ -2,7 +2,7 @@
 
 适用：主线源码、标准 Docker/Harbor、本地数据目录。先了解[核心概念](../product/concepts.md)，详细命令来源为[package.json](../../package.json)。
 
-Agent 可按[安装流程](agent-installation.md)运行 setup/doctor；统一启动和首次实验入口仍在[实施中](../plans/agent-installation.md)。主项目使用独立 Python 锁，后台与 UI 共用数据目录约定。现有检查通过不等于新机器完整安装已验收。
+Agent 可直接按[安装流程](agent-installation.md)执行 setup、doctor、start 和首次实验命令。主项目使用独立 Python 锁，后台与 UI 共用数据目录约定；各验证层次分别记录。
 
 ## 安装与构建
 
@@ -31,7 +31,16 @@ build 生成 `knowledge/plugin-sdk/reference/` 和 Studio 的 `lib/client.js`；
 
 ## 启动后台与工作台
 
-在已激活 Python 环境的终端启动后台：
+推荐统一启动；需要打开浏览器时加 --open：
+
+```sh
+python3 scripts/phyexp.py start --quantum-harbor /absolute/path/to/Quantum-Harbor --open
+python3 scripts/phyexp.py status
+```
+
+统一入口记录本地进程与配置，验证后台和 UI 桥身份，重复执行复用实例。详细登录、重试与首次实验步骤见 Agent 安装流程。
+
+手动启动仍可用。在已激活 Python 环境的终端启动后台：
 
 ```sh
 python -m src.control.server --quantum-harbor /absolute/path/to/Quantum-Harbor

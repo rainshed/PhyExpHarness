@@ -1,11 +1,12 @@
 import {useState,useEffect,useRef} from 'react';
 import {api,defaults,createDraftStore,createCommands} from '@phyexp/meta-workbench-client';
 import {useCampaignData,useResource} from '@phyexp/meta-workbench-client/react';
+import {entryCampaign} from '../entry-link.mjs';
 
 // Studio owns presentation and focus. The public client owns reads and commands.
 export function useWorkbench(){
  const [session]=useState(()=>{try{return {store:createDraftStore(localStorage,'studio',defaults,{legacy:true}),error:''}}catch(e:any){return {store:null,error:'无法读取或保存活动草稿：'+e.message}}});
- const [selected,setSelected]=useState(()=>session.store?.read().selected||'');
+ const [selected,setSelected]=useState(()=>entryCampaign(window.location.hash)||session.store?.read().selected||'');
  const [config,setConfig]=useState<any>(()=>({...(session.store?.read().config||defaults),trialTimeSeconds:null}));
  const [deleteOpen,setDeleteOpen]=useState(false);
  const data=useCampaignData(selected,deleteOpen),c=data.campaign;
@@ -36,6 +37,10 @@ export function useWorkbench(){
   setPluginReturn(false);navigate('compare');
  };
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[]);
+ useEffect(()=>{
+  const follow=()=>{const id=entryCampaign(window.location.hash);if(id){setSelected(id);setCreating(false);setSettingsOpen(false);setView('overview')}};
+  window.addEventListener('hashchange',follow);return()=>window.removeEventListener('hashchange',follow);
+ },[]);
  useEffect(()=>{if(data.error)setError(data.error)},[data.error]);
  useEffect(()=>{if(data.selectionMissing){
   setReadingPages((old:any)=>{const next={...old};delete next[selected];return next});

@@ -8,6 +8,7 @@
 |---|---|---|
 | 主项目独立依赖锁，后台/UI 一致处理 XDG 与显式路径 | [主项目锁](../../requirements-control.lock)、[UI 路径](../../scripts/local-paths.mjs)、[后台路径](../../src/control/paths.py) | [跨语言路径检查](../../tests/unit/local-paths.test.mjs)；新虚拟环境按锁安装及 pip check |
 | 安装可复用，缺项自检提供结构化恢复信息 | [安装入口](../../scripts/phyexp.py)、[安装与自检](../../src/onboarding/install.py) | [安装行为](../../tests/unit/onboarding_install_test.py) |
+| 统一启动核对实例与 UI 桥，活动命令保留创建/启动身份 | [本地启动](../../src/onboarding/runtime.py)、[首次实验](../../src/onboarding/experiment.py) | [进程行为](../../tests/unit/onboarding_runtime_test.py)、[首次实验恢复](../../tests/unit/onboarding_experiment_test.py)、[导航链接](../../tests/unit/onboarding-links.test.mjs) |
 | 新活动采用完整工程与当前策略，回放保留原绑定 | [service.py](../../src/control/service.py)、[meta_context.py](../../src/control/meta_context.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[meta_contracts_test](../../tests/unit/meta_contracts_test.py) |
 | 候选可替换框架、工具、会话和恢复 | [工程冻结](../../src/execution/bundle/project.py)、[默认工程](../../templates/harness/default/harness.json) | [process-strategies](../../tests/contracts/process-strategies.test.mjs)、[project_bundle_test](../../tests/unit/project_bundle_test.py) |
 | check 是隔离构建/入口核验，不是科学实验 | [process_candidates.py](../../src/control/process_candidates.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[project-build](../../tests/contracts/project-build.py) |

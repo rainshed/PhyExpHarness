@@ -10,6 +10,8 @@ Studio → 公共客户端 → 宿主 API 桥 → 控制后台。具体 UI 不�
 - [meta-workbench-bridge](../../packages/meta-workbench-bridge/package.json)：独立宿主桥、原生来源和会话认证、用户请求身份，浏览器不取得后台 user-token。
 - [meta-workbench-studio](../../packages/meta-workbench-studio/package.json)：导航、页面、组件、焦点与本版样式。当前没有独立公共展示组件包。
 
+本地统一启动入口 scripts/phyexp.py 经已认证 /health 核对源码、数据与外部任务目录，并通过宿主会话验证 UI 桥。登录链接只写私有文件，普通状态输出不包含令牌。`#phyexp` 打开 Studio，`#phyexp/<活动 ID>` 选择活动；这些链接只导航，不创建或启动实验。
+
 ## 页面与状态
 
 [shell/features.tsx](../../packages/meta-workbench-studio/client/shell/features.tsx)集中注册进化概览、插件与动机、版本对比、实验记录、研究报告、运行详情、获取 Harness。features 实现页面，components 保存本版复用展示，shell 维护导航和读取状态；删页面同时处理注册、跨页入口和测试。

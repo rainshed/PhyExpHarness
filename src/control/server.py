@@ -84,7 +84,9 @@ def make_app(service,supervise=True):
         if request.state.identity['role']!='user':raise Refused('User authority required')
     @app.get('/health')
     def health(request:Request):
-        user(request);return {'schemaVersion':1,'status':'running','service':'independent-control','campaigns':len(service.store.list('campaigns'))}
+        user(request)
+        return {'schemaVersion':1,'status':'running','service':'independent-control','campaigns':len(service.store.list('campaigns')),
+                'instance':{'source':str(service.source),'dataDir':str(service.data),'quantumHarbor':str(service.quantum)}}
     @app.post('/reference-native-sync')
     def reference_sync(request:Request,body:dict):
         user(request);return service.references.catalog.sync(body)

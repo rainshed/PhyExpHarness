@@ -13,6 +13,7 @@ import {studioStyles} from './styles';
 import {readingStyles} from './reading-styles';
 import {reportGroups} from './readability.mjs';
 import {campaignStatus} from './components/campaign-status.mjs';
+import {entryCampaign} from './entry-link.mjs';
 
 export const inject=['slots','layout'];
 const navigation=features.map(({id,title,icon})=>[id,title,icon]);
@@ -37,4 +38,8 @@ export function Studio(){const w=useWorkbench();const [menu,setMenu]=useState(fa
 export function apply(ctx:any){
  ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'phyexp-workbench-studio'},()=> <Studio/>));
  ctx.slots.inject('sidebar.footer.action',()=>ctx.slots.register({name:'sidebar.footer.action',id:'phyexp-workbench-studio-nav'},()=> <button aria-label="研究工作台" title="打开研究工作台" style={{width:32,height:32,padding:0,fontSize:22,borderRadius:7}} onClick={()=>ctx.layout.selectPanel('phyexp-workbench-studio')}>φ</button>));
+ if(typeof window!=='undefined')ctx.effect(()=>{
+  const open=()=>{if(entryCampaign(window.location.hash)!==null)ctx.layout.selectPanel('phyexp-workbench-studio')};
+  open();window.addEventListener('hashchange',open);return()=>window.removeEventListener('hashchange',open);
+ });
 }
