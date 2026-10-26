@@ -28,6 +28,7 @@
 
 ## 文档入口
 
+- 开发变更须按[文档维护规则](docs/development/documentation.md)核对并同步相关文档，将文档与实现一致作为任务完成条件。
 - [完整文档导航](docs/README.md)：按了解、使用、开发三条路线阅读。
 - [设计哲学](docs/product/philosophy.md)、[产品要求](docs/product/requirements.md)：目标与不可削弱的边界。
 - [架构总览](docs/architecture/overview.md)：模块、依赖与当前默认契约。
