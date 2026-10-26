@@ -13,6 +13,7 @@
 ## 使用指南
 
 - [快速开始](guides/quickstart.md)：依赖、构建、后台与工作台启动。
+- [准备 Quantum-Harbor](guides/quantum-harbor.md)：外部任务来源、版本、基础镜像与无模型检查。
 - [模型配置](guides/models.md)：主线模型目录、认证、连接测试及参考模型入口。
 - [活动操作](guides/campaigns.md)：创建、准备、计划、实验、选择、暂停和停止。
 - [证据与报告](guides/evidence-and-reports.md)：成功率、研究动机、比较、历史来源及完整证据。

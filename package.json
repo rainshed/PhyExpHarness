@@ -25,5 +25,8 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "engines": {
+    "node": ">=24.13.0 <25"
+  }
 }

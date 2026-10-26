@@ -15,6 +15,8 @@ check:docs 校验受维护 Markdown 的本地链接、锚点、当前页面可�
 
 build 验证 SDK 资料生成和 UI 打包。单元检查通过不表示容器、官方任务环境、真实服务或科学效果已验证。主要声明的测试对应见[实现核对表](implementation-audit.md)。
 
+主项目 Python 使用 requirements-control.lock，输入为 requirements-control.txt；更新时执行 `uv pip compile requirements-control.txt --python-version 3.13 --generate-hashes --output-file requirements-control.lock`，并在新虚拟环境安装该锁及运行 `python -m pip check`。独立导出使用 templates/standalone 自己的锁，不将其安装到主项目环境。
+
 ## 原生与容器契约
 
 ```sh
