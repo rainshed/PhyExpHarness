@@ -2,13 +2,20 @@
 
 适用：主线源码、标准 Docker/Harbor、本地数据目录。先了解[核心概念](../product/concepts.md)，详细命令来源为[package.json](../../package.json)。
 
-当前安装与启动仍需按下文手动执行；统一安装、自检、启动和首次实验命令尚未提供，实施与验收范围见[Agent 安装计划](../plans/agent-installation.md)。主项目使用独立 Python 锁，后台与 UI 共用数据目录约定。现有检查通过不等于新机器完整安装已验收。
+Agent 可按[安装流程](agent-installation.md)运行 setup/doctor；统一启动和首次实验入口仍在[实施中](../plans/agent-installation.md)。主项目使用独立 Python 锁，后台与 UI 共用数据目录约定。现有检查通过不等于新机器完整安装已验收。
 
 ## 安装与构建
 
 准备 Node.js 24.13+（24.x）、Python 3.13、可运行 Linux 容器的 Docker，以及显式指定的 Quantum-Harbor checkout。Harbor Python 依赖由主项目与独立包各自的锁固定为 0.18.0；DSH 由根 npm 锁固定为 0.2.1-rc.2。按[Quantum-Harbor 准备指南](quantum-harbor.md)获取指定源码并构建基础 agent/verifier 镜像，PhyExpHarness 不附带这些外部资产。
 
 在仓库根目录执行：
+
+```sh
+python3 scripts/phyexp.py setup
+python3 scripts/phyexp.py doctor --project-only
+```
+
+手动安装的等价步骤为：
 
 ```sh
 npm ci

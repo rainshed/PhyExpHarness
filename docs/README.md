@@ -13,6 +13,7 @@
 ## 使用指南
 
 - [快速开始](guides/quickstart.md)：依赖、构建、后台与工作台启动。
+- [Agent 安装流程](guides/agent-installation.md)：必要输入、可执行命令、成功条件与恢复。
 - [准备 Quantum-Harbor](guides/quantum-harbor.md)：外部任务来源、版本、基础镜像与无模型检查。
 - [模型配置](guides/models.md)：主线模型目录、认证、连接测试及参考模型入口。
 - [活动操作](guides/campaigns.md)：创建、准备、计划、实验、选择、暂停和停止。

@@ -9,7 +9,7 @@ Meta 使用通用 Agent 能力开发插件、组织完整候选工程、安排 Q
 主线维护项目功能、标准 Docker/Harbor 执行环境、本地证据存储及通用配置契约。具体机器的运行环境适配、远程存储、服务托管、网络接入和实例发布由独立部署分支维护。
 
 - 了解目标：[设计哲学](docs/product/philosophy.md)、[产品要求](docs/product/requirements.md)。
-- 安装使用：[快速开始](docs/guides/quickstart.md)、[活动操作](docs/guides/campaigns.md)。
+- 安装使用：[Agent 安装流程](docs/guides/agent-installation.md)、[快速开始](docs/guides/quickstart.md)、[活动操作](docs/guides/campaigns.md)。
 - 修改项目：[架构总览](docs/architecture/overview.md)、[开发流程](docs/development/workflow.md)。
 - 查找专题：[完整文档导航](docs/README.md)、[实现核对表](docs/development/implementation-audit.md)。
 

@@ -21,6 +21,7 @@ Studio → 公共客户端 → 宿主 API 桥 → 独立控制后台
 |---|---|---|
 | `src/execution/` | 工程/插件冻结、Runner、模型宿主、Harbor 与参考适配 | [执行工程](execution.md)、[版本与导出](versions-and-export.md) |
 | `src/control/` | 活动、数据库、限额、Meta、供应商、归集工作和删除协调 | [控制后台](control.md)、[Meta](meta.md) |
+| `src/onboarding/` | 标准库安装、自检和本地用户命令，不拥有调度或评分 | [Agent 安装流程](../guides/agent-installation.md) |
 | `src/evidence/` | 原件、材料、摘要核验、统一计分与查询快照 | [证据与存储](evidence-storage.md) |
 | `src/reporting/`、`src/exporting/` | 报告事实/阅读与冻结项目交付 | [证据与存储](evidence-storage.md)、[版本与导出](versions-and-export.md) |
 | `packages/meta-harness/` | 原生领域工具及历史工具资产 | [Meta](meta.md) |
