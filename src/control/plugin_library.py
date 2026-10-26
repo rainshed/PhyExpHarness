@@ -9,7 +9,7 @@ import re
 import shutil
 import threading
 from pathlib import Path
-from jsonschema.exceptions import SchemaError
+from jsonschema.exceptions import SchemaError, ValidationError
 from .store import Refused, Conflict, encoded, identity
 from src.evidence.objects import Objects
 from src.execution.bundle.freeze import _object
@@ -18,7 +18,30 @@ from src.execution.bundle.project import SourceFiles
 
 KIND = 'execution-plugin-library-v1'
 ASSEMBLY = 'dsh-plugin-v1'
+ASSEMBLY_SCHEMA=json.loads((Path(__file__).resolve().parents[2]/'schemas/execution/plugin-assembly.schema.json').read_text())
 HEX = re.compile(r'[a-f0-9]{64}')
+
+
+def validate_description(manifest):
+    if not isinstance(manifest, dict) or any(k in manifest and not isinstance(manifest[k], str) for k in ('name', 'version', 'displayName', 'functionSummary', 'purpose', 'mechanism')):
+        raise ValueError('插件名称、版本与说明必须使用文本')
+
+
+def local_schema(schema):
+    """Plugin configuration validation must not fetch source-controlled URLs."""
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key in ('$ref', '$dynamicRef', '$recursiveRef') and isinstance(value, str) and not value.startswith('#'):
+                raise ValueError('配置规范只能引用当前文档内的定义')
+            local_schema(value)
+    elif isinstance(schema, list):
+        for value in schema: local_schema(value)
+
+
+def dependencies(manifest):
+    assembly=manifest.get('assembly')
+    value=assembly.get('requires') if isinstance(assembly,dict) else None
+    return [x for x in value if isinstance(x,str) and HEX.fullmatch(x)] if isinstance(value,list) else []
 
 
 class PluginLibrary:
@@ -29,11 +52,24 @@ class PluginLibrary:
         self.mutex, self.local = threading.RLock(), threading.local()
         self.worker = None
         with self.store.connection(True) as db:
-            for table in ('plugin_library', 'plugin_library_jobs'):
+            for table in ('plugin_library', 'plugin_library_jobs', 'plugin_library_publications'):
                 db.execute(f'CREATE TABLE IF NOT EXISTS {table}(id TEXT PRIMARY KEY,data TEXT NOT NULL)')
             for row in self.rows(db, 'plugin_library_jobs'):
                 if row['state'] == 'running':
                     row['state'] = 'pending'; self.write(db, row, 'plugin_library_jobs')
+
+        self.recover_publications()
+
+    def recover_publications(self):
+        with self.locked():
+            self.recovery_issues=[]
+            with self.store.connection() as db:pending=self.rows(db,'plugin_library_publications')
+            for item in pending:
+                try:
+                    files,manifest=self.contents(item['id'])
+                    for source in item['sources']:self.save(files,manifest,source)
+                except (OSError,ValueError,KeyError) as error:
+                    self.recovery_issues.append({'id':item['id'],'reason':'源码发布未完成；重新补录原快照后核对。'+str(error)[:200]})
 
     @contextlib.contextmanager
     def locked(self):
@@ -79,6 +115,7 @@ class PluginLibrary:
     def save(self, files, manifest, source):
         """Store only the plugin's declared closure, never its parent workspace."""
         if not files: raise ValueError('插件源码未定位')
+        validate_description(manifest)
         for name in files:
             safe_relative(name)
             if name == 'library.json': raise ValueError('Reserved plugin asset: library.json')
@@ -90,6 +127,11 @@ class PluginLibrary:
             with self.store.connection() as db:
                 prior=db.execute('SELECT data FROM plugin_library WHERE id=?',(expected,)).fetchone()
                 if prior and source.get('kind')=='platform-template' and json.loads(prior['data'])['deleted']:return expected
+            with self.store.connection(True) as db:
+                pending=db.execute('SELECT data FROM plugin_library_publications WHERE id=?',(expected,)).fetchone()
+                sources=json.loads(pending['data'])['sources'] if pending else []
+                if source not in sources:sources.append(source)
+                self.write(db,{'id':expected,'sources':sources},'plugin_library_publications')
             id, _ = _object(self.root, KIND, bodies)
             # _object converges concurrent publications; verify pre-existing bytes too.
             self.contents(id)
@@ -101,11 +143,14 @@ class PluginLibrary:
                     'description': manifest.get('functionSummary') or manifest.get('purpose') or '',
                     'manifest': manifest, 'bytes': sum(map(len, files.values())), 'files': sorted(files),
                     'createdAt': self.store.clock(), 'revision': 0, 'deleted': False, 'sources': [], 'checks': []}
-                if prior and source in row['sources']:return id
-                row['sources'].append(source)
+                if prior and all(s in row['sources'] for s in sources):
+                    db.execute('DELETE FROM plugin_library_publications WHERE id=?',(id,));return id
+                for item in sources:
+                    if item not in row['sources']:row['sources'].append(item)
                 row['revision'] += 1
                 row['updatedAt'] = self.store.clock()
                 self.write(db, row)
+                db.execute('DELETE FROM plugin_library_publications WHERE id=?',(id,))
         return id
 
     def capture(self, contents, spec, source):
@@ -133,10 +178,12 @@ class PluginLibrary:
                 manifest.update(metadata)
                 if metadata.get('name', name) != name: raise ValueError('插件声明名称不一致')
                 manifest.setdefault('name', name); manifest.setdefault('version', 'unversioned')
-                id = self.save(files, manifest, {**source, 'pluginName': name, 'sourcePath': path})
-                result['plugins'].append({'id': id, 'path': path, 'name': name})
+                validate_description(manifest)
             except (ValueError, KeyError, TypeError) as error:
-                result['issues'].append({'name': name, 'reason': str(error)})
+                result['issues'].append({'name': name, 'reason': str(error)});continue
+            # Disk publication/integrity failures are not a successful capture.
+            id = self.save(files, manifest, {**source, 'pluginName': name, 'sourcePath': path})
+            result['plugins'].append({'id': id, 'path': path, 'name': name})
         return result
 
     def checked(self, capture, source, status, candidate=None, error=None):
@@ -152,17 +199,20 @@ class PluginLibrary:
     def compatibility(self, row):
         assembly = row['manifest'].get('assembly', {})
         if row['deleted']: return {'state': 'deleted', 'reason': '用户已从库中删除'}
-        if assembly.get('contract') != ASSEMBLY:
+        if not isinstance(assembly,dict) or assembly.get('contract') != ASSEMBLY:
             return {'state': 'needs_adaptation', 'reason': '缺少当前基础模板的装配声明；源码仍可阅读'}
         try:
             entry = str(safe_relative(assembly['entry']))
             if entry not in row['files']: raise ValueError('入口不在插件源码中')
             from jsonschema import Draft202012Validator
+            Draft202012Validator(ASSEMBLY_SCHEMA).validate(assembly)
             Draft202012Validator.check_schema(assembly.get('configSchema', {}))
+            local_schema(assembly.get('configSchema', {}))
             if not isinstance(assembly.get('requires', []), list) or any(not isinstance(x, str) or not HEX.fullmatch(x) for x in assembly.get('requires', [])):
                 raise ValueError('依赖必须绑定准确插件摘要')
+            if not isinstance(assembly.get('conflicts',[]),list) or any(not isinstance(x,str) or not x for x in assembly.get('conflicts',[])):raise ValueError('冲突必须是插件名称或准确摘要列表')
             return {'state': 'declared', 'reason': '已声明装配接口，实际组合仍需隔离构建与加载检查'}
-        except (ValueError, KeyError, TypeError, SchemaError) as error: return {'state': 'needs_adaptation', 'reason': str(error)}
+        except (ValueError, KeyError, TypeError, SchemaError, ValidationError) as error: return {'state': 'needs_adaptation', 'reason': str(error)}
 
     def public(self, row):
         return {**row, 'compatibility': self.compatibility(row),
@@ -175,12 +225,34 @@ class PluginLibrary:
         query = query.casefold().strip()
         rows = [r for r in rows if (includeDeleted or not r['deleted']) and (not query or query in json.dumps({k:r[k] for k in ('name','version','displayName','description','sources')}, ensure_ascii=False).casefold())]
         rows.sort(key=lambda r: (r['updatedAt'], r['id']), reverse=True)
-        return {'items': [self.public(r) for r in rows[offset:offset+limit]], 'total': len(rows), 'offset': offset,
+        return {'publicationIssues':self.recovery_issues,'items': [self.public(r) for r in rows[offset:offset+limit]], 'total': len(rows), 'offset': offset,
                 'nextOffset': offset+limit if offset+limit < len(rows) else None}
+
+    def origins(self,row,exclude_campaign=None):
+        campaigns={c['id']:c for c in self.store.list('campaigns')}
+        candidates=self.store.list('candidates');labels={}
+        for cid,campaign in campaigns.items():
+            local=sorted((c for c in candidates if c['campaignId']==cid),key=lambda c:(c.get('createdAt',0),c['id']))
+            if campaign.get('h0CandidateId'):local.sort(key=lambda c:c['id']!=campaign['h0CandidateId'])
+            labels.update({c['id']:c.get('versionLabel','H'+str(i)) for i,c in enumerate(local)})
+        origins=[];seen=set()
+        for source in row['sources']:
+            cid=source.get('campaignId')
+            if cid and cid==exclude_campaign:continue
+            checked=next((c for c in row['checks'] if c.get('campaignId')==cid and c.get('checkId')==source.get('checkId') and c.get('candidateId')), {})
+            candidate=source.get('candidateId') or checked.get('candidateId')
+            key=(cid,candidate or source.get('checkId'),source.get('kind'))
+            if key in seen:continue
+            seen.add(key)
+            origins.append({**source,'candidateId':candidate,'candidateLabel':labels.get(candidate),
+                            'campaignName':campaigns.get(cid,{}).get('config',{}).get('name'),
+                            'available':not cid or cid in campaigns})
+        return origins
 
     def detail(self, id, file=None):
         with self.locked():
             row = self.public(self.get(id))
+            row['origins']=self.origins(row)
             if row['deleted'] and not (self.root/id).exists():
                 return {**row,'sourceStatus':'reclaimed','content':None,'runtimeStatus':'unknown','runs':[]}
             files, _ = self.contents(id)
@@ -201,7 +273,7 @@ class PluginLibrary:
     def references(self, id, db):
         campaigns = [json.loads(r['data']) for r in db.execute('SELECT data FROM campaigns')]
         pins = [c['id'] for c in campaigns if id in [p['id'] for p in c['config'].get('h0Selection', {}).get('plugins', [])]]
-        dependents = [r['id'] for r in self.rows(db) if not r['deleted'] and id in r['manifest'].get('assembly', {}).get('requires', [])]
+        dependents = [r['id'] for r in self.rows(db) if not r['deleted'] and id in dependencies(r['manifest'])]
         # Independent frozen candidate copies survive a library deletion too.
         snapshots = [r['id'] for r in self.store.list('candidates') if id in [p.get('id') for p in r.get('libraryCapture', {}).get('plugins', [])]]
         return {'campaigns': pins, 'plugins': dependents, 'candidateSnapshots': snapshots}
@@ -226,7 +298,20 @@ class PluginLibrary:
             for value in expected:
                 row = self.get(value['id'], db)
                 if row['name']!=anchor['name'] or row['revision']!=value['revision']: raise Conflict('插件库已变化，请重新查看')
-                if action=='restore': self.contents(row['id'])
+                if action=='restore':
+                    if not (self.root/row['id']).exists() and any(s.get('kind')=='platform-template' for s in row['sources']):
+                        from src.execution.bundle.project import snapshot
+                        contents,spec=snapshot(self.service.source/'templates/harness/default')
+                        for declaration in spec['plugins']:
+                            prefix=declaration['path']+'/'
+                            files=SourceFiles()
+                            for n,b in contents.items():
+                                if n.startswith(prefix):files[n[len(prefix):]]=b;files.modes[n[len(prefix):]]=contents.modes[n]
+                            bodies={**files,'library.json':canonical({'manifest':row['manifest'],'modes':files.modes})}
+                            expected_id=digest(canonical({'schemaVersion':1,'kind':KIND,'files':{n:digest(v) for n,v in bodies.items()}}))
+                            if expected_id==row['id']:_object(self.root,KIND,bodies)
+                    try:self.contents(row['id'])
+                    except FileNotFoundError as error:raise Refused('源码已释放；请先从仍存在的历史快照补录，再重新导入。') from error
                 row.update(deleted=action=='delete',revision=row['revision']+1,updatedAt=self.store.clock())
                 self.write(db,row)
             result = {'state':'deleted' if action=='delete' else 'available','versions':[v['id'] for v in expected]}
@@ -247,6 +332,7 @@ class PluginLibrary:
             capture=self.capture(contents,raw['project'],source)
         else:
             resolved=resolve(candidate['bundlePath'])
+            if resolved.manifest['id']!=candidate['bundleId']:raise ValueError('Frozen candidate identity mismatch')
             capture={'plugins':[],'issues':[]}
             for plugin in candidate_plugins(candidate):
                 try:
@@ -262,6 +348,7 @@ class PluginLibrary:
         return capture
 
     def rescan(self, key):
+        self.recover_publications()
         if not isinstance(key,str) or not 1<=len(key)<=200: raise Refused('Idempotency key required')
         with self.store.connection(True) as db:
             prior=self.store._idem(db,'plugin-library','rescan',key,{})
@@ -312,7 +399,7 @@ class PluginLibrary:
             pending=list(keep)
             while pending:
                 id=pending.pop()
-                for dependency in rows.get(id,{}).get('manifest',{}).get('assembly',{}).get('requires',[]):
+                for dependency in dependencies(rows.get(id,{}).get('manifest',{})):
                     if dependency not in keep:keep.add(dependency);pending.append(dependency)
             for id,row in rows.items():
                 if id in keep or not row['deleted'] or row['updatedAt']>=before:continue

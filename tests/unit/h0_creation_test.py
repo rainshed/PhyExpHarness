@@ -75,6 +75,32 @@ class H0CreationTests(unittest.TestCase):
         with self.assertRaisesRegex(Refused,'偏离'):self.service.build_candidate(c['id'],[],'H0')
         self.assertFalse(self.service.store.list('candidates',c['id']))
 
+    def test_unselected_catalog_and_origin_metadata_never_enter_activity_materials(self):
+        from src.execution.bundle.project import SourceFiles
+        files=SourceFiles();files['secret.mjs']=b'UNSELECTED_LIBRARY_SENTINEL'
+        secret=self.service.plugin_library.save(files,{'name':'private-historical','version':'1'}, {'campaignId':'PRIVATE_ORIGIN_SENTINEL'})
+        c=self.create(self.selection);cid=c['id'];candidate=self.service.build_candidate(cid,[],'H0')
+        materials=self.service.materials
+        self.assertEqual(materials.search(cid,'UNSELECTED_LIBRARY_SENTINEL',kind='plugin')['total'],0)
+        self.assertEqual(materials.search(cid,'PRIVATE_ORIGIN_SENTINEL',kind='version')['total'],0)
+        records=list(materials._records(cid,'plugin'));self.assertTrue(records)
+        for row in records:self.service.meta_api.files.material(cid,row)
+        directory=self.service.meta_api.files.directory(cid)
+        self.assertFalse(any(b'UNSELECTED_LIBRARY_SENTINEL' in p.read_bytes() for p in directory.rglob('*') if p.is_file()))
+        with self.assertRaises(Refused):materials.read(cid,'plugin:'+secret+':secret.mjs')
+        self.assertNotIn('PRIVATE_ORIGIN_SENTINEL',json.dumps(candidate))
+
+    def test_catalog_survives_actual_source_activity_deletion(self):
+        c=self.create(self.selection);cid=c['id'];candidate=self.service.build_candidate(cid,[],'H0')
+        id=self.selection['plugins'][0]['id'];lib=self.service.plugin_library
+        preview=self.service.deletions.preview(cid)
+        self.service.deletions.request(cid,preview['expectedRevision'],'delete-source')
+        self.service.deletions.advance(cid)
+        self.assertEqual(self.service.store.deletion(cid)['state'],'deleted')
+        self.assertTrue(lib.contents(id)[0]);self.assertFalse(Path(candidate['bundlePath']).exists())
+        self.assertTrue(resolve_selection(self.service,self.selection)['plugins'])
+        self.assertTrue(any(not s['available'] for s in lib.origins(lib.get(id)) if s.get('campaignId')==cid))
+
     def test_user_api_validation_and_meta_denial_before_lookup(self):
         c=self.create({**self.selection,'plugins':[]});cid=c['id']
         invalid=json.loads(json.dumps(self.selection));invalid['plugins'][0]['config']={}

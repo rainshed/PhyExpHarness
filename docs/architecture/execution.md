@@ -4,7 +4,7 @@
 
 ## 策略所有权
 
-Meta 从 [默认工程](../../templates/harness/default/harness.json)开始，可以改变语言/框架、入口、依赖、profile、提示、工具、终端、会话、辅助调用、上下文压缩及恢复。默认 DSH、bash/MCP 工具和异常恢复都是候选文件。平台不固定工具清单、请求次数或单会话策略，也不要求先测全部 H0。
+Meta 从用户选定并冻结的 H0 工程开始；平台提供[基础模板与推荐恢复插件](../../templates/harness/default/harness.json)，可以改变语言/框架、入口、依赖、profile、提示、工具、终端、会话、辅助调用、上下文压缩及恢复。默认 DSH、bash/MCP 工具和异常恢复都是候选文件。平台不固定工具清单、请求次数或单会话策略，也不要求先测全部 H0。
 
 不随候选变化的条件包括活动固定 Solver 与调用设置、任务公开范围、真实凭据边界、官方评分权威、隔离、benchmark 时限、用户活动上限和外部资源容量。候选可以申报插件用途与源码路径供阅读，但声明不授予权限、不构成策略白名单。
 
@@ -50,4 +50,4 @@ provenance 保留宿主启动/结束与 Solver 时钟，Harbor 原始阶段起�
 
 依赖必须全部出现在用户选择中，按依赖顺序加载；不自动升级或补选。每个带 npm 依赖的插件须有 package-lock.json，在原有隔离构建中安装，不在宿主运行插件。默认构建使用原生加载器检查全部所选插件实际激活，不调用 Solver；缺少服务和循环阻塞会使检查失败。空选择使用最小工程。运行上下文经普通插件配置的 runtimeContext 传入，deadline 不属于插件内容身份。
 
-[装配专项](../../tests/unit/h0_assembly_test.py)覆盖准确内容、删除默认、空组合、配置与依赖拒绝以及真实原生加载。活动创建和界面接入状态见[任务书](../plans/plugin-library-and-h0.md)。
+[装配专项](../../tests/unit/h0_assembly_test.py)覆盖准确内容、删除默认、空组合、配置与依赖拒绝以及真实原生加载。活动创建和用户流程见[插件库指南](../guides/plugin-library.md)，装配字段见[声明 schema](../../schemas/execution/plugin-assembly.schema.json)。

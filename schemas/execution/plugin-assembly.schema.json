@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "plugin-assembly-v1",
+  "type": "object",
+  "required": ["contract", "entry"],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {"const": "dsh-plugin-v1"},
+    "entry": {"type": "string", "minLength": 1},
+    "requires": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+    "conflicts": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "defaultConfig": {"type": "object"},
+    "configSchema": {"type": ["object", "boolean"]}
+  }
+}

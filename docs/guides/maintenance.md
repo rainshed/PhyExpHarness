@@ -72,3 +72,7 @@ session 必须是新目录，按工具要求与对象存储位于同一文件系
 ## 旧网关流的离线回放
 
 对受支持的 gateway-audit.jsonl，可运行 `node scripts/replay-model-streams.mjs DATA_DIR OUTPUT_JSON [PRIOR_REPLAY_JSON]`。脚本使用记录的时间与 chunk、校验输入摘要，不读取凭据、不调用模型或容器。它分析固定宿主流保护，不能把结果当作所有新候选自定义恢复策略的行为证明，也不修改原评分。
+
+## 插件库维护
+
+历史补录、删除记录、重新导入及未知请求处理见[插件库指南](plugin-library.md)。删除来源活动不清除已独立入库的源码；删库版本也不改写活动冻结资产。备份完整数据目录时需一并保留 control.sqlite 中的库索引/补录任务/发布登记与 objects/sha256 内容。不要仅备份活动子目录，也不要手动删仍受引用保护的库对象。

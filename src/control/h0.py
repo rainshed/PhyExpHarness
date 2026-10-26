@@ -4,11 +4,12 @@ import tempfile
 import shutil
 from pathlib import Path
 from jsonschema import Draft202012Validator, ValidationError
+from referencing.exceptions import Unresolvable
 from .store import Refused
 from .plugin_library import ASSEMBLY, HEX
 from src.execution.bundle.project import snapshot, SourceFiles
 from src.execution.bundle.freeze import _object
-from src.execution.bundle.manifest import canonical, digest, checked_path, safe_relative
+from src.execution.bundle.manifest import canonical, digest, checked_path, safe_relative, source_composition_id
 
 POLICY = 'user-h0-v1'
 TEMPLATE_KIND = 'execution-h0-template-v1'
@@ -62,6 +63,7 @@ def resolve_selection(service,selection=None,*,frozen=False):
         rows={};configs={};original_order=[]
         for chosen in selection['plugins']:
             if not isinstance(chosen,dict) or set(chosen)!={'id','config'}:raise Refused('插件选择必须包含准确版本和配置')
+            if not isinstance(chosen['config'],dict):raise Refused('插件配置必须是 JSON 对象')
             row=library.get(chosen['id'])
             if row['id'] in rows:raise Refused('不能重复选择相同插件版本')
             if row['deleted'] and not frozen:raise Refused('所选插件已从库中删除，请调整选择或明确重新导入：'+row['displayName'])
@@ -70,6 +72,7 @@ def resolve_selection(service,selection=None,*,frozen=False):
             assembly=row['manifest']['assembly']
             try:Draft202012Validator(assembly.get('configSchema',{})).validate(chosen['config'])
             except ValidationError as error:raise Refused('插件配置不符合规范：'+row['displayName']+'；'+error.message) from error
+            except (Unresolvable, RecursionError) as error:raise Refused('插件配置规范的内部引用无法解析：'+row['displayName']) from error
             if row['name'] in [r['name'] for r in rows.values()]:raise Refused('同一组合不能加载同名插件的多个版本')
             rows[row['id']]=row;configs[row['id']]=chosen['config'];original_order.append(row['id'])
         ordered=[];visiting=set()
@@ -132,7 +135,7 @@ def materialize(service,selection,destination):
 
 
 def composition_id(files):
-    return digest(canonical({'version':POLICY,'files':{n:{'sha256':digest(v),'mode':files.modes.get(n,0o644)} for n,v in files.items()}}))
+    return source_composition_id({n:digest(v) for n,v in files.items()}, files.modes)
 
 
 def activity_summary(service,campaign):
@@ -141,9 +144,9 @@ def activity_summary(service,campaign):
     for chosen in c['config'].get('h0Selection',{}).get('plugins',[]):
         row=service.plugin_library.get(chosen['id'])
         plugins.append({**chosen,'name':row['name'],'displayName':row['displayName'],'version':row['version'],
-                        'sources':row['sources'],'deletedFromLibrary':row['deleted']})
+                        'sources':service.plugin_library.origins(row,exclude_campaign=campaign),'deletedFromLibrary':row['deleted']})
     runs=[t for t in service.store.list('trials',campaign) if candidate and t.get('candidateId')==candidate['id']]
     return {'role':'H0','candidateId':candidate['id'] if candidate else None,'compositionId':c['config'].get('h0CompositionId'),
             'templateId':c['config'].get('h0Selection',{}).get('templateId'),'plugins':plugins,
-            'validation':'本活动尚未验证' if not any(t.get('startedAt') for t in runs) else '本活动已尝试运行；结果见实验记录',
+            'validation':'本活动尚未验证' if not any(t.get('startedAt') is not None for t in runs) else '本活动已尝试运行；结果见实验记录',
             'legacy':not bool(c['config'].get('h0Policy'))}

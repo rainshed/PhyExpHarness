@@ -7,7 +7,7 @@ import http from 'node:http';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 
-async function run(configure,reply){
+async function run(configure,reply,{deadlineOffset=70.12345}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-strategy-')),project=path.join(root,'candidate');
  fs.cpSync('templates/harness/default',project,{recursive:true});fs.symlinkSync(path.resolve('node_modules'),path.join(project,'node_modules'),'dir');
  const spec=JSON.parse(fs.readFileSync(path.join(project,'harness.json')));configure(spec,project);fs.writeFileSync(path.join(project,'harness.json'),JSON.stringify(spec));
@@ -18,13 +18,13 @@ async function run(configure,reply){
    const output=reply(body,calls.length,root);
    res.writeHead(200,{'content-type':'text/event-stream'});
    if(output.disconnect){res.destroy();return;}
-   const delta=output.calls?{role:'assistant',tool_calls:output.calls.map((c,i)=>({index:i,id:'c'+calls.length+'-'+i,type:'function',function:{name:c.name,arguments:typeof c.args==='string'?c.args:JSON.stringify(c.args)}}))}:{role:'assistant',content:output.text||'done'};
+   const delta=output.calls?{role:'assistant',tool_calls:output.calls.map((c,i)=>({index:i,id:'c'+calls.length+'-'+i,type:'function',function:{name:c.name,arguments:typeof c.args==='string'?c.args:JSON.stringify(c.args)}}))}:{role:'assistant',content:output.text??'done'};
    for(const chunk of [{choices:[{index:0,delta,finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:output.calls?'tool_calls':'stop'}]}])res.write('data: '+JSON.stringify({id:'r'+calls.length,object:'chat.completion.chunk',model:'fixture',...chunk})+'\n\n');
    res.end('data: [DONE]\n\n');
   }catch(error){providerError=error;res.writeHead(500);res.end('fixture assertion failed');}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const context={instruction:'Exercise candidate strategy.',workspace:root,outputDirectory:path.join(root,'out'),solver:{model:'fixture'},mcpServers:[],deadline:Date.now()/1000+70.12345,
+ const context={instruction:'Exercise candidate strategy.',workspace:root,outputDirectory:path.join(root,'out'),solver:{model:'fixture'},mcpServers:[],deadline:Date.now()/1000+deadlineOffset,
   modelChannel:{protocol:'completions',url:'http://127.0.0.1:'+server.address().port,token:'fixture'}};
  const file=path.join(root,'context.json');fs.writeFileSync(file,JSON.stringify(context));
  const child=spawn(process.execPath,[path.join(project,'run.mjs')],{env:{...process.env,PHYEXP_CONTEXT:file},stdio:['ignore','pipe','pipe']});
@@ -137,4 +137,16 @@ export function apply(ctx){let session,seq=0;
   });
   assert.equal(result.code,0,result.stderr);assert.equal(initializations,2);assert.equal(successful,2);
  }finally{mcp.closeAllConnections();await new Promise(resolve=>mcp.close(resolve));}
+});
+
+for(const enabled of [true,false])test('invalid argument response recovery is '+(enabled?'enabled':'absent')+' through ordinary plugin loading',async()=>{
+ const result=await run(spec=>{if(!enabled)spec.runtimeConfig.plugins=[];},(_body,n)=>n===1?{calls:[{name:'bash',args:'{bad'}]}:{text:'recovered'});
+ assert.equal(result.calls.length,2,result.stderr);
+ assert.equal(result.events.some(e=>e.type.startsWith('plugin:phyexp-request-recovery/')),enabled);
+});
+
+test('ordinary recovery uses the runtime deadline and refuses a retry beyond it',async()=>{
+ const result=await run(spec=>{spec.runtimeConfig.plugins[0].config.policy.contentRetryDelaysSeconds=[10];},()=>({calls:[{name:'bash',args:'{bad'}]}),{deadlineOffset:5});
+ assert.equal(result.calls.length,1,result.stderr);
+ assert.ok(result.events.some(e=>e.type==='plugin:phyexp-request-recovery/stopped'&&e.data.reason==='deadline'));
 });

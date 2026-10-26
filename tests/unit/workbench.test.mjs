@@ -37,9 +37,9 @@ test('saved drafts acquire the new-activity planning policy without replacing ch
 });
 
 const valid={name:'Test',tasks:['one'],maxRounds:'4',maxTrials:'4',concurrency:'1',wallTimeSeconds:'14400',trialTimeSeconds:'2700',softTokenLimit:'8000000',reserveSeconds:'1800',reserveTokens:'800000',stopMode:'strict'};
-test('creation identifies insufficient baseline slots without silently raising budget',()=>{
+test('creation permits fewer trials than tasks without raising budget',()=>{
  const config={...valid,tasks:['one','two','three'],maxTrials:'2'};
- assert.match(configError(config),/3 个任务.*至少需要 3 次实验.*当前最多实验次数为 2/);
+ assert.equal(configError(config),'');
  assert.equal(config.maxTrials,'2');
 });
 test('typed limits preserve integers and reject blank, unsafe and inconsistent bounds',()=>{

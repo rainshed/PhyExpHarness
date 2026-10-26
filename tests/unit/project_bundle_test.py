@@ -96,6 +96,22 @@ class ProjectTests(unittest.TestCase):
         new={**old,'bundleId':'b','project':{'framework':'b'},'candidateSources':'b'}
         self.assertEqual([x['kind'] for x in plugin_changes(old,new)],['project','sources'])
 
+    def test_source_identity_survives_export_and_differs_from_execution_identity(self):
+        from src.control.h0 import composition_id
+        files,_=snapshot(self.source)
+        self.artifact.write_bytes(source_tar(files))
+        receipt={'artifactSha256':digest(self.artifact.read_bytes()),'status':'passed','inputs':{'sourceModes':files.modes}}
+        bundles=[]
+        with patch('src.execution.bundle.project.build',return_value=(self.artifact,receipt)):
+            for model in ('first','second'):
+                bundles.append(freeze_project(ROOT,self.root/'objects',self.source,{'model':model},self.root/'cache',io.StringIO(),{}))
+        self.assertNotEqual(bundles[0]['id'],bundles[1]['id'])
+        for bundle in bundles:
+            record=export_project(bundle['path'],self.root/'exports')
+            self.assertEqual(record['sourceCompositionId'],composition_id(files))
+            self.assertEqual(resolve(record['path']).manifest['sourceCompositionId'],composition_id(files))
+            self.assertEqual(record['compositionId'],bundle['id'])  # Legacy execution identity remains compatible.
+
     def test_directory_links_executable_modes_and_dependency_free_project(self):
         directory=self.source/'implementation';directory.mkdir();entry=directory/'tool.sh';entry.write_text('#!/bin/sh\nexit 0\n');entry.chmod(0o755)
         (self.source/'alias').symlink_to('implementation',target_is_directory=True)

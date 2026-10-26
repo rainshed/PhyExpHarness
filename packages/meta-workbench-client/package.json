@@ -12,7 +12,8 @@
     "./create-attempt": "./create-attempt.mjs",
     "./model-catalog": "./model-catalog.mjs",
     "./evidence-text": "./evidence-text.mjs",
-    "./reference": "./reference.mjs"
+    "./reference": "./reference.mjs",
+    "./plugin-library": "./plugin-library.mjs"
   },
   "peerDependencies": {
     "react": "*"

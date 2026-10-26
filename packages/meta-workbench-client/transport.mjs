@@ -5,7 +5,7 @@ export function createRequest({base=API,fetch:fetcher=(...args)=>globalThis.fetc
   const response=await fetcher(base+route,{signal,method:body===undefined?'GET':'POST',
    headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
   const value=await response.json();
-  if(!response.ok)throw Error(value.error||`请求未完成（${response.status}）`);
+  if(!response.ok){const error=Error(value.error||`请求未完成（${response.status}）`);error.status=response.status;throw error;}
   return value;
  };
 }

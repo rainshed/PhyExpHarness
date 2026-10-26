@@ -115,7 +115,7 @@ export function useWorkbench(){
  const readSource=(plugin:any,file?:string)=>readDetail('source',async signal=>({...await api('/candidates/'+plugin.candidateId+'/plugins/'+plugin.id+(file?'?file='+encodeURIComponent(file):''),undefined,signal),plugin}));
  const latestReports=c?[...new Map(c.reports.map((r:any)=>[r.batchId||r.kind,r])).values()] as any[]:[];
  const finalReport=latestReports.find((r:any)=>r.kind==='final')||latestReports.find((r:any)=>r.kind==='status_summary');
- return {list:data.list,selected,setSelected,c,view,setView,creating,setCreating,config,setConfig,error,setError,connected:data.connected,busy,events:data.events,
+ return {pendingCreate:!!session.store?.read().attempt,list:data.list,selected,setSelected,c,view,setView,creating,setCreating,config,setConfig,error,setError,connected:data.connected,busy,events:data.events,
   report:report.value,setReport:report.setValue,reportLoading:report.loading,reportError:report.error?'报告读取失败：'+report.error+'。请重新选择报告重试。':'',
   evidence,setEvidence:(value:any)=>detail.setValue(value?{kind:'evidence',data:value}:null),source,setSource:(value:any)=>detail.setValue(value?{kind:'source',data:value}:null),
   limits,setLimits,notice,setNotice,models:data.models,modelCatalogNote:data.note,settingsOpen,setSettingsOpen,refreshModels:data.refreshModels,renaming,setRenaming,

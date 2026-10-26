@@ -17,8 +17,8 @@ export function LimitFields({config,onChange}:any){
    {field('concurrency','最高并发',{note:'例如 5 表示同时最多运行 5 个实验，不是总实验次数。'})}
   </div></section>
   <section className="mh-limit-section" aria-label="可选上限"><h3>可选上限</h3><p className="mh-muted">按需限制轮次或实验总数；不限制时，仍受总运行时间约束。</p><div className="mh-grid">
-   {field('maxRounds','最多轮次',{optional:true,suggested:8,note:'包含 H0 基线；一轮可以包含多个实验。'})}
-   {field('maxTrials','最多实验次数',{optional:true,suggested:Math.max(12,config.tasks?.length||0),note:`当前 ${config.tasks?.length||0} 个任务的 H0 基线至少需要 ${config.tasks?.length||0} 次实验。`})}
+   {field('maxRounds','最多轮次',{optional:true,suggested:8,note:config.h0Selection||config.executionContract==='harbor-process-v1'?'只计算实际提交的轮次；一轮可以包含多个实验。':'包含 H0 基线；一轮可以包含多个实验。'})}
+   {field('maxTrials','最多实验次数',{optional:true,suggested:Math.max(12,config.tasks?.length||0),note:config.h0Selection||config.executionContract==='harbor-process-v1'?'由 Meta 决定是否验证 H0 及验证次数；可少于所选任务数。':`当前 ${config.tasks?.length||0} 个任务的 H0 基线至少需要 ${config.tasks?.length||0} 次实验。`})}
   </div></section>
   <details className="mh-limit-advanced"><summary>高级运行设置</summary><p className="mh-muted">{benchmark?(config.executionTimePolicy?.version==='benchmark-time-v1'?'求解时限遵循各题 benchmark 配置；旧活动要求完整窗口。':'任务上限遵循 benchmark；剩余时间较短也允许尝试，活动到期仍会停止。'):planned?'单次时限与收尾预留可交给 Meta；自行设置时，分别作为单次上限和最低收尾预留。':'以下设置用于单次实验及活动收尾。'}</p><div className="mh-grid">
    {!benchmark&&field('trialTimeSeconds','单次时限（秒）',{optional:true,emptyLabel:planned?'由 Meta 分配':'自动',suggested:3600,note:planned?'留空由 Meta 为批次分配；填写则作为单次上限。':'自动：至多 1 小时，并受剩余探索时间约束。'})}

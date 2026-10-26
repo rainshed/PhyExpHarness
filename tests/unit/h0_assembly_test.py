@@ -45,6 +45,9 @@ class H0AssemblyTests(unittest.TestCase):
         defaults(self.service)
         self.assertFalse((self.lib.root/id).exists())
         self.assertFalse(resolve_selection(self.service,{**self.selection,'plugins':[]})['plugins'])
+        self.lib.change(id,'restore',self.lib.preview(id)['versions'],'explicit-restore')
+        self.assertFalse(self.lib.get(id)['deleted'])
+        self.assertTrue(resolve_selection(self.service,self.selection)['plugins'])
 
     def test_requires_config_conflicts_and_path_safety(self):
         files=SourceFiles();files['index.mjs']=b'export function apply(){}'
@@ -60,6 +63,12 @@ class H0AssemblyTests(unittest.TestCase):
         with self.assertRaisesRegex(Refused,'冲突'):resolve_selection(self.service,{**self.selection,'plugins':[{'id':conflict,'config':{'value':3}},*self.selection['plugins']]})
         manifest['assembly']['entry']='../escape';bad=self.lib.save(files,manifest,{'kind':'fixture'})
         with self.assertRaises(Refused):resolve_selection(self.service,{**self.selection,'plugins':[{'id':bad,'config':{}}]})
+        manifest['assembly'].update(entry='index.mjs',requires=[],conflicts=[],configSchema={'$ref':'https://invalid.example/schema'})
+        external=self.lib.save(files,manifest,{'kind':'fixture'})
+        self.assertEqual(self.lib.compatibility(self.lib.get(external))['state'],'needs_adaptation')
+        manifest['assembly']['configSchema']={'$ref':'#/$defs/missing'}
+        broken=self.lib.save(files,manifest,{'kind':'fixture'})
+        with self.assertRaisesRegex(Refused,'内部引用'):resolve_selection(self.service,{**self.selection,'plugins':[{'id':broken,'config':{}}]})
 
     def test_native_loader_accepts_selected_and_empty_projects_and_rejects_missing_service(self):
         for i,selection in enumerate([self.selection,{**self.selection,'plugins':[]}]):

@@ -6,13 +6,11 @@
 
 ## 当前已确认的实现差距
 
-**独立插件库与用户组合 H0 待实施。** 用户管理历史插件版本、显式选择插件和配置组成 H0、恢复能力作为普通可选插件、Meta 仅访问本活动选定材料，已确认为[产品要求](../product/requirements.md#插件库与用户选择起点)。当前冻结与源码读取能力不等于已实现独立库。[Agent 实施任务书](plugin-library-and-h0.md)规定四个工作包、自动验收与人类验收；Meta 全库读取和自主选 H0 留待后续独立插件。本次仅更新文档，功能与验收均未完成。
+**独立插件库与用户组合 H0 已实现，工程与人类验收分别登记。** [任务书](plugin-library-and-h0.md)保留自动证据、待人类验收清单和验收入口；当前操作见[插件库指南](../guides/plugin-library.md)。Meta 全库读取及自主选择 H0 留待后续独立插件。
 
 **Agent 安装与首次实验仍有外部验证缺口。** 安装、自检、统一启动、活动命令、CI 配置和本地干净源码检查已完成，当前用法见[Agent 安装流程](../guides/agent-installation.md)。托管 CI、其他平台容器、真实首次实验和浏览器验收仍按[实施计划](agent-installation.md)分别记录。
 
-**Studio 创建表单仍保留旧基线次数校验。** 后台 service/store 对 harbor-process-v1 已取消全套 H0 前置及 maxTrials 必须覆盖所选任务数的要求；但[公共表单 configError](../../packages/meta-workbench-client/form.mjs)仍无条件要求 tasks.length ≤ maxTrials，且[现有 UI 测试](../../tests/unit/workbench.test.mjs)明确验证旧行为。当前指南已如实说明。
-
-待修复范围：让新活动表单与 process 后台的次数规则一致，同时保留并发不得超过次数上限、正整数/空值校验及未知创建请求的原参数回放。验收应覆盖多任务但只允许少量实验的新活动、旧草稿、配置错误和创建幂等；不能通过放宽全部校验解决。此项纳入[插件库与 H0 工作包 P3](plugin-library-and-h0.md#4-agent-工作包与完成条件)，本次文档更新未修改业务行为。
+新 process 活动表单已允许多任务但较少实验次数，仍保留并发与额度合法性约束。未知创建请求沿用原键和原参数；此项随用户 H0 接入完成。
 
 ## 仍需单独安排的验证
 

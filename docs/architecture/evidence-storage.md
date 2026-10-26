@@ -50,3 +50,5 @@ GC 仅回收可证明无引用、超过宽限期的对象/临时文件及符合�
 其他活动已纳入其证据/报告时阻止删除；混合备份、越界路径、未知硬链接或无法确认的所有权也会阻止。公共依赖、任务/Runner 镜像、供应商凭据和外部下载/备份不随之删除。成功后只留防重所需最小身份，不承诺介质取证级擦除。
 
 验证：[v4 计分](../../tests/unit/task_completion_v4_test.py)、[研究记录](../../tests/unit/evolution_test.py)、[内容对象](../../tests/unit/artifact_objects_test.py)、[查询快照](../../tests/unit/storage_snapshots_test.py)、[容量](../../tests/unit/storage_capacity_test.py)、[删除](../../tests/unit/campaign_deletion_test.py)。
+
+插件库拥有独立源码对象及删除记录，不属于来源活动的运行历史清理范围。活动删除不会连带释放库版本；已删除版本仍被活动 H0 或其他库插件依赖时继续保留。发布/引用/回收共用受管锁；具体索引、恢复与身份见[独立插件库](versions-and-export.md#独立插件库)。

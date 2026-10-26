@@ -2,7 +2,7 @@
 export function campaignPreparation(c={}) {
  const operations=(c.operations||[]).filter(o=>o.kind==='prepare_h0');
  const latest=operations.reduce((last,o)=>!last||(o.startedAt||0)>=(last.startedAt||0)?o:last,null);
- const h0=(c.candidates||[]).some(x=>!x.plugins.length&&x.check.status==='passed');
+ const h0=(c.candidates||[]).some((x,i)=>(c.h0CandidateId?x.id===c.h0CandidateId:c.config.h0Policy?false:c.config.executionContract==='harbor-process-v1'?i===0:!x.plugins.length)&&x.check.status==='passed');
  const policy=c.references?.policy||c.referencePolicy||c.config?.referencePolicy||{};
  const harnesses=c.references?.bindings?.harnesses||c.config?.referenceBindings?.harnesses||{};
  const missing=policy.harnessEnabled?(policy.harnessRefs||[]).filter(id=>!harnesses[id]?.image):[];

@@ -27,3 +27,9 @@ Studio 用版本命名空间保存草稿、活动选择和未完成创建身份�
 `npm run build:workbench` 默认构建清单全部 UI；启动默认使用清单 default。PHYEXP_UI_VARIANT 可选单个、逗号分隔多个或 all。当前只有 studio；历史 both 兼容为 all，classic 没有对应包。更换装配需重新启动 UI 宿主，源码变更需重建。
 
 删除 UI 不删除用户后台数据或报告。对默认 Studio 的调整仍需保留产品要求的完整操作路径。验证：[清单增删](../../tests/unit/workbench-registry.test.mjs)、[客户端](../../tests/unit/workbench-client.test.mjs)、[页面](../../tests/unit/workbench-features.test.mjs)、[生命周期](../../tests/contracts/workbench-lifecycle.test.mjs)。
+
+## 插件库与创建选择
+
+独立插件库页面无需活动上下文；公共客户端 plugin-library.mjs 负责分页、来源读取、H0 静态核对和写请求身份，桥转发用户身份接口。未知删除/补录响应在本地保留原键，刷新后核对；确定的修订冲突释放旧请求并要求重新预览。页面提供历史补录进度、已删版本筛选、源码和状态阅读。
+
+创建步骤包括组合 H0：用户选择版本和 JSON 配置，核对后创建；配置变更使旧核对失效，最终仍由后台重新验证准确选择。活动页使用显式 H0 引用判断准备完成，显示跨活动组合身份、来源和本活动未验证状态。新 process 表单不要求实验上限覆盖全部任务。

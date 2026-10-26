@@ -37,6 +37,6 @@ def export_project(bundle_root, destination, export_id=None):
     if bundle.get('schemaVersion') in (2,3):
         record.update(compositionId=bundle['id'], framework=bundle['framework'])
     if bundle.get('schemaVersion') == 3:
-        record.update(project=bundle['project'],buildReceipt=bundle['buildReceipt'],runContract=bundle['infrastructureVersion'])
+        record.update(sourceCompositionId=bundle.get('sourceCompositionId'),project=bundle['project'],buildReceipt=bundle['buildReceipt'],runContract=bundle['infrastructureVersion'])
     (folder/'export.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
     return record

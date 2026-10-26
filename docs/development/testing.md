@@ -72,3 +72,23 @@ npm run test:contracts
 UI 结构与交互逻辑有单元/宿主契约，真实浏览器阅读、窄屏、长内容与真实用户体验需另行检查。合成 UI 夹具如[evolution_workbench.py](../../tests/fixtures/evolution_workbench.py)不启动模型；能渲染不代表已完成人工体验验收。
 
 本地记录写入 reports/development 下，区分 passed/failed/skipped/not_run。正式文档只维护可复现方法和限制，不嵌入私人活动结果或现场耗时。
+
+## 插件库与用户 H0 专项
+
+单元测试随 npm test 执行，覆盖库身份/发布恢复/补录/删除保留、历史 v1/v2/v3、H0 创建重放与权限；原生加载测试使用本机已锁定的 Node 依赖，且不调用模型。
+
+```sh
+node --test tests/contracts/process-strategies.test.mjs tests/contracts/plugin-library-boundary.test.mjs
+.venv/bin/python tests/contracts/plugin-library-h0.py --output /absolute/new-contract-output
+```
+
+第一条核验普通恢复插件的模拟故障，以及 Meta 实际挂载的材料边界；后一项需要 Docker。第二条实际隔离构建含恢复/最小两种 H0，导出到独立目录，再仅挂载导出产物到无网络容器检查加载。它保留回执和日志，自动移除自身生成的大型合成产物；不运行科学任务、官方评分或真实模型。
+
+可运行合成 UI 验收实例（构建回执显式为 fixture，模型执行被禁用）：
+
+```sh
+.venv/bin/python tests/fixtures/plugin_library_workbench.py --data-dir /absolute/new-ui-fixture --port 18572
+PHYEXP_DATA_DIR=/absolute/new-ui-fixture PHYEXP_CONTROL_URL=http://127.0.0.1:18572 PHYEXP_UI_PORT=18573 node scripts/workbench.mjs
+```
+
+打开第二条命令打印的本地登录入口，从研究工作台进入插件库，按[H01–H05](../plans/plugin-library-and-h0.md#6-人类验收agent-准备用户确认)验收。端口已占用时换一对空闲端口，不能终止其他实例。该夹具可测试创建、删除和来源阅读；添加 `--pagination-versions 51` 可生成跨页的同名合成版本。不要把合成构建当作隔离构建或真实效果证据。
