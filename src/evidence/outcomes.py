@@ -59,7 +59,7 @@ def failure_label(reason):
     return {'model_response_error':'模型请求失败','stream_idle_timeout':'模型响应停滞','request_timeout':'模型请求超时',
         'startup_failure':'实验启动失败','container_transport_error':'容器桥接异常','verifier_failed':'评分器异常',
         'archive_invalid':'结果归档异常','result_collection_failed':'结果收集异常',
-        'supervisor_lost_start_not_repeated':'执行监督中断，结果缺失','runtime_failed':'执行异常',
+        'supervisor_lost_start_not_repeated':'执行监督中断，结果缺失','runtime_failed':'执行异常','candidate_nonzero_exit':'候选进程异常退出',
         'trial_deadline':'实验时限耗尽','campaign_deadline':'活动时限耗尽','budget_admission_denied':'执行额度不足',
         'accounting_unavailable':'用量账本异常','accounting_lease_expired':'执行凭证到期或撤销',
         'control_database_busy':'控制数据库繁忙','control_database_error':'控制数据库异常',

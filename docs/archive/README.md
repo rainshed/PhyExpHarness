@@ -24,6 +24,7 @@
 | `docs/operations/meta-harness.md` | [原稿](operations/meta-harness.md) | [当前说明](../guides/quickstart.md) |
 | `docs/plans/control-plane-scalability.md` | [原稿](plans/control-plane-scalability.md) | [当前说明](../architecture/control.md) |
 | `docs/plans/execution-harness-refactor.md` | [原稿](plans/execution-harness-refactor.md) | [当前说明](../architecture/execution.md) |
+| `docs/plans/late-start.md` | [原稿](plans/late-start.md) | [当前说明](../architecture/control.md) |
 | `docs/plans/meta-closeout.md` | [原稿](plans/meta-closeout.md) | [当前说明](../architecture/control.md) |
 | `docs/plans/meta-harness-development.md` | [原稿](plans/meta-harness-development.md) | [当前说明](../development/workflow.md) |
 | `docs/plans/meta-reference-experiments.md` | [原稿](plans/meta-reference-experiments.md) | [当前说明](../architecture/references.md) |

@@ -9,6 +9,7 @@ from .store import retention_rule_description
 from .model_access import control_only, TOKEN_FIELDS
 from src.evidence.diagnostics import trial_diagnostics
 from src.evidence.outcomes import evaluation
+from src.execution.host.task_time import late_start
 
 PROMPT_VERSION = 'meta-system-v5'
 TEMPLATE = Path(__file__).with_name('prompts') / 'meta-system.md'
@@ -24,7 +25,9 @@ def system_prompt(config):
         template=TEMPLATE.with_name('meta-system-process-v11.md') if process else TEMPLATE if control_only(config) else TEMPLATE.with_name('meta-system-v9.md')
         if config.get('stopPolicy')==META_POLICY:template=TEMPLATE.with_name('meta-system-process.md' if process else 'meta-system-closeout.md')
         text = re.sub(r'\{\{(活动目标|Solver配置)\}\}', lambda m: values[m[1]], template.read_text())
-        return {'version': 'meta-system-v12' if config.get('stopPolicy')==META_POLICY else 'meta-system-v11' if process else 'meta-system-v10' if control_only(config) else 'meta-system-v9', 'text': text,
+        if late_start(config):
+            text+='\n\n实验时间策略 benchmark-time-v2：任务阶段上限不是预计耗时。先提交资源计划，再自主安排基线或候选实验；剩余时间不足以覆盖完整阶段上限也允许提交和启动。读取 taskTimeLimits、pendingTrials 和实际时间条件，自主判断中断风险。任务原始上限不变，活动硬截止仍有效；只有用户明确选择的 drain 模式允许截止前已启动任务有限延期。不能提高用户预算。收尾预留可在原边界内调整。比较实验时区分启动可用时间、求解开始时可用时间、各阶段实际耗时与截止原因；短窗口中断不单独证明插件退步。\n'
+        return {'version': 'meta-system-v13' if late_start(config) else 'meta-system-v12' if config.get('stopPolicy')==META_POLICY else 'meta-system-v11' if process else 'meta-system-v10' if control_only(config) else 'meta-system-v9', 'text': text,
                 'sha256': hashlib.sha256(text.encode()).hexdigest()}
     values = {'活动目标': effective_objective(config),
               'Solver配置': json.dumps(config['solver'], ensure_ascii=False, sort_keys=True),

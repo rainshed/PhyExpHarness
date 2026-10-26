@@ -26,7 +26,9 @@ main 只能连接本任务 qsim 和专属模型通道。真实供应商凭据留
 
 ## 时间、环境与退出
 
-[task_time.py](../../src/execution/host/task_time.py)读取任务配置：环境准备、Agent setup、Solver、verifier 及独立 verifier 环境分别计算。调度必须能容纳完整阶段，Solver 时钟在准备后开始。原 benchmark 无有限时限而活动墙钟有限时返回无法预留，不自行发明时限。新活动拒绝单次时限覆盖和缩短接受操作。
+[task_time.py](../../src/execution/host/task_time.py)读取任务配置：环境准备、Agent setup、Solver、verifier 及独立 verifier 环境分别记录上限。新活动绑定 benchmark-time-v2，允许短窗口启动；Solver 时钟在准备后开始，实际截止为 benchmark 求解截止与该次活动执行截止中的较早者。原 benchmark 无有限求解上限时保留 null，实际运行受活动截止约束。阶段上限不改写，不接受单次时限覆盖。严格截止终止剩余求解和评分；明确选择 drain 才允许已启动任务有限延期。清理和证据归集不借此继续求解或补跑 verifier。
+
+provenance 保留宿主启动/结束与 Solver 时钟，Harbor 原始阶段起止时间用于生成 timing：preparationSeconds（宿主启动至开始求解）、environmentSeconds、setupSeconds、solverSeconds、verifierSeconds、executionTimeSeconds（不含后续清理与归集）。缺少起止证据的阶段保持 null；传统 wallTimeSeconds 仍可能包含清理，不能当作求解耗时。控制端另存调度启动可用时间。官方成绩与真实中断原因独立保存；时间条件随实验、报告和比较展示，完整窗口与短窗口不静默视为一致。
 
 任务镜像在准备阶段冻结；Trial 不重建或拉取替代标签，启动核验实际 main/qsim/verifier 镜像身份。任务配置或镜像丢失明确失败。新容器与卷承接每次尝试，镜像共享不等于随机样本固定。
 

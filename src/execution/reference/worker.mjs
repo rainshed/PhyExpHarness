@@ -15,7 +15,7 @@ export async function runExternal({logs,bundleRoot,socketPath,deadline,reference
  const budget=executionAccess(deadline);
  let runtime,gateway,session,timer,checkpoint;
  const summary={status:'running',bundleId:bundle.id,recipe:JSON.parse(fs.readFileSync(path.join(bundleRoot,'recipe.json'))),reference:{mode:reference.mode,harnessRef:reference.harnessRef,modelRef:reference.modelRef,runtime:reference.runtime},toolCalls:0};
- const benchmark=summary.recipe.timePolicy==='benchmark-time-v1';
+ const benchmark=['benchmark-time-v1','benchmark-time-v2'].includes(summary.recipe.timePolicy);
  const save=()=>{
   const events=session?.messages.filter(m=>m.method==='reference/event').map(m=>m.params)||[];
   if(budget.snapshot){

@@ -31,15 +31,19 @@ export function comparison(c, id, reference) {
       const p = t.comparisonContext;
       const budget = t.effectiveConditions || p?.executionConditions;
       const limit = budget?.benchmarkTime?.solverTimeSeconds ?? budget?.solverTimeSeconds ?? budget?.trialTimeSeconds ?? t.taskTimeLimitSeconds;
-      const actual = budget?.timePolicy==='benchmark-time-v1' || budget?.solverTimeSeconds!=null ? limit : budget?.actualTimeSeconds ?? (finite(t.deadline) && finite(t.startedAt) ? t.deadline-t.startedAt : null);
+      const late=budget?.timePolicy==='benchmark-time-v2';
+      const actual = late ? budget?.effectiveSolverTimeSeconds ?? t.timing?.effectiveSolverTimeSeconds : budget?.timePolicy==='benchmark-time-v1' || budget?.solverTimeSeconds!=null ? limit : budget?.actualTimeSeconds ?? (finite(t.deadline) && finite(t.startedAt) ? t.deadline-t.startedAt : null);
+      const available=budget?.availableTimeSeconds, total=budget?.phaseCeilingTotalSeconds ?? budget?.benchmarkTime?.requiredTimeSeconds;
+      const window=late&&finite(available)?Math.round(finite(total)?Math.min(total,available):available):null;
+      if(late&&(!finite(actual)||!finite(available)))missing=true;
       if (!p?.taskSourcesDigest || !(p?.runContract==='harbor-process-v1' ? p.adapter && p.brokerImageId && p.resources && p.solver : proof ? p.runnerExecutionManifest : p?.runnerImageId) || !(p?.verifierImageId || p?.taskImageIds?.length) || !finite(limit)) missing = true;
       // Rounded receipt durations avoid false differences from sub-second launch timing.
       return {source:p?.taskSourcesDigest, contract:p?.runContract??'legacy', platform:p?.runContract==='harbor-process-v1'?{adapter:p.adapter,broker:p.brokerImageId,resources:p.resources,taskResources:p.taskResources,solver:p.solver}:null, runner:proof?p?.runnerExecutionManifest:p?.runnerImageId, verifier:p?.verifierImageId, images:p?.taskImageIds,
-        limit, actual:finite(actual)?Math.round(actual):null, ceiling:budget?.frozenTrialCeilingSeconds};
+        policy:budget?.timePolicy, window, limit, actual:finite(actual)?Math.round(actual):null, ceiling:budget?.frozenTrialCeilingSeconds};
     });
-    for (const key of ['source','contract','platform','runner','verifier','images','limit','actual','ceiling']) {
+    for (const key of ['source','contract','platform','runner','verifier','images','policy','window','limit','actual','ceiling']) {
       const known = signatures.map(s => s[key]).filter(v => v != null);
-      if (new Set(known.map(stable)).size > 1) {different = true; reasons.add(['limit','actual','ceiling'].includes(key)?'实验时限或实际预算不同':'任务来源或环境身份不同');}
+      if (new Set(known.map(stable)).size > 1) {different = true; reasons.add(['policy','window','limit','actual','ceiling'].includes(key)?'实验时限或实际预算不同':'任务来源或环境身份不同');}
     }
   }
   if (!shared || missing) reasons.add('部分实验缺少完整的任务、环境或预算记录');

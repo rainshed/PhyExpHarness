@@ -6,6 +6,7 @@ or its own reported score is never an authority. Legacy collectors stay frozen.
 import hashlib
 import json
 from pathlib import Path
+from ...host.task_time import POLICY as TIME_POLICY, execution_timing
 
 VERSION = 'official-result-v3'
 
@@ -78,6 +79,24 @@ def collect(root, *, bundle_id=None, task=None, archived=False):
     exception = trial.get('exception_info')
     execution = runtime.get('status') or ('error' if exception else 'completed')
     recipe = provenance.get('recipe', {})
+    details={}
+    if recipe.get('timePolicy')==TIME_POLICY:
+        from ...host.failure import diagnose
+        # A damaged optional diagnostic cannot change a stop classification.
+        valid=True
+        optional=['process.json','stop-request.json','summary.json',runtime_path,
+                  base+'/phyexp/failure.json',base+'/phyexp/timing.json']
+        optional += [p.relative_to(root).as_posix() for p in root.glob('harbor/*/phyexp/environment-startup-*.json')]
+        for name in optional:
+            if not (root/name).exists():continue
+            try:read(name)
+            except (OSError,ValueError) as error:
+                valid=False;gaps.append({'path':name,'reason':str(error)})
+        diagnostic=diagnose(root) if valid else {}
+        stop=diagnostic.get('termination')
+        if diagnostic.get('code') in ('campaign_deadline','trial_deadline','user_stop'):stop=stop or diagnostic['code']
+        details={'timing':execution_timing(provenance,trial),'stopReason':stop}
+        if diagnostic and (exception or execution not in ('completed','running')):details['failure']=diagnostic
     return {
         'resultContract': VERSION, 'pipelineStatus': 'completed',
         'status': 'completed' if submitted and assessed else 'incomplete',
@@ -98,6 +117,7 @@ def collect(root, *, bundle_id=None, task=None, archived=False):
         'evidence': {'harborResult': relative, 'officialReward': reward_path, 'officialScore': score_path,
                      **({'submission': answer_path} if submitted else {})},
         'resultCollection': {'version': VERSION, 'sourceDigests': sources},
+        **details,
     }
 
 
@@ -118,6 +138,15 @@ def unavailable(root, error, *, bundle_id=None, task=None, stopped=None):
             if kind == 'runtime': runtime=value
             else: exception=value.get('exception_info')
         except (OSError,ValueError) as failure: gaps.append({'path':pattern,'reason':str(failure)})
+    from ...host.failure import diagnose, read as read_diagnostic
+    provenance=read_diagnostic(root/'provenance.json')
+    details={}
+    if provenance.get('recipe',{}).get('timePolicy')==TIME_POLICY:
+        diagnostic=diagnose(root,stopped)
+        if diagnostic['code']!='unknown_failure':details['failure']=diagnostic
+        details['stopReason']=diagnostic.get('termination') or (diagnostic['code'] if diagnostic['code'] in ('campaign_deadline','trial_deadline','user_stop') else stopped)
+        paths=list(root.glob('harbor/*/result.json'))
+        details['timing']=execution_timing(provenance,read_diagnostic(paths[0]) if len(paths)==1 else {})
     return {'resultContract':VERSION,'pipelineStatus':'failed','status':'infrastructure_error',
         'task':task,'bundleId':bundle_id,'officialReward':None,'scoringStatus':'unavailable',
         'execution':{'status':stopped or runtime.get('status') or ('error' if exception else 'unknown'),
@@ -126,4 +155,4 @@ def unavailable(root, error, *, bundle_id=None, task=None, stopped=None):
                           'errorType':type(error).__name__,'message':str(error)},
         'evidenceStatus':{'status':'partial','gaps':gaps},'comparison':{'status':'identity_unverified'},
         'runtime':runtime,'failure':{'code':'official_result_unavailable','stage':'collection','message':str(error)},
-        'stopReason':stopped,'resultCollection':{'version':VERSION}}
+        'stopReason':stopped,'resultCollection':{'version':VERSION},**details}

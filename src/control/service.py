@@ -40,7 +40,7 @@ from .stop_policy import META_POLICY, CONTROLLED_POLICIES
 from .stop_review import StopRuntime
 from .processes import reap_children
 from . import resource_planning as planning
-from src.execution.host.task_time import POLICY as BENCHMARK_TIME, benchmark_time, read_task_time, verify_task_time
+from src.execution.host.task_time import POLICY as BENCHMARK_TIME, POLICIES as BENCHMARK_POLICIES, benchmark_time, read_task_time, verify_task_time
 from src.reporting.reports import Reports
 from src.exporting.project import export_project
 from src.exporting.validate import relocate
@@ -183,7 +183,7 @@ class ControlService:
                 except (ValueError,OSError) as error:
                     raise Refused('开发资料包尚未准备好；请完成资料构建后重试。此次未创建活动。详情：'+str(error)) from error
             reference_defaults=self.references.freeze(config) if not replay else {}
-            time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark agent phase; startup and verification are separate.'},
+            time_defaults={'executionTimePolicy':{'version':BENCHMARK_TIME,'scope':'Benchmark phase ceilings remain fixed; late starts are allowed within the activity deadline.'},
                 'taskTimeLimits':{task:read_task_time(self.quantum,task) for task in config['tasks']}} if not replay else {}
             runtime_defaults={'executionContract':'harbor-process-v1',
                 'executionResources':json.loads((self.source/'schemas/execution/process-resources.json').read_text())} if not replay else {}
@@ -300,7 +300,7 @@ class ControlService:
         recipe['providerConfig']=campaign_route(c['config'],'solver')
         recipe['maxTokens']=recipe['providerConfig']['models'][0].get('maxTokens',8192)
         if benchmark_time(c['config']):
-            recipe['timePolicy']=BENCHMARK_TIME
+            recipe['timePolicy']=c['config']['executionTimePolicy']['version']
             recipe.pop('agentTimeoutSec',None);recipe.pop('commandTimeoutSec',None)
         else:
             recipe.pop('timePolicy',None);recipe['commandTimeoutSec']=300
@@ -434,6 +434,10 @@ class ControlService:
     def stop_trial(self,trial,reason):
         if trial.get('stopRequestedAt'):return
         self.store.trial_update(trial['id'],stopReason=reason,stopRequestedAt=time.time())
+        output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
+        try:
+            if output.is_dir():write_json(output/'stop-request.json',{'reason':reason,'requestedAt':time.time()})
+        except OSError:pass  # A full disk must not prevent cancellation; the controller receipt is durable.
         if trial.get('leaseId'):
             lease=self.store.get('leases',trial['leaseId']);lease['revoked']=True;self.store.put('leases',lease)
         if self._process_alive(trial.get('pid'),trial.get('output','')):
@@ -453,7 +457,11 @@ class ControlService:
             usage=summary.get('usage',{}),fixture=summary.get('fixture',False),finishedAt=time.time(),
             stopReason=summary.get('stopReason') if summary.get('resultCollection') else trial.get('stopReason') or summary.get('stopReason'),summary=summary,
             resultCollection=summary.get('resultCollection'),
-            **{k:summary[k] for k in ('execution','officialResult','evidenceStatus','comparison') if k in summary})
+            **{k:summary[k] for k in ('execution','officialResult','evidenceStatus','comparison','timing') if k in summary})
+        if trial.get('effectiveConditions',{}).get('timePolicy')==BENCHMARK_TIME and trial.get('stopReason'):
+            changes['stopReason']=trial['stopReason']
+            if (changes.get('failure') or {}).get('code') in ('user_stop','request_cancelled','runtime_failed'):
+                changes['failure']=public_failure({**changes['failure'],'code':trial['stopReason'],'termination':trial['stopReason']})
         provenance_path=output/'provenance.json'
         if provenance_path.exists():
             provenance=json.loads(provenance_path.read_text())
@@ -475,8 +483,14 @@ class ControlService:
                     changes['comparisonContext']['taskResources']=json.loads(resource_file.read_text())
             if trial.get('effectiveConditions'):
                 changes['comparisonContext']['executionConditions']={k:trial['effectiveConditions'].get(k) for k in ('trialTimeSeconds','actualTimeSeconds','frozenTrialCeilingSeconds')}
-                if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
+                if trial['effectiveConditions'].get('timePolicy') in BENCHMARK_POLICIES:
                     changes['comparisonContext']['executionConditions']=trial['effectiveConditions']['benchmarkTime']
+                    if trial['effectiveConditions'].get('timePolicy')==BENCHMARK_TIME:
+                        timing=summary.get('timing',{})
+                        changes['effectiveConditions']={**trial['effectiveConditions'],**{k:timing[k] for k in ('solverStartedAt','solverDeadline','benchmarkSolverDeadline','availableTimeAtSolverStartSeconds','effectiveSolverTimeSeconds','deadlineCause') if timing.get(k) is not None}}
+                        changes['comparisonContext']['executionConditions']={**trial['effectiveConditions']['benchmarkTime'],
+                            'timePolicy':BENCHMARK_TIME,'availablePhaseWindowSeconds':round(min(trial['effectiveConditions']['availableTimeSeconds'],trial['effectiveConditions']['benchmarkTime']['requiredTimeSeconds'] or trial['effectiveConditions']['availableTimeSeconds'])),
+                            'effectiveSolverTimeSeconds':round(timing['effectiveSolverTimeSeconds']) if timing.get('effectiveSolverTimeSeconds') is not None else None}
             if provenance.get('taskImageLock'):
                 changes['comparisonContext']['verifierImageId']=provenance['taskImageLock']['images']['verifier']
             try:
@@ -531,12 +545,12 @@ class ControlService:
     def _reconcile_trial(self,trial):
         output=Path(trial.get('output',self.data/'trials'/trial['launchId']))
         conditions=trial.get('effectiveConditions',{})
-        if conditions.get('timePolicy')==BENCHMARK_TIME and conditions.get('solverDeadline') is None:
+        if conditions.get('timePolicy') in BENCHMARK_POLICIES and conditions.get('solverDeadline') is None:
             for file in output.glob('harbor/*/phyexp/timing.json'):
                 try:timing=json.loads(file.read_text())
                 except (OSError,json.JSONDecodeError):continue
                 trial=self.store.trial_update(trial['id'],effectiveConditions={**conditions,
-                    **{k:timing[k] for k in ('solverStartedAt','solverDeadline')}})
+                    **{k:timing[k] for k in ('solverStartedAt','solverDeadline','benchmarkSolverDeadline','availableTimeAtSolverStartSeconds','effectiveSolverTimeSeconds','deadlineCause') if k in timing}})
                 break
         if (output/'summary.json').is_file() and (output/'archive-manifest.json').is_file():
             candidate=self.store.get('candidates',trial['candidateId'])
@@ -562,7 +576,7 @@ class ControlService:
             cleanup(output);self._reconcile_usage({**trial,'output':str(output)})
             return self._failed_trial(trial,'supervisor_lost_start_not_repeated',state='unknown',output=str(output))
         if time.time()>=trial['deadline'] and not trial.get('stopRequestedAt'):
-            self.stop_trial(trial,'campaign_deadline' if conditions.get('timePolicy')==BENCHMARK_TIME else 'trial_deadline')
+            self.stop_trial(trial,'campaign_deadline' if conditions.get('timePolicy') in BENCHMARK_POLICIES else 'trial_deadline')
         if trial.get('stopRequestedAt') and time.time()-trial['stopRequestedAt']>15:
             if self._process_alive(trial.get('pid'),output):os.kill(trial['pid'],signal.SIGKILL)
             cleanup(output)

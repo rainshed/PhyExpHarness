@@ -8,7 +8,7 @@ export function NumberField({label,value,onChange,note,optional=false,emptyLabel
 }
 export function LimitFields({config,onChange}:any){
  const planned=config.resourcePolicy==='meta-resource-planning-v1';
- const benchmark=!config.executionTimePolicy||config.executionTimePolicy.version==='benchmark-time-v1';
+ const benchmark=!config.executionTimePolicy||['benchmark-time-v1','benchmark-time-v2'].includes(config.executionTimePolicy.version);
  const change=(key:string,value:any)=>onChange({...config,[key]:value});
  const field=(key:string,label:string,options:any={})=><NumberField key={key} label={label} value={config[key]} onChange={(v:any)=>change(key,v)} {...options}/>;
  return <div className="mh-limits">
@@ -20,7 +20,7 @@ export function LimitFields({config,onChange}:any){
    {field('maxRounds','最多轮次',{optional:true,suggested:8,note:'包含 H0 基线；一轮可以包含多个实验。'})}
    {field('maxTrials','最多实验次数',{optional:true,suggested:Math.max(12,config.tasks?.length||0),note:`当前 ${config.tasks?.length||0} 个任务的 H0 基线至少需要 ${config.tasks?.length||0} 次实验。`})}
   </div></section>
-  <details className="mh-limit-advanced"><summary>高级运行设置</summary><p className="mh-muted">{benchmark?'求解时限遵循各题 benchmark 配置；活动剩余时间不足时不启动该题，不能缩短求解。':planned?'单次时限与收尾预留可交给 Meta；自行设置时，分别作为单次上限和最低收尾预留。':'以下设置用于单次实验及活动收尾。'}</p><div className="mh-grid">
+  <details className="mh-limit-advanced"><summary>高级运行设置</summary><p className="mh-muted">{benchmark?(config.executionTimePolicy?.version==='benchmark-time-v1'?'求解时限遵循各题 benchmark 配置；旧活动要求完整窗口。':'任务上限遵循 benchmark；剩余时间较短也允许尝试，活动到期仍会停止。'):planned?'单次时限与收尾预留可交给 Meta；自行设置时，分别作为单次上限和最低收尾预留。':'以下设置用于单次实验及活动收尾。'}</p><div className="mh-grid">
    {!benchmark&&field('trialTimeSeconds','单次时限（秒）',{optional:true,emptyLabel:planned?'由 Meta 分配':'自动',suggested:3600,note:planned?'留空由 Meta 为批次分配；填写则作为单次上限。':'自动：至多 1 小时，并受剩余探索时间约束。'})}
    {field('reserveSeconds','收尾预留（秒）',{optional:true,emptyLabel:planned?'由 Meta 规划':'自动',suggested:900,note:planned?'留空不扣固定预留；填写则作为用户最低收尾预留。':'自动预留总时长的 10%，最多 15 分钟。'})}
   </div><label>达到时间上限时<select value={config.stopMode} onChange={e=>change('stopMode',e.target.value)}><option value="strict">严格停止剩余工作</option><option value="drain">给已启动实验有限额外收尾时间</option></select></label>{config.stopMode==='drain'&&field('drainGraceSeconds','额外收尾时限（秒，最多 900）')}<p className="mh-muted">不自动重试整个实验。</p></details>

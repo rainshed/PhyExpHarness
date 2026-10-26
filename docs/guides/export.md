@@ -33,7 +33,7 @@ python3 -m venv .venv
   --timeout 22000
 ```
 
-这一步会执行真实任务并可能调用付费模型。TASK 和时限是示例参数，须替换为授权任务和能容纳完整 benchmark 阶段的上限；输出目录必须不存在。该入口不自动重跑整个 Trial，也不提供 token 总量停止。
+这一步会执行真实任务并可能调用付费模型。TASK 和时限是示例参数，须替换为授权任务和明确的运行期限。新 benchmark-time-v2 包允许短窗口尝试，任务上限保持不变，到期可能中断；旧 benchmark-time-v1 包仍要求完整阶段预留；输出目录必须不存在。该入口不自动重跑整个 Trial，也不提供 token 总量停止。
 
 已有输出重新收集可使用 `run.py --collect /absolute/path/to/existing-run`，不重跑模型/评分器。summary.json 分别展示执行、官方结果、证据和比较条件；无可信官方评分保持 null。
 

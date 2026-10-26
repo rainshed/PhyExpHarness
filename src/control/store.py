@@ -17,7 +17,7 @@ from src.evidence.outcomes import outcome_summary, DEFAULT_RULE, RULES, rule_for
 from . import resource_planning as planning
 from .model_access import control_only, check_config, TOKEN_FIELDS
 from .database import begin_write, diagnostic
-from src.execution.host.task_time import benchmark_time
+from src.execution.host.task_time import benchmark_time, late_start
 
 SCHEMA_VERSION = 9
 TABLES = ('campaigns','candidates','batches','trials','usage','evidence','reports','exports','leases','operations','meta_sessions','selection_decisions','stop_reviews','meta_observations','admissions','meta_questions','research_records','research_links','source_adoptions','reference_batches','reference_runs','owned_artifacts','collection_jobs')
@@ -552,7 +552,7 @@ class Store:
                 if benchmark_time(cfg):
                     timing=item['executionSettings']['benchmarkTime'];required=timing['requiredTimeSeconds']
                     available=max(0,planning.end_time(c)-now)
-                    if required is None or available<required:
+                    if not late_start(cfg) and (required is None or available<required):
                         waiting={'reason':'benchmark_time_unavailable','requiredSeconds':required,'availableSeconds':available,
                                  'solverTimeSeconds':timing['solverTimeSeconds'],'canShorten':False}
                         if item.get('conditionsRequired',{}).get('reason')!=waiting['reason']:
@@ -577,6 +577,8 @@ class Store:
                 deadline=planning.end_time(c)
                 t['effectiveConditions']={**t['executionSettings'],'solverTimeSeconds':seconds,
                     'solverDeadline':None,'availableTimeSeconds':deadline-now,
+                    **({'phaseCeilingTotalSeconds':timing['requiredTimeSeconds'],
+                        'interruptionRiskAtLaunch':timing['requiredTimeSeconds'] is None or deadline-now<timing['requiredTimeSeconds']} if late_start(cfg) else {}),
                     'userLimitsRevision':c.get('userLimitsRevision',1),'resourcePlanRevisionAtLaunch':plan['revision']}
                 t['launchLimits']={'campaignDeadline':c['deadline'],**({} if control_only(cfg) else {'softTokenLimit':cfg.get('softTokenLimit')})}
             elif planning.enabled(cfg):

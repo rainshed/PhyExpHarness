@@ -17,11 +17,11 @@ python3 -m venv .venv
   --task-image-lock /path/to/TASK.image-lock.json --output /path/to/new-run --timeout 22000
 ```
 
-任务来源和镜像必须与锁一致。运行环境须满足包内声明的 Docker/Harbor 依赖与镜像身份。输出目录必须不存在。活动期限必须容纳 benchmark 原生 Solver、verifier 与环境准备阶段；构建等待不会缩短 Solver 时限。单次入口只启动一个 Trial，不隐式重试。
+任务来源和镜像必须与锁一致。运行环境须满足包内声明的 Docker/Harbor 依赖与镜像身份。输出目录必须不存在。配方 timePolicy 为 benchmark-time-v2 时，允许运行期限短于 benchmark 原生阶段上限之和；任务原始上限保持不变，实际求解与评分受 --timeout / --deadline 硬截止约束。准备耗时会减少活动剩余窗口，不自动延期。旧 benchmark-time-v1 配方仍要求完整阶段预留。单次入口只启动一个 Trial，不隐式重试。
 
 候选在 Harbor main 的 `/opt/harness` 中启动，工作区 `/app`；`PHYEXP_CONTEXT` 指向本次公开运行上下文。main 只能连接任务侧车与模型代理。退出、到期或取消时收回候选子进程和模型通道；官方 verifier 按 Harbor 原生生命周期运行。
 
-`summary.json` 分别记录 `execution`、`officialResult`、`evidenceStatus`、`comparison`。执行异常可以与官方分数并存；没有可信官方文件时评分是 null，不能伪造为官方零分。原始文件与来源摘要保留在运行目录。重新读取已有官方结果不调用模型：
+`summary.json` 分别记录 `execution`、`officialResult`、`evidenceStatus`、`comparison`；benchmark-time-v2 还记录 `timing` 中的任务上限、启动可用窗口、求解开始时剩余时间和实际阶段耗时，未知耗时保留 null。执行异常可以与官方分数并存；没有可信官方文件时评分是 null，不能伪造为官方零分。原始文件与来源摘要保留在运行目录。重新读取已有官方结果不调用模型：
 
 ```sh
 .venv/bin/python run.py --collect /path/to/existing-run

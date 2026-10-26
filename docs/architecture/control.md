@@ -14,7 +14,9 @@
 
 新活动需要有限 `wallTimeSeconds` 与正整数 concurrency；maxRounds/maxTrials 可为 null。Meta 提交 parallelism 与 closeoutReserveSeconds，不能提高用户上限。两者与用户限制修订分别记录；已受理批次保存当时条件，运行任务不会因提高上限自动延期。
 
-`benchmark-time-v1` 从任务配置读取阶段时限。计划不再包含 defaultTrialTimeSeconds，批次不接受 execution 覆盖或缩短条件。活动剩余时间不足时 `pendingTrials` 返回 requiredSeconds、availableSeconds、latestStartAt 和 canShorten=false。Meta 可撤回未启动项或由用户调整活动限制；不能偷偷缩短求解阶段。
+`benchmark-time-v2` 从任务配置读取阶段上限。计划不包含 defaultTrialTimeSeconds，批次不接受 execution 覆盖；上限不是启动所需的最低预留。剩余活动时间不足以覆盖完整阶段上限时仍可受理、调度和开始求解，Meta 自主判断中断风险。`pendingTrials` 返回 phaseCeilingTotalSeconds、availableSeconds、solverTimeSeconds、interruptionRisk 与 lateStartAllowed；requiredSeconds 为 null，canShorten=false 表示不能改写任务原始时限。截止及收尾预留边界仍阻止新启动，并发、次数、暂停和容量约束不变。排队后在真正领取时重新核对，drain 额外期限不开放新启动。
+
+启动条件保留 timePolicy、任务阶段上限、availableTimeSeconds 和 interruptionRiskAtLaunch；求解开始后补充 availableTimeAtSolverStartSeconds、effectiveSolverTimeSeconds、benchmarkSolverDeadline 与实际 solverDeadline。到期原因区分活动截止与任务自身超时，监督端保存停止原因后再发信号，不能把活动截止误记为 user_stop。历史策略见[兼容规则](compatibility.md)。
 
 新 process 活动不强制先跑 H0；普通流程在提交计划后由 Meta 选择任务、候选和次数。基线工程准备不消耗 Trial，也不表示基线评分完成。一次受理批次计一轮，计划尝试数为任务数乘重复次数；开始过的失败仍保留并计入对应尝试。正式提交与撤回有幂等身份，无自动整次补跑。
 

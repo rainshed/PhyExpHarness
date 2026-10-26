@@ -60,3 +60,12 @@ class MetaPromptTests(unittest.TestCase):
         self.assertNotIn('提交每轮报告和最终报告',new['text'])
         self.assertIn('summary',new['text'])
         self.assertIn('不需要再提交额外回复',new['text'])
+
+
+    def test_late_start_prompt_has_a_new_version_without_changing_legacy(self):
+        config={'solver':{},'stopPolicy':META_POLICY,'executionContract':'harbor-process-v1'}
+        old=system_prompt(config)
+        new=system_prompt({**config,'executionTimePolicy':{'version':'benchmark-time-v2'}})
+        self.assertEqual(old['version'],'meta-system-v12');self.assertEqual(new['version'],'meta-system-v13')
+        self.assertIn('也允许提交和启动',new['text']);self.assertIn('活动硬截止仍有效',new['text'])
+        self.assertNotIn('benchmark-time-v2',old['text'])

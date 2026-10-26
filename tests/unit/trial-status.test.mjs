@@ -87,3 +87,12 @@ test('tables are enriched only from their supplied context, including older snap
  assert.equal(JSON.stringify(frozen),before);
  assert.equal(contextTrials({...c,trials:[]}).length,2);
 });
+
+test('late-start queue distinguishes cutoff, reserve and advisory window risk',()=>{
+ const trial={...queued,scheduling:{lateStartAllowed:true,state:'waiting_resources',interruptionRisk:true,availableSeconds:1800}};
+ assert.match(waitingReason(trial,{state:'running'}),/允许启动但可能受活动截止中断/);
+ assert.match(waitingReason(trial,campaign),/并发名额已满/);
+ trial.scheduling.state='currently_infeasible';trial.scheduling.reason='campaign_deadline';
+ assert.equal(waitingReason(trial,{state:'running'}),'活动已到截止时间，不再启动新实验');
+ trial.scheduling.reason='closeout_time';assert.match(waitingReason(trial,{state:'running'}),/收尾预留/);
+});

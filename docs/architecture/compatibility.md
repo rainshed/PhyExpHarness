@@ -12,8 +12,9 @@
 | Meta composition v1/v2、工具 v2–v10 | 按活动记录的准确资产与摘要解析，未知/篡改资产拒绝恢复 |
 | 旧模型记账策略 | 保留 `/accounting` 与旧账本逻辑；新活动拒绝采用旧策略 |
 | task-completion-v1/v2/v3 | 旧记录按原绑定统计；缺少绑定字段按 v1，不能自动套用 v4 |
-| 旧固定 Trial 时限 | 保留旧预留、批次条件和接受缩短语义；新活动只用 benchmark-time-v1 |
-| stop-review-v1 / goal-or-budget-v1 | 原活动保留独立停止审查或 stable 门槛；工具 v9 原资产与系统模板 v11 原文保留，新活动采用 meta-closeout-v1 / 工具 v10 / 模板 v12 |
+| 旧固定 Trial 时限 | 保留旧预留、批次条件和接受缩短语义；新活动采用 benchmark-time-v2 |
+| benchmark-time-v1 | 保留完整阶段预留与准备后完整求解窗口检查；新活动 benchmark-time-v2 允许晚启动，任务元数据版本仍为 v1。原活动与冻结配方不自动升级 |
+| stop-review-v1 / goal-or-budget-v1 | 原活动保留独立停止审查或 stable 门槛；工具 v9 原资产与系统模板 v11 原文保留，新活动采用 meta-closeout-v1 / 工具 v10 / 模板 v13（v12 原文保留；v13 按新时间策略添加指导） |
 | 旧内嵌报告与未分段日志 | 继续读取，不用新快照重写原件 |
 
 默认版本清单见[架构总览](overview.md)。版本号分属不同契约，不能根据“v3”或创建时间猜测行为。

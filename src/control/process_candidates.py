@@ -27,7 +27,7 @@ def build_candidate(service,campaign,project_path,description,parent=None,displa
     else:
         project=workspace_path(workspace,project_path.removeprefix('/work/plugins/'))
     if not project.is_dir(): raise Refused('Candidate project directory is missing')
-    recipe={**config['solver'],'providerConfig':campaign_route(config,'solver'),'timePolicy':POLICY,
+    recipe={**config['solver'],'providerConfig':campaign_route(config,'solver'),'timePolicy':config.get('executionTimePolicy',{}).get('version',POLICY),
             'processResources':config['executionResources']}
     logs=service.data/'campaigns'/campaign/'checks'/identity('check');logs.mkdir(parents=True)
     try:

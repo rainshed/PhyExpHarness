@@ -58,7 +58,7 @@ def prepare_harness_base(service,campaign):
     recipe=json.loads((service.source/'recipes/h0-sol.json').read_text())
     recipe.update(cfg['solver'],providerConfig=campaign_route(cfg,'solver'),modules=[])
     if 'reasoningEffort' not in cfg['solver']:recipe.pop('reasoningEffort',None)
-    recipe['timePolicy']='benchmark-time-v1';recipe.pop('agentTimeoutSec',None);recipe.pop('commandTimeoutSec',None)
+    recipe['timePolicy']=cfg.get('executionTimePolicy',{}).get('version','benchmark-time-v1');recipe.pop('agentTimeoutSec',None);recipe.pop('commandTimeoutSec',None)
     bundle=freeze(service.source,service.data/'objects/sha256',recipe,[],service.knowledge_for(campaign).manifest,
                   on_publish=lambda path,kind:service.store.track_artifact(campaign,path,kind))
     runtime=prepare_runtime(bundle['path'],service.data/'cache')

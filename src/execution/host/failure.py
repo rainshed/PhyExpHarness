@@ -39,6 +39,7 @@ MESSAGES = {
     'campaign_deadline': '活动达到截止时间',
     'verifier_failed': '官方评分器执行失败',
     'runtime_failed': '执行进程未正常完成，具体原因尚未确认',
+    'candidate_nonzero_exit': '候选执行进程以非零状态退出',
     'result_collection_failed': '官方评分已完成，但平台收集结果失败',
     'container_transport_error': '容器工具桥接异常，官方评分未完成',
     'environment_start_timeout': '容器环境未在任务启动时限内就绪',
@@ -168,7 +169,20 @@ def diagnose(run_dir, stop_reason=None):
             if reason.get('kind') == 'error':
                 code = 'model_transport_error' if error.get('code') == 'TRANSPORT' or 'fetch failed' in error.get('message', '') else 'model_response_error'
             if code: result = public_failure({'code': code, 'stage': 'model', 'evidence': str(runtime_file.relative_to(root))})
-    stop = stop_reason or read(root/'process.json').get('stopReason') or read(root/'summary.json').get('stopReason')
+    late=read(root/'provenance.json').get('recipe',{}).get('timePolicy')=='benchmark-time-v2'
+    if not result and late:
+        kind=exception.get('exception_type') or (runtime.get('exception') or {}).get('type')
+        code=('campaign_deadline' if kind=='ActivityDeadlineError' or runtime.get('status')=='campaign_deadline'
+              else 'trial_deadline' if kind=='AgentTimeoutError'
+              else 'candidate_nonzero_exit' if runtime.get('status')=='nonzero_exit' else None)
+        if code:result=public_failure({'code':code,'stage':'execution','detectedAt':runtime.get('failureDetectedAt') or exception.get('occurred_at')})
+    stop = stop_reason or read(root/'process.json').get('stopReason') or read(root/'stop-request.json').get('reason') or read(root/'summary.json').get('stopReason')
+    if late and result and result['code'] in ('trial_deadline','request_cancelled','runtime_failed'):
+        clocks=list(root.glob('harbor/*/phyexp/timing.json'))
+        phase=read(clocks[0]) if len(clocks)==1 else {}
+        activity_timeout=(exception.get('exception_type')=='ActivityDeadlineError' or
+                          (phase.get('deadlineCause')=='campaign_deadline' and result['code']=='trial_deadline'))
+        if activity_timeout:result=public_failure({**result,'code':'campaign_deadline'})
     if not verifier and scoring != 'failed' and runtime and (runtime.get('status') == 'error' or runtime.get('error') or result):
         scoring = 'not_run'
     if result and result['code'] in ['request_cancelled', 'runtime_failed'] and stop in MESSAGES:

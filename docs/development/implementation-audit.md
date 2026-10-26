@@ -13,7 +13,7 @@
 | 候选可替换框架、工具、会话和恢复 | [工程冻结](../../src/execution/bundle/project.py)、[默认工程](../../templates/harness/default/harness.json) | [process-strategies](../../tests/contracts/process-strategies.test.mjs)、[project_bundle_test](../../tests/unit/project_bundle_test.py) |
 | check 是隔离构建/入口核验，不是科学实验 | [process_candidates.py](../../src/control/process_candidates.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[project-build](../../tests/contracts/project-build.py) |
 | 新活动无 token 账本，旧账本仍兼容 | [model_access.py](../../src/control/model_access.py)、[accounting.py](../../src/control/accounting.py) | [model_access_test](../../tests/unit/model_access_test.py)、[model-access](../../tests/unit/model-access.test.mjs) |
-| 求解时限属于 benchmark，不扣旧 330 秒固定预留 | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) | [benchmark_time_test](../../tests/unit/benchmark_time_test.py)、[benchmark-task-ui](../../tests/unit/benchmark-task-ui.test.mjs) |
+| benchmark 阶段上限与活动截止独立，允许短窗口启动并保留实际时间条件 | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) | [benchmark_time_test](../../tests/unit/benchmark_time_test.py)、[benchmark-task-ui](../../tests/unit/benchmark-task-ui.test.mjs) |
 | 后台 Meta 规划并发/收尾，新 process 不强制全部 H0；UI 次数校验仍有差距 | [service.py](../../src/control/service.py)、[资源规划](../../src/control/resource_planning.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[resource_planning_test](../../tests/unit/resource_planning_test.py) |
 | Meta 提交理由与总结自主收尾；在途工作落定，无报告或额外回复门槛；旧规则保留 | [stop_review.py](../../src/control/stop_review.py)、[meta.py](../../src/control/meta.py)、[收尾展示](../../packages/meta-workbench-studio/client/components/closeout.tsx) | [meta_finish_test](../../tests/unit/meta_finish_test.py)、[meta-closeout-ui](../../tests/unit/meta-closeout-ui.test.mjs)、[stop_review_test](../../tests/unit/stop_review_test.py)、[meta_prompt_test](../../tests/unit/meta_prompt_test.py) |
 | 主 Meta、研究委派、持久文件/会话及角色边界 | [meta_native_composition.py](../../src/control/meta_native_composition.py)、[meta_worker_native.mjs](../../src/control/meta_worker_native.mjs) | [meta-native](../../tests/contracts/meta-native.test.mjs)、[meta-research](../../tests/contracts/meta-research.test.mjs) |
@@ -81,3 +81,14 @@
 初次全量检查中 222 项 JavaScript 通过，552 项 Python 有 3 项因依赖相邻 Quantum-Harbor 而失败。将这两组单元测试改用合成任务文件后，相关 24 项及完整 552 项 Python 复测通过，无跳过；保留首次失败日志。新增检查覆盖缺项、重复安装、端口占用、实例身份、凭据缺失、创建/启动响应丢失、一次实验上限及官方文件摘要变化。完整构建、项目边界与文档检查通过。原始记录保存在本地 reports/development/meta-harness/agent-installation。
 
 [GitHub 工作流](../../.github/workflows/project.yml)已加入 Ubuntu/macOS 新克隆安装、复用、单元及启动检查，但本轮没有推送或执行托管 runner。没有调用真实模型，没有将单元夹具或 HTTP 桥检查称作首次真实实验/浏览器验收。浏览器工具的安全策略拒绝打开 file: 登录页，页面验收仍待执行；其他平台容器与真实首次实验也保留在待办计划。
+
+
+## 实验晚启动与活动截止的验证
+
+2026-10-26，以 ba2b5e4 为修改前源码基线，先提交文档与实施边界 42b61ec。新活动采用 benchmark-time-v2 / meta-system-v13；任务元数据仍保留 v1，旧活动与冻结配方维持完整阶段预留策略。主线和参考实验允许短窗口受理、启动及准备后开始求解，活动硬截止与明确选择的有限延期模式保持独立。
+
+在项目虚拟环境执行 `PATH="$PWD/.venv/bin:$PATH" npm test`，最终 225 项 JavaScript、568 项 Python 全部通过，无跳过。`npm run build`、补充 UI 构建、`npm run check:docs` 和 `npm run check:project` 通过。测试覆盖短窗口、正常完成、到期中断、启动准备跨越截止、排队到期、暂停/并发/收尾预留、drain 只允许在途任务延期、参考实验共用时间策略、旧策略回归、真实原因与先行故障保留、官方结果优先、时间条件展示和比较。
+
+[时限检查](../../tests/unit/benchmark_time_test.py)使用合成 benchmark 元数据、模拟时钟与宿主进程回执；[官方结果检查](../../tests/unit/official_results_test.py)核对时间证据、截止原因及可信成绩；[归集检查](../../tests/unit/result_collection_test.py)覆盖控制端停止记录；[界面检查](../../tests/unit/benchmark-task-ui.test.mjs)和[比较检查](../../tests/unit/studio-readability.test.mjs)核对缺失时间不伪造为零、短窗口不标为条件一致。本轮没有运行真实模型、真实 Docker 端到端实验、完整独立搬迁或浏览器人工验收，不据单元通过宣称这些层已验证。
+
+首次直接调用系统 Python 缺少 Harbor；改用项目虚拟环境后专项通过。首次完整回归中一项旧测试误用当前策略常量，改为显式绑定旧策略后完成全量复测；一次单独导入测试缺少测试目录路径，最终按标准 discover 入口验证。原始日志与最终结果保存在本地 reports/development/meta-harness/late-start，不改写既有验证记录。

@@ -62,13 +62,14 @@ def initialize(config, name, *, solver, meta, task, wall_time=None, solver_effor
         if not timing or timing.get('unavailable'):
             raise Problem('task_unavailable', '所选任务不存在或无法读取时限。', '运行 tasks 并核对 Quantum-Harbor。')
         required = timing.get('requiredTimeSeconds')
-        if not isinstance(required, (int, float)) or not math.isfinite(required) or required <= 0:
-            raise Problem('unbounded_task', '首次实验需要可预留完整 benchmark 时间的任务。')
+        bounded = isinstance(required, (int, float)) and math.isfinite(required) and required > 0
+        if wall_time is None and not bounded:
+            raise Problem('unbounded_task', 'benchmark 未设置有限阶段上限，请用 --wall-time 明确活动时间。')
         seconds = wall_time if wall_time is not None else math.ceil(required+1800)
-        if type(seconds) is not int or seconds < math.ceil(required+600):
-            raise Problem('insufficient_time', f'活动须至少预留 benchmark 的 {required:g} 秒及 600 秒 Meta/收尾余量。', '提高 --wall-time；不会缩短 benchmark 求解时限。')
+        if type(seconds) is not int or seconds <= 0:
+            raise Problem('invalid_time', '活动时间必须是正整数秒。')
         value = {'name': '首次实验 · '+name,
-                 'objective': '完成一次可核验的首次实验：优先使用已准备的 H0，在所选公开任务上安排一次完整实验，读取官方评分与证据后提交总结。明确区分工程链路、任务得分和科学结论；不声称一次尝试证明泛化收益。',
+                 'objective': '完成一次可核验的首次实验：优先使用已准备的 H0，在所选公开任务上安排一次实验（允许短窗口尝试，遵守活动硬截止），读取官方评分与证据后提交总结。明确区分工程链路、任务得分和科学结论；不声称一次尝试证明泛化收益。',
                  'solver': selected_model(catalogue, solver, solver_effort), 'meta': selected_model(catalogue, meta, meta_effort),
                  'tasks': [task], 'concurrency': 1, 'maxTrials': 1, 'maxRounds': 1, 'wallTimeSeconds': seconds,
                  'reserveSeconds': None, 'stopMode': 'strict', 'drainGraceSeconds': 0, 'retries': 0,
