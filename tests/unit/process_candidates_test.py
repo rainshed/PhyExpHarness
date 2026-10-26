@@ -51,3 +51,32 @@ class ProcessCandidatesTests(unittest.TestCase):
 
     def test_project_cannot_escape_workspace(self):
         with self.assertRaises(ValueError):self.service.build_candidate(self.cid,[],'bad',project_path='../outside')
+
+    def test_library_keeps_failed_source_and_frozen_origin_is_not_required(self):
+        self.service.build_candidate(self.cid,[],'H0')
+        project=self.service.workspace(self.cid)/'h0'
+        plugin=project/'plugins/example';plugin.mkdir(parents=True)
+        (plugin/'index.mjs').write_text('export function apply() {}')
+        (plugin/'plugin.json').write_text(json.dumps({'name':'example','version':'1','entry':'index.mjs'}))
+        spec=json.loads((project/'harness.json').read_text());spec['plugins']=[{'name':'example','path':'plugins/example'}]
+        (project/'harness.json').write_text(json.dumps(spec))
+        with patch('src.execution.bundle.project.build',side_effect=RuntimeError('fixture build failed')):
+            with self.assertRaisesRegex(RuntimeError,'fixture build failed'):
+                self.service.build_candidate(self.cid,[],'failed',project_path='h0')
+        item=self.service.plugin_library.page()['items'][0]
+        self.assertEqual(item['buildStatus'],'failed')
+        candidate=self.service.build_candidate(self.cid,[],'passed',project_path='h0')
+        imported=self.service.plugin_library.import_candidate(candidate)
+        self.assertEqual(imported['plugins'][0]['id'],item['id'])
+        import shutil
+        shutil.rmtree(project);shutil.rmtree(candidate['bundlePath'])
+        self.assertIn('apply',self.service.plugin_library.detail(item['id'],'index.mjs')['content'])
+
+    def test_library_http_requires_user_before_any_lookup(self):
+        from fastapi.testclient import TestClient
+        from src.control.server import make_app
+        _,token=self.service.lease(self.cid,'meta',self.service.store.clock()+100)
+        client=TestClient(make_app(self.service,supervise=False))
+        for path in ['/plugin-library','/plugin-library/'+'a'*64,'/plugin-library/jobs/unknown']:
+            self.assertEqual(client.get(path,headers={'authorization':'Bearer '+token}).status_code,403)
+        self.assertEqual(client.get('/plugin-library',headers={'authorization':'Bearer '+self.service.user_token}).status_code,200)

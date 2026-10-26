@@ -92,3 +92,10 @@
 [时限检查](../../tests/unit/benchmark_time_test.py)使用合成 benchmark 元数据、模拟时钟与宿主进程回执；[官方结果检查](../../tests/unit/official_results_test.py)核对时间证据、截止原因及可信成绩；[归集检查](../../tests/unit/result_collection_test.py)覆盖控制端停止记录；[界面检查](../../tests/unit/benchmark-task-ui.test.mjs)和[比较检查](../../tests/unit/studio-readability.test.mjs)核对缺失时间不伪造为零、短窗口不标为条件一致。本轮没有运行真实模型、真实 Docker 端到端实验、完整独立搬迁或浏览器人工验收，不据单元通过宣称这些层已验证。
 
 首次直接调用系统 Python 缺少 Harbor；改用项目虚拟环境后专项通过。首次完整回归中一项旧测试误用当前策略常量，改为显式绑定旧策略后完成全量复测；一次单独导入测试缺少测试目录路径，最终按标准 discover 入口验证。原始日志与最终结果保存在本地 reports/development/meta-harness/late-start，不改写既有验证记录。
+
+
+## 插件库后台第一阶段
+
+2026-10-26，从 76d95a6 开始实施。[插件库](../../src/control/plugin_library.py)实现独立内容登记、历史补录进度、删除记录、修订与幂等、引用保护和宽限期清理；[候选接入](../../src/control/process_candidates.py)在构建前保存可定位插件，失败也保留源码。库 HTTP 路由仅用户可调用。
+
+[库专项](../../tests/unit/plugin_library_test.py) 7 项与[候选专项](../../tests/unit/process_candidates_test.py) 5 项通过，覆盖身份、失败源码、内容完整性、来源脱离、删除/恢复、依赖保留、重扫续接和用户/Meta 路由隔离；此前插件相关 22 项通过。尚未完成装配、H0 入口、完整并发/浏览器/容器验收；不把单元结果当作全部功能通过。后续按[任务书](../plans/plugin-library-and-h0.md)补齐验证。

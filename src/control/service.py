@@ -50,6 +50,8 @@ class ControlService:
         self.source=Path(source).resolve();self.data=Path(data).resolve();self.data.mkdir(parents=True,exist_ok=True);self.data.chmod(0o700)
         self.quantum=Path(quantum_harbor).resolve();self.base_url=base_url
         self.store=Store(self.data/'control.sqlite');self.evidence=EvidenceLibrary(self.store,self.data);self.reports=Reports(self.store,self.data)
+        from .plugin_library import PluginLibrary
+        self.plugin_library=PluginLibrary(self)
         from .deletion import ActivityAccess,Deletions
         self.access=ActivityAccess();self.deletions=Deletions(self)
         self.knowledge=KnowledgePack(self.source/'knowledge/plugin-sdk/reference','0.2.1-rc.2')
@@ -586,6 +588,7 @@ class ControlService:
         self.evidence.add(trial['campaignId'],trial['id'],'lifecycle',json.dumps({'trialId':trial['id'],**changes},ensure_ascii=False),{'authority':'controller','officialScore':None})
         return self.store.trial_update(trial['id'],**changes)
     def tick(self):
+        self.plugin_library.schedule()
         self.deletions.tick()
         self._tick()
     def _tick(self):

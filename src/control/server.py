@@ -105,6 +105,24 @@ def make_app(service,supervise=True):
     @app.get('/storage')
     def storage(request:Request):
         user(request);return service.storage.snapshot()
+    @app.get('/plugin-library')
+    def library(request:Request,query:str='',offset:int=0,limit:int=50,includeDeleted:bool=False):
+        user(request);return service.plugin_library.page(query,offset,limit,includeDeleted)
+    @app.post('/plugin-library/rescan')
+    def library_rescan(request:Request,body:dict):
+        user(request);result=service.plugin_library.rescan(body['idempotencyKey']);service.plugin_library.schedule();return result
+    @app.get('/plugin-library/jobs/{id}')
+    def library_job(id:str,request:Request):
+        user(request);return service.plugin_library.job(id)
+    @app.get('/plugin-library/{id}')
+    def library_detail(id:str,request:Request,file:str|None=None):
+        user(request);return service.plugin_library.detail(id,file)
+    @app.get('/plugin-library/{id}/deletion')
+    def library_deletion(id:str,request:Request,scope:str='version'):
+        user(request);return service.plugin_library.preview(id,scope)
+    @app.post('/plugin-library/{id}/change')
+    def library_change(id:str,request:Request,body:dict):
+        user(request);return service.plugin_library.change(id,body['action'],body['versions'],body['idempotencyKey'])
     @app.put('/storage/policy')
     @app.post('/storage/policy')
     def storage_policy(request:Request,body:dict):
