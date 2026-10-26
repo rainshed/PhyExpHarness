@@ -1,6 +1,6 @@
 # Meta 运行时
 
-适用：`meta-composition-v2`、当前工具 v9 与系统模板 v11。准确输入与结果 schema 见[contracts.json](../../packages/meta-harness/contracts.json)，身份冻结见[meta_native_composition.py](../../src/control/meta_native_composition.py)。
+适用：`meta-composition-v2`、当前工具 v10 与系统模板 v12。准确输入与结果 schema 见[contracts.json](../../packages/meta-harness/contracts.json)，身份冻结见[meta_native_composition.py](../../src/control/meta_native_composition.py)。
 
 ## 原生能力与领域插件
 
@@ -29,7 +29,7 @@ SDK 资料在 `npm run build:knowledge` 时从锁定安装、指南与类型生�
 
 普通研究使用原生进程内子代理，主/子独立上下文，共享持久工作区和会话存储；支持消息补充、同 ID 追问、中断和冷恢复。cwd 是工作目录，不是隔离边界。研究角色的业务接口只读，不能提交正式实验、保留版本或写正式报告；共享终端仍属于同一研究信任域。
 
-普通研究没有独立的隐含五分钟总时限，受原活动截止和取消约束。历史停止审查使用单独 Runner、只读证据和独立审查身份，不能由研究子会话冒充。新活动不使用 exhausted 审查来结束探索。
+普通研究没有独立的隐含五分钟总时限，受原活动截止和取消约束。历史停止审查使用单独 Runner、只读证据和独立审查身份，不能由研究子会话冒充。新活动由主 Meta 通过通用入口提交结束理由与实验总结，自主决定收尾；完整状态语义见[控制后台](control.md#暂停停止与探索完成)。
 
 主 Meta 的用户问题经[meta_questions.py](../../src/control/meta_questions.py)持久保存，并在工作台回答；普通研究子会话不能冒充主会话提问。已回答的同一问题回放不得改写为不同答案。
 

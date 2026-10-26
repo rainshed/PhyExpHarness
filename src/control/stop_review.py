@@ -5,7 +5,7 @@ import hashlib
 import math
 from pathlib import Path
 from .store import Refused, identity, encoded
-from .stop_policy import REVIEW_POLICY as POLICY, GOAL_POLICY, CONTROLLED_POLICIES
+from .stop_policy import REVIEW_POLICY as POLICY, GOAL_POLICY, META_POLICY, CONTROLLED_POLICIES
 
 READ_OPERATIONS={'materials_list','materials_search','materials_read','sdk_search','sdk_read','sdk_inspect','workspace_read','candidate_list','campaign_status','evidence_read','evidence_list'}
 TERMINAL={'finished','failed','cancelled'}
@@ -64,6 +64,12 @@ def owns_review(store,db,session,review):
 
 def finish(store,db,c,args):
     """Called inside Store.control's write transaction, including direct finish attempts."""
+    if c['config'].get('stopPolicy')==META_POLICY:
+        if c['state'] not in ('running','closing'):raise Refused('Active activity required')
+        if c.get('finishAssessment'):raise Refused('Meta closeout decision already saved')
+        for key in ('reason','summary'):
+            if not isinstance(args.get(key),str) or not args[key].strip():raise Refused(key+' requires nonempty text')
+        return {'source':'meta-decision','reason':args['reason'],'summary':args['summary'],'recordedAt':store.clock()}
     ready(store,db,c);no_pending(store,db,c);required_text(args.get('reason'),'reason')
     condition=args.get('condition')
     if condition=='exhausted':
@@ -142,7 +148,7 @@ class StopRuntime:
                 key=sha([session_id,data.get('agentId'),data.get('pluginId'),data.get('callId'),data.get('event')])
                 return store._save(db,'meta_observations',{'id':key,'campaignId':campaign,'sessionId':session_id,**data,'recordedAt':store.clock()})
             elif action=='review_request':
-                if c['config'].get('stopPolicy')==GOAL_POLICY:raise Refused('This activity does not support exhaustion reviews')
+                if c['config'].get('stopPolicy')!=POLICY:raise Refused('This activity does not support exhaustion reviews')
                 if data.get('agentId')!=main or agents.get(main,{}).get('preset')!='phyexp-meta':raise Refused('Only main Meta may request review')
                 ready(store,db,c);no_pending(store,db,c);request=data.get('request',{});request_valid(store,db,c,request)
                 snapshot_data=snapshot(store,db,c);fingerprint=sha(snapshot_data);key=sha([campaign,POLICY,fingerprint,request])

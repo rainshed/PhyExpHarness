@@ -29,7 +29,7 @@ class MetaAPI:
         self.service=service;self.store=service.store;self.files=FileViews(service)
         self.contract=CONTRACTS['meta-tools-v2'];self.lock=threading.RLock();self.receipts=Receipts(self)
     def call(self,campaign,operation,args):
-        if version(self.service,campaign) not in ('meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9'):return self._dispatch(campaign,operation,args)
+        if version(self.service,campaign) not in ('meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9','meta-tools-v10'):return self._dispatch(campaign,operation,args)
         from .meta_tool_boundary import ToolBoundary
         from .meta_receipts import receipt
         boundary=ToolBoundary(self)
@@ -52,7 +52,7 @@ class MetaAPI:
             validate(args,spec['input'])
             from .meta_receipts import public
             return public(self.service.references.call(campaign,operation,args))
-        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9')
+        protocol=version(self.service,campaign);v3=protocol in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9','meta-tools-v10')
         spec=CONTRACTS[protocol].get(operation)
         if not spec:raise Refused('Unknown Meta v2 operation')
         # The review grant is attached by the outside host, never part of the model schema.
@@ -93,6 +93,13 @@ class MetaAPI:
             atomic_json(file,{**receipt,'state':state,'result':result})
             return result
     def _reconcile(self,campaign,operation,key):
+        if operation=='campaign_finish':
+            from .stop_policy import META_POLICY
+            if self.store.get('campaigns',campaign)['config'].get('stopPolicy')==META_POLICY:
+                identity=hashlib.sha256(encoded([campaign,operation,key]).encode()).hexdigest()
+                with self.store.connection() as db:
+                    row=db.execute('SELECT result FROM commands WHERE campaign=? AND kind=? AND key=?',(campaign,'control','meta-finish-'+identity)).fetchone()
+                    if row:return json.loads(row['result'])
         kind={'batch_submit':'batch','campaign_plan_update':'resource-plan','trial_conditions_accept':'trial-conditions','research_save':'research-save'}.get(operation)
         if kind:
             with self.store.connection() as db:

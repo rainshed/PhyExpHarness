@@ -1,4 +1,5 @@
 import React,{useEffect} from 'react';
+import {Closeout} from '../components/closeout';
 import {api} from '@phyexp/meta-workbench-client';
 import {useResource,useResearch} from '@phyexp/meta-workbench-client/react';
 import {ResearchPanel} from '../components/research';
@@ -37,6 +38,7 @@ export function Overview({w,tablesProps}:any){
     <button className="primary" onClick={()=>navigate('compare','decision')}>为什么保留这一版？ →</button>
    </div>
   </section>
+  <Closeout campaign={c}/>
   <VersionComparison c={c} compact onEvidence={tablesProps.onEvidence} onStopTrial={tablesProps.onStopTrial} onReport={w.readReport}/>
   <ResearchPanel c={c} compact onEvidence={w.readEvidence} onReport={w.readReport} onAll={()=>navigate('lab','research')}/>
   <section className="studio-next-step"><span aria-hidden="true">↗</span><div><small>{ended?'接下来如何阅读':'最近记录的验证计划'}</small><p>{ended?'查看最终选择的依据，或从任务结果回到每次实验。后续研究方向保留在报告中。':next||'尚未记录下一步研究计划。'}</p>{!ended&&next&&<small>计划记录于 {date(recent.recordedAt)}；是否已启动以任务矩阵为准。</small>}</div><button onClick={()=>ended&&latest?w.readReport(latest.id):navigate('rounds')}>{ended&&latest?'阅读最终报告':'查看实验记录'} →</button></section>

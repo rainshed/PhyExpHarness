@@ -149,7 +149,10 @@ class Materials:
                     'interface':GUIDES_NATIVE['interface'].replace('full 视图','完整快照文件').replace('campaign_status.metaRequests','campaign_status.file 的 requests').replace('原生 v2','原生 v3')+' campaign_status/candidate_list 输入为空对象，evidence_list 可按 batchId/trialId 过滤但不分页。七个精简工具只返回描述和完整文件路径；原生 read/grep/bash 按需读取正文。sdk_read 只接受 id，同版本导航见 /sdk/index.json。',
                     'reporting':ANALYSIS['$id']+'：report_get_facts 返回 factsId、完整事实、analysisSchema 和 analysisTemplate 路径。report_save 只传 factsId、expectedReportRevision、idempotencyKey，以及 analysis / analysisFile 中恰好一个；推荐先用原生工具写 /work/analysis/*.json，再提交路径和 SHA-256。合法最小结构与正式 schema：'+encoded(ANALYSIS)}
             if self.store.get('campaigns',campaign)['config'].get('executionContract')=='harbor-process-v1':
-                guides={**guides,'interface':'来源：meta-tools-v9 / harbor-process-v1。开发对象是 /work/plugins 内的完整工程；harness.json 声明入口、隔离构建、依赖锁和任意策略配置。candidate_check/candidate_freeze 接收 projectPath；可修改框架、profile、依赖、工具、上下文、会话与恢复策略。check 验证隔离构建和入口存在，不证明策略正确或科学有效；experiment_submit 启动正式任务，evidence_list 提供官方结果和原始诊断。测试不要求先写报告或研究记录。平台只固定用户 Solver、任务/凭据隔离、资源容量、原生阶段截止、官方评分归属。候选差异是研究变量，不是外部条件漂移。H0 是可复制修改的模板；SDK 中旧执行模式约束不适用于完整工程。相同操作重试沿用 idempotencyKey。'}
+                guides={**guides,'interface':'来源：'+version(self.service,campaign)+' / harbor-process-v1。开发对象是 /work/plugins 内的完整工程；harness.json 声明入口、隔离构建、依赖锁和任意策略配置。candidate_check/candidate_freeze 接收 projectPath；可修改框架、profile、依赖、工具、上下文、会话与恢复策略。check 验证隔离构建和入口存在，不证明策略正确或科学有效；experiment_submit 启动正式任务，evidence_list 提供官方结果和原始诊断。测试不要求先写报告或研究记录。平台只固定用户 Solver、任务/凭据隔离、资源容量、原生阶段截止、官方评分归属。候选差异是研究变量，不是外部条件漂移。H0 是可复制修改的模板；SDK 中旧执行模式约束不适用于完整工程。相同操作重试沿用 idempotencyKey。'}
+            if self.store.get('campaigns',campaign)['config'].get('stopPolicy')=='meta-closeout-v1':
+                guides={**guides,'interface':guides['interface']+' 主动收尾使用 campaign_finish，提交非空 reason、summary 和 idempotencyKey。结束由 Meta 自主决定，无稳定性、成绩、候选、证据列表或单独报告前提。受理后无需额外回复，后台处理在途工作；结束不表示目标达成认证。',
+                    'reporting':guides['reporting']+' 这些字段仅适用于自愿保存的分析报告，不是主动收尾前提。收尾只需 campaign_finish 的理由与本次活动实验总结，不要求补齐每轮或最终分析报告。'}
             for name, text in guides.items():
                 yield self._record('guide:' + name, 'guide', name, '平台工具契约', lambda t=text: t, version='2' if native else '1')
         if include('task'):

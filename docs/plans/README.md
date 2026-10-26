@@ -6,8 +6,6 @@
 
 ## 当前已确认的实现差距
 
-**通用主动收尾待实现。** 已确认由 Meta 提交结束理由与实验总结，自主决定收尾；现有稳定性门槛、每轮报告补齐及额外回复要求不适用于新方案。范围、顺序和验收见[通用主动收尾](meta-closeout.md)，实施前现行指南仍描述旧行为。
-
 **Studio 创建表单仍保留旧基线次数校验。** 后台 service/store 对 harbor-process-v1 已取消全套 H0 前置及 maxTrials 必须覆盖所选任务数的要求；但[公共表单 configError](../../packages/meta-workbench-client/form.mjs)仍无条件要求 tasks.length ≤ maxTrials，且[现有 UI 测试](../../tests/unit/workbench.test.mjs)明确验证旧行为。当前指南已如实说明。
 
 待修复范围：让新活动表单与 process 后台的次数规则一致，同时保留并发不得超过次数上限、正整数/空值校验及未知创建请求的原参数回放。验收应覆盖多任务但只允许少量实验的新活动、旧草稿、配置错误和创建幂等；不能通过放宽全部校验解决。本轮文档任务记录差距，未修改业务行为。

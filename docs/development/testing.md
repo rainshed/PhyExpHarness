@@ -29,6 +29,8 @@ python3 tests/contracts/prepare-meta-image.py --output /absolute/new-fixture-ima
 npm run test:contracts
 ```
 
+通用主动收尾的完整宿主/后台检查使用 `python3 tests/contracts/meta-closeout.py`，要求上述不可变 PHYEXP_META_TEST_IMAGE。它通过本地模拟 provider 提交理由与总结，验证无后续模型回复、无单独报告也能结束，并保存系统最终事实；不调用真实模型。历史稳定性路径可用 `python3 tests/contracts/meta_runtime.py --native --final-first` 核验，夹具显式物化旧 v9 工具。
+
 这些检查使用假 provider 或本地协议服务，部分需要真实 Docker/原生 SDK/CLI，不调用真实模型。可选镜像未准备会明确跳过，报告必须单列跳过，不写成全部通过。`npm run test:references` 可准备并运行参考专项。
 
 ## 官方环境、规模与搬迁

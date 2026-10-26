@@ -12,7 +12,7 @@
 | 新活动无 token 账本，旧账本仍兼容 | [model_access.py](../../src/control/model_access.py)、[accounting.py](../../src/control/accounting.py) | [model_access_test](../../tests/unit/model_access_test.py)、[model-access](../../tests/unit/model-access.test.mjs) |
 | 求解时限属于 benchmark，不扣旧 330 秒固定预留 | [task_time.py](../../src/execution/host/task_time.py)、[resource_planning.py](../../src/control/resource_planning.py) | [benchmark_time_test](../../tests/unit/benchmark_time_test.py)、[benchmark-task-ui](../../tests/unit/benchmark-task-ui.test.mjs) |
 | 后台 Meta 规划并发/收尾，新 process 不强制全部 H0；UI 次数校验仍有差距 | [service.py](../../src/control/service.py)、[资源规划](../../src/control/resource_planning.py) | [process_candidates_test](../../tests/unit/process_candidates_test.py)、[resource_planning_test](../../tests/unit/resource_planning_test.py) |
-| 默认目标/限额结束，不以 exhausted 提前结束 | [stop_policy.py](../../src/control/stop_policy.py)、[stop_review.py](../../src/control/stop_review.py) | [stop_review_test](../../tests/unit/stop_review_test.py)、[meta_prompt_test](../../tests/unit/meta_prompt_test.py) |
+| Meta 提交理由与总结自主收尾；在途工作落定，无报告或额外回复门槛；旧规则保留 | [stop_review.py](../../src/control/stop_review.py)、[meta.py](../../src/control/meta.py)、[收尾展示](../../packages/meta-workbench-studio/client/components/closeout.tsx) | [meta_finish_test](../../tests/unit/meta_finish_test.py)、[meta-closeout-ui](../../tests/unit/meta-closeout-ui.test.mjs)、[stop_review_test](../../tests/unit/stop_review_test.py)、[meta_prompt_test](../../tests/unit/meta_prompt_test.py) |
 | 主 Meta、研究委派、持久文件/会话及角色边界 | [meta_native_composition.py](../../src/control/meta_native_composition.py)、[meta_worker_native.mjs](../../src/control/meta_worker_native.mjs) | [meta-native](../../tests/contracts/meta-native.test.mjs)、[meta-research](../../tests/contracts/meta-research.test.mjs) |
 | 完整结果落文件，短回执与分页读取 | [meta_tool_boundary.py](../../src/control/meta_tool_boundary.py)、[meta_outputs.mjs](../../src/control/meta_outputs.mjs) | [meta-output-boundary](../../tests/contracts/meta-output-boundary.test.mjs)、[meta_tool_boundary_test](../../tests/unit/meta_tool_boundary_test.py) |
 | SDK 指南冻结且新建时完整核验 | [build-knowledge.py](../../scripts/build-knowledge.py)、[knowledge.py](../../src/control/knowledge.py) | [knowledge_snapshot_test](../../tests/unit/knowledge_snapshot_test.py)、[生成资料](../../knowledge/plugin-sdk/README.md) |
@@ -36,7 +36,7 @@
 | 首次计划自动跑全部 H0、任务数必须被基线额度覆盖 | 后台新 process 不强制该顺序；Studio 仍保留旧次数表单校验，已写入指南和待办 |
 | 用户/Meta 分配单次时限，固定扣除 330 秒 | 新活动时限由 benchmark 分阶段读取，不接受覆盖/缩短 |
 | 默认恢复和工具清单属于不可修改基础设施 | 新工程拥有策略，默认模板是可修改候选 |
-| 默认六项插件全部启用、探索耗尽经审查可停止 | 停止审查默认关闭，goal-or-budget 拒绝 exhausted |
+| 默认六项插件全部启用、探索耗尽经审查可停止 | 停止审查默认关闭；历史 goal-or-budget 拒绝 exhausted，新活动由 Meta 提交理由与总结自主收尾 |
 | 通用 Agent/完整证据“待实施”，参考插件“尚未实施” | 当前已有实现，文档说明准确角色、路径与兼容限制 |
 | 全部归档串行后才有结果，无缓存自动清理 | 结果与索引分阶段发布；自动回收仅在可证明安全的范围 |
 | 新候选按旧 v2 插件清单交付 | v3 包含完整工程与构建产物，旧 v1/v2 继续兼容 |
@@ -59,3 +59,11 @@
 首次用未安装 Harbor 的系统 Python 运行单元检查失败；按指南使用项目虚拟环境后完整复测通过。首次失败与复测日志均保留，不计为代码通过证据。
 
 本轮没有新调用真实模型，没有重跑官方任务烟测、完整 ZIP 搬迁、50,000 条规模测试、数日活动或人工浏览器体验；表中这些专项入口用于复现，不表示本轮已经执行。当前文档明确区分产品要求、已实现行为与验证缺口，尤其保留上述 UI 实现差距。
+
+## 通用主动收尾修改的验证
+
+2026-10-26，以 c5940cc 为实施前源码基线、681c1da 为方案提交。新活动采用 meta-closeout-v1 / meta-tools-v10 / meta-system-v12，旧工具 v9 的绑定摘要及旧模板 v11 保持原内容。本节仅记录本次修改，不将上一节的历史验证继承为新版本结论。
+
+专项检查覆盖自定义目标无稳定性规则、无候选/实验、失败成绩、理由与总结必填、主/子权限、幂等冲突与未知回执恢复、在途主线/参考/构建/归集、会话中断无需额外回复、截止/用户停止缺失总结、UI 与报告来源区分。原生隔离 Runner 使用脚本 provider 验证实际工具 schema 与理由/总结传递；[完整宿主检查](../../tests/contracts/meta-closeout.py)实际通过冻结运行时、已认证 HTTP 控制和最终事实归集，模拟模型仅请求一次且没有收尾后的回复，活动正常结束。[历史夹具](../../tests/contracts/meta_runtime.py)显式物化 v9 工具，原 stable 与每轮报告流程保持有效。
+
+最终检查结果记录于本地 reports/development/meta-harness；本次未调用真实模型、未发布远端实例或转换旧活动，亦未重跑完整搬迁、数日压力或全部容器契约。完整单元检查 220 项 JavaScript、533 项 Python 通过，无跳过；通知调整后的 Meta 专项 75 项通过；SDK 资料与 Studio 构建通过。第一次完整检查出现既有控制测试临时目录清理竞争，单独 18 项控制测试及随后完整复测通过；保留首次失败日志，不把它算作通过证据。最后的报告索引、通知与构建准入调整后，全部 533 项 Python 再次通过；页面和工具专项 34 项通过，构建与项目/文档检查通过。

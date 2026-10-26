@@ -1,6 +1,8 @@
 # 通用主动收尾
 
-状态：已确认方案，待实现。产品依据见[产品要求](../product/requirements.md)；当前旧实现仍采用 goal-or-budget-v1，主动收尾只接受 stable，并要求 stabilityRule。本文不表示新入口已经可用。
+历史方案：正文保留实施前的范围与验收条件。主线实现已完成，当前操作见[控制后台](../../architecture/control.md#暂停停止与探索完成)，验证范围见[实现核对](../../development/implementation-audit.md#通用主动收尾修改的验证)。
+
+原方案状态：已确认方案，待实现。产品依据见[产品要求](../../product/requirements.md)；当前旧实现仍采用 goal-or-budget-v1，主动收尾只接受 stable，并要求 stabilityRule。本文不表示新入口已经可用。
 
 ## 范围与行为
 

@@ -25,13 +25,25 @@ test('contract rejects string encoded JSON, unknown fields, malformed nested par
  assert.throws(()=>validateInput('candidate_freeze',{plugins:[{path:'p',config:3}],description:'test',idempotencyKey:'x'}),/Invalid/);
  assert.throws(()=>validateInput('campaign_status',{role:'reviewer'}),/Invalid/);
 });
-test('current completion tool only permits verified goal completion',()=>{
- const input={condition:'stable',candidateId:'candidate',reason:'Target met',evidenceRefs:['evidence'],idempotencyKey:'finish'};
+test('current completion tool requires only a reason, summary and write identity',()=>{
+ const input={reason:'Comparison finished',summary:'Both approaches failed; results documented.',idempotencyKey:'finish'};
  validateInput('campaign_finish',input);
- assert.throws(()=>validateInput('campaign_finish',{...input,condition:'exhausted'}),/Invalid/);
+ for(const name of ['reason','summary']){
+  assert.throws(()=>validateInput('campaign_finish',{...input,[name]:' \n '}),/Invalid/);
+  const missing={...input};delete missing[name];assert.throws(()=>validateInput('campaign_finish',missing),/Invalid/);
+ }
+ assert.throws(()=>validateInput('campaign_finish',{...input,condition:'stable'}),/Invalid/);
  const source=JSON.parse(fs.readFileSync(new URL('../../packages/meta-harness/composition-native.json',import.meta.url)));
  const main=nativeEntries(source,{systemPrompt:'fixture'}).find(e=>e.id==='active-meta-preset').config.plugins;
  assert.ok(!main.some(e=>e.id==='meta-stop-review'));
+});
+test('an explicitly configured legacy composition advertises the new closeout contract',async()=>{
+ const {apply}=await import('../../packages/meta-harness/actions.mjs');const registered=[];const calls=[];
+ apply({tools:{register:t=>registered.push(t)},metaControl:{observe:async()=>{},call:async(...args)=>{calls.push(args);return {state:'closing'};}}},{closeoutPolicy:'meta-closeout-v1'});
+ const tool=registered.find(t=>t.name==='campaign_finish');
+ assert.match(tool.description,/reason,summary,idempotencyKey/);assert.doesNotMatch(tool.description,/independent read-only reviewer/);
+ const input={reason:'已完成比较',summary:'结果存在局限',idempotencyKey:'finish'};
+ await tool.execute({input:JSON.stringify(input)},{});assert.deepEqual(calls[0].slice(0,2),['campaign_finish',input]);
 });
 test('composition validates role dependencies and removing a required domain fails',()=>{
  const source=JSON.parse(fs.readFileSync(new URL('../../packages/meta-harness/composition-native.json',import.meta.url)));

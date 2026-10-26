@@ -14,7 +14,8 @@ test('native Meta loads six typed plugins and applicable native tools in a real 
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'phyexp-meta-native-'));const calls=[];let schemas;
  const config={id:'native-main',model,deadline:Date.now()/1000+90,workRoot:path.join(dir,'work'),sessionRoot:path.join(dir,'sessions'),pluginWorkspace:path.join(dir,'plugins'),filesRoot:path.join(dir,'files')};
  for(const p of [config.workRoot,config.sessionRoot,config.pluginWorkspace,...['evidence','materials','sdk','versions','outputs'].map(n=>path.join(config.filesRoot,n))])fs.mkdirSync(p,{recursive:true});
- const gateway=new MetaGateway({mainSessionId:config.id,model,deadline:Date.now()+90000,audit:path.join(dir,'audit'),reserve:async()=>{},settle:async()=>{},adapter:{async *stream(request){schemas=request.tools;yield*done();}}});
+ const closeout={reason:'已完成方案比较',summary:'两种方案均失败；已记录原因和局限。',idempotencyKey:'native-finish'};let requested=false;
+ const gateway=new MetaGateway({mainSessionId:config.id,model,deadline:Date.now()+90000,audit:path.join(dir,'audit'),reserve:async()=>{},settle:async()=>{},adapter:{async *stream(request){schemas=request.tools;if(!requested){requested=true;yield*call('campaign_finish',closeout,'finish');}else yield*done();}}});
  const host=new MetaHost({config,root,image,logs:path.join(dir,'logs'),frozen:{id:'fixture',composition:JSON.parse(fs.readFileSync(path.join(root,'packages/meta-harness/composition-native.json'))),systemPrompt:{text:'Research {{literal}}'},reviewerPrompt:'Review'},gateway,
   modelInfo:{provider:model.provider,id:model.model,name:model.model,context:{contextWindow:272000},reasoning:{efforts:[{id:'medium',name:'Medium'}]}},async api(route,body){calls.push(body);return {ok:true};}});
  try{
@@ -23,6 +24,8 @@ test('native Meta loads six typed plugins and applicable native tools in a real 
   assert.equal(events.filter(e=>e.type==='turn/end').at(-1)?.data.reason.kind,'completed');
   const names=schemas.map(s=>s.name);for(const name of ['bash','read','write','campaign_finish','candidate_check','materials_read','report_get_facts','subagent','send_message','interrupt_agent','list_agents'])assert.ok(names.includes(name),name+' unavailable: '+names.join(','));
   assert.equal(schemas.find(s=>s.name==='batch_submit').parameters.properties.input,undefined);
+  assert.deepEqual(Object.keys(schemas.find(s=>s.name==='campaign_finish').parameters.properties).sort(),['idempotencyKey','reason','summary']);
+  assert.deepEqual(calls.find(c=>c.action==='call'&&c.input.operation==='campaign_finish').input.input,closeout);
   assert.ok(calls.some(c=>c.action==='register'));await session.shutdown();
  }finally{await host.dispose();}
 });

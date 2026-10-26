@@ -61,7 +61,7 @@ try{
   if(notice.finish){summary.status='completed';break;}
   if((notice.events.total??notice.events.length)||notice.continue){
    pendingCursor=notice.cursor;
-   prompt=JSON.stringify({source:'Fixed controller notification',delivery:{consumer:nativeId,after:cursor,through:notice.cursor},events:notice.events,status:notice.status,evidenceIndex:'/evidence/index.json',instruction:'Continue research or finish outstanding reports within the activity limits. A completed conversation turn does not end the activity. Reconcile any operation with an unknown outcome before submitting another.'});
+   prompt=JSON.stringify({source:'Fixed controller notification',delivery:{consumer:nativeId,after:cursor,through:notice.cursor},events:notice.events,status:notice.status,evidenceIndex:'/evidence/index.json',instruction:notice.instruction||'Continue research or finish outstanding reports within the activity limits. A completed conversation turn does not end the activity. Reconcile any operation with an unknown outcome before submitting another.'});
   }else if(notice.cursor>cursor){await api('/meta-sessions/'+config.id+'/ack',{cursor:notice.cursor});cursor=notice.cursor;}
   await new Promise(resolve=>setTimeout(resolve,1000));
  }

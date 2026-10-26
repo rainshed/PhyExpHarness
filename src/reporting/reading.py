@@ -52,7 +52,7 @@ def render_reading(report):
     f=report['facts'];c=f['campaign'];cfg=c['config'];u=c['usage'];a=report['reading'];tables=report['tables']
     versions={v['id']:v['displayName'] for v in tables['versions']}
     rounds=[r for r in tables['rounds'] if not report['batchId'] or r['id']==report['batchId']]
-    title=f"第 {rounds[-1]['round']} 轮报告" if report['batchId'] and rounds else '进化总报告' if report['kind']=='final' else '运行状态摘要'
+    title='收尾记录与最终事实' if report.get('closeoutSubmitted') else f"第 {rounds[-1]['round']} 轮报告" if report['batchId'] and rounds else '进化总报告' if report['kind']=='final' else '运行状态摘要'
     lines=['# '+title,'',a['summary'],'',a['source'],'']
     if report.get('revisionReason'):lines += [report['revisionReason'],'']
     if report.get('evaluationNotice'):lines += [report['evaluationNotice'],'']
@@ -96,7 +96,12 @@ def render_reading(report):
         *([f"活动累计已确认 {u['confirmedTokens']:,} token；在途预留 {u['inflightReservedTokens']:,}；未知请求 {u['unknownRequests']} 个，保守预留 {u['unknownReservedTokens']:,}。"] if 'confirmedTokens' in u else []),
         '停止原因：'+REASONS.get(c['stopReason'],c['stopReason'] or '尚未停止')+'。',
         '最终版本：'+versions.get(c.get('finalCandidateId'),'尚未选择')+'。']
-    if c.get('finishAssessment'):lines+=['Meta 结束依据：'+c['finishAssessment']['reason']]
+    if c.get('finishAssessment'):
+        lines+=['','### Meta 收尾记录','','结束理由：',c['finishAssessment']['reason']]
+        if c['finishAssessment'].get('summary'):lines+=['','本次实验总结：',c['finishAssessment']['summary']]
+        lines+=['','活动结束不表示平台认证目标已经达成。']
+    elif cfg.get('stopPolicy')=='meta-closeout-v1' and c['state'] in ('closing','finished','failed'):
+        lines+=['','尚未收到 Meta 提交的收尾理由与实验总结。系统事实摘要不代替 Meta 总结。']
     if f.get('metaComposition'):
         meta=f['metaComposition'];lines+=['','### Meta 插件组合与停止审查','',f"冻结组合：{meta['preset']}；标识：{meta['id']}。",'插件触发记录不代表效果认证。']
         for p in meta['plugins']:

@@ -6,7 +6,7 @@ import subprocess
 import time
 import fcntl
 from pathlib import Path
-from .stop_policy import CONTROLLED_POLICIES
+from .stop_policy import CONTROLLED_POLICIES, META_POLICY
 from .store import identity,Refused
 from .meta_context import system_prompt,startup_context,activity_state
 from .processes import reap_children
@@ -44,6 +44,7 @@ class MetaDriver:
     def _start(self,campaign):
         c=self.store.status(campaign);now=time.time()
         if now>=c['deadline'] or c['state'] not in ['running','closing']:return
+        if c['config'].get('stopPolicy')==META_POLICY and c.get('finishAssessment'):return
         previous=self.store.list('meta_sessions',campaign)
         if any(s['state'] in ['starting','running','waiting'] for s in previous):return
         native=native_config(c);last=previous[-1] if previous else None
@@ -101,13 +102,15 @@ class MetaDriver:
         c=self.store.status(campaign)
         if c['state']!='closing' or c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials']:return False
         if any(o['state']=='running' for o in self.store.list('operations',campaign)):return False
+        if c['config'].get('stopPolicy')==META_POLICY:
+            return bool(c.get('finishAssessment')) or not any(s['state'] in ('starting','running','waiting') for s in self.store.list('meta_sessions',campaign))
         reports=self.store.report_heads(campaign)
         return any(r['kind']=='final' and r['status']=='analysis' for r in reports) and all(
             any(r['kind']=='round' and r['batchId']==b['id'] and r['status']=='analysis' for r in reports)
             for b in self.store.list('batches',campaign))
     def notifications(self,id,after):
         row=self.store.get('meta_sessions',id);campaign=row['campaignId'];c=self.store.status(campaign)
-        if c['state'] in ('finished','failed') or row['state'] not in ('starting','running','waiting'):
+        if c['state'] in ('finished','failed') or row['state'] not in ('starting','running','waiting') or (c['config'].get('stopPolicy')==META_POLICY and c.get('finishAssessment')):
             return {'cursor':row.get('cursor',after),'events':[],'status':{'state':c['state'],'sessionState':row['state']},'finish':True,'continue':False}
         events=self.store.events(campaign,after);cursor=max([after,*[e['seq'] for e in events]])
         finished_batches={e.get('batchId') for e in events if e['type']=='batch_finished'}
@@ -126,13 +129,14 @@ class MetaDriver:
         pending=any(o['state']=='running' for o in self.store.list('operations',campaign)) or bool(c['counts']['activeTrials'] or c['counts'].get('collectingTrials',0) or c['counts']['reservedTrials'])
         from .meta_contracts import version
         state=activity_state(self.service,campaign)
-        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9'):
+        if version(self.service,campaign)in ('meta-tools-v3','meta-tools-v4','meta-tools-v5','meta-tools-v6','meta-tools-v7','meta-tools-v8','meta-tools-v9','meta-tools-v10'):
             state=self.service.meta_api.receipts.status(campaign)
             details=self.service.meta_api.receipts.snapshot(campaign,'notifications',{'after':after,'cursor':cursor},selected)
             selected=[{k:e[k] for k in ['seq','type','operationId','trialId','batchId','state'] if k in e} for e in selected]
             # Event count can also grow while offline: keep the complete event list in a file.
             selected={'total':len(selected),'file':{k:details[k] for k in ['ref','path','mediaType','bytes','sha256','completeness']}}
         return {'cursor':cursor,'events':selected,'status':state,'finish':finish,
+            **({'instruction':'Exploration is closed. Submit campaign_finish with your reason and activity summary; separate reports are optional. Do not start new research.' if c['state']=='closing' else 'Continue toward the user objective, or submit campaign_finish with reason and summary when you decide to end. A completed conversation turn alone does not end the activity. Reconcile unknown operations before writing again.'} if c['config'].get('stopPolicy')==META_POLICY else {}),
             'continue':c['config'].get('stopPolicy') in CONTROLLED_POLICIES and c['state'] in ['running','closing'] and not pending and not finish}
     def acknowledge(self,id,cursor):
         with self.store.connection(True) as db:
@@ -152,13 +156,20 @@ class MetaDriver:
                 continue
             try:summary=json.loads((Path(row['output'])/'summary.json').read_text())
             except (OSError,ValueError,KeyError,TypeError):summary={'status':'error','error':'Session process exited without final summary'}
-            row.update(state='completed' if summary.get('status')=='completed' else 'failed',
+            row.update(state='completed' if summary.get('status')=='completed' else 'interrupted' if row.get('stopReason')=='activity_closed' and summary.get('status')=='interrupted' else 'failed',
                 finishedAt=row.get('finishedAt') or time.time(),summary=summary)
             self._save_session(row)
             with self.store.connection(True) as db:self.store._event(db,campaign,'meta_terminal_reconciled',sessionId=row['id'],state=row['state'])
 
     def tick(self,campaign):
         c=self.store.status(campaign);sessions=self.store.list('meta_sessions',campaign);active=False
+        if c['config'].get('stopPolicy')==META_POLICY and c.get('finishAssessment') and c['state']=='closing':
+            # A committed decision is sufficient; neither another model reply nor
+            # report completion is needed, even if the submitting worker is alive.
+            if self.closeout_ready(campaign):
+                self.store.finalize(campaign,summary_reason='Meta 已提交收尾理由与实验总结；系统归集最终事实，活动结束不代表目标达成认证。')
+            self.reconcile_closed(campaign)
+            return
         for row in sessions:
             if row['state'] not in ['starting','running','waiting']:continue
             process=self.children.get(row['id'])
@@ -192,6 +203,10 @@ class MetaDriver:
                     with self.store.connection(True) as db:self.store._event(db,campaign,'meta_recovery',sessionId=row['id'],**decision)
                 else:self.store.close_admission(campaign,'meta_session_failed')
             if row['state']=='completed':
+                if c['config'].get('stopPolicy')==META_POLICY:
+                    if self.closeout_ready(campaign):
+                        self.store.finalize(campaign,summary_reason='活动已结束；系统保留最终事实，Meta 收尾理由与总结以实际提交记录为准。')
+                    return
                 if self.store.status(campaign)['counts'].get('collectingTrials'):return
                 self.store.finalize(campaign)
                 if native_config(c):return
@@ -203,6 +218,10 @@ class MetaDriver:
                 return
         c=self.store.status(campaign)
         if active or c['state'] in ['draft','paused','finished','failed']:return
+        if c['config'].get('stopPolicy')==META_POLICY and c['state']=='closing':
+            if self.closeout_ready(campaign):
+                self.store.finalize(campaign,summary_reason='活动已结束；系统保留最终事实，Meta 收尾理由与总结以实际提交记录为准。')
+            return
         if native_config(c):
             # Committed closeout artifacts do not require one more model response.
             # Keep the session failure and its accounting; only finish the activity.

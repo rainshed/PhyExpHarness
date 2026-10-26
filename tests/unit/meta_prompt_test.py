@@ -8,7 +8,7 @@ from unittest.mock import patch
 from src.control.meta_context import system_prompt
 from src.control.meta_contracts import binding, CONTRACTS
 from src.control.meta_native_composition import freeze, verify
-from src.control.stop_policy import GOAL_POLICY
+from src.control.stop_policy import GOAL_POLICY, META_POLICY
 from src.control.store import encoded
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,10 +33,10 @@ class MetaPromptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch('src.control.meta_native_composition.prepare_image', return_value='sha256:'+'a'*64):
             first = freeze(ROOT, temp, config)
             _, frozen = verify(temp, first, ROOT)
-            expected = system_prompt({**config, 'stopPolicy': GOAL_POLICY})
+            expected = system_prompt({**config, 'stopPolicy': META_POLICY})
             self.assertEqual(frozen['systemPrompt'], expected)
-            self.assertEqual(first['stopPolicy'], GOAL_POLICY)
-            self.assertEqual(first['toolContract']['version'], 'meta-tools-v9')
+            self.assertEqual(first['stopPolicy'], META_POLICY)
+            self.assertEqual(first['toolContract']['version'], 'meta-tools-v10')
             self.assertFalse(next(p for p in first['plugins'] if p['id']=='meta-stop-review')['enabled'])
             second = freeze(ROOT, temp, {**config, 'objective': '另一个目标'})
             self.assertNotEqual(first['id'], second['id'])
@@ -47,3 +47,16 @@ class MetaPromptTests(unittest.TestCase):
                          '31a44a228e1ebcb95ca417485d8a752494cbc317de4bad50344fbc3c13eb7c63')
         self.assertIn('exhausted', CONTRACTS['meta-tools-v6']['campaign_finish']['input']['properties']['condition']['enum'])
         self.assertEqual(CONTRACTS['meta-tools-v7']['campaign_finish']['input']['properties']['condition']['enum'], ['stable'])
+
+    def test_v9_contract_and_process_prompt_keep_historical_identity(self):
+        self.assertEqual(hashlib.sha256(encoded(binding('meta-tools-v9')).encode()).hexdigest(),
+                         '78590b9a9c9e1e3180fb797c95db96957850ed002c2fe614eeb7ddbadbc493b3')
+        self.assertEqual(CONTRACTS['meta-tools-v9']['campaign_finish']['input']['properties']['condition']['enum'], ['stable'])
+        old=system_prompt({'solver':{},'stopPolicy':GOAL_POLICY,'executionContract':'harbor-process-v1'})
+        new=system_prompt({'solver':{},'stopPolicy':META_POLICY,'executionContract':'harbor-process-v1'})
+        self.assertEqual(old['version'],'meta-system-v11')
+        self.assertEqual(new['version'],'meta-system-v12')
+        self.assertIn('提交每轮报告和最终报告',old['text'])
+        self.assertNotIn('提交每轮报告和最终报告',new['text'])
+        self.assertIn('summary',new['text'])
+        self.assertIn('不需要再提交额外回复',new['text'])

@@ -1,5 +1,5 @@
 {
-  "version": "meta-tools-v9",
+  "version": "meta-tools-v10",
   "operations": {
     "campaign_status": {
       "plugin": "campaign",
@@ -60,23 +60,17 @@
       "input": {
         "type": "object",
         "properties": {
-          "condition": {
-            "type": "string",
-            "enum": [
-              "stable"
-            ]
-          },
-          "candidateId": {
-            "type": "string"
-          },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Why you have decided to end this activity."
           },
-          "evidenceRefs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Your summary of this activity: work performed, results and conclusions, unresolved issues and limitations. Free-form text."
           },
           "idempotencyKey": {
             "type": "string",
@@ -84,16 +78,14 @@
           }
         },
         "required": [
-          "condition",
-          "candidateId",
           "reason",
-          "evidenceRefs",
+          "summary",
           "idempotencyKey"
         ],
         "additionalProperties": false
       },
       "write": true,
-      "description": "Request closeout after the selected frozen candidate meets the user-agreed stabilityRule on all selected tasks and all attempts; no implicit threshold. Budget closeout is automatic. Exhaustion of research ideas is not a finish condition."
+      "description": "End exploration by submitting your reason and activity summary. You decide when to finish according to the user objective. No stability rule, score, candidate, evidence list or separate report is required. Acceptance saves your decision and closes new experiments; existing work settles within its original limits. No further reply is needed. Ending is not platform certification of success."
     },
     "candidate_check": {
       "plugin": "experiments",
