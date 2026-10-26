@@ -6,6 +6,8 @@
 
 ## 当前已确认的实现差距
 
+**允许实验晚启动。** 产品要求已取消完整任务上限必须落入剩余活动时间的准入条件；当前调度和执行仍有旧检查。本轮按[晚启动计划](late-start.md)修改准入、截止、时间证据与展示，旧活动按原策略读取。
+
 **Agent 安装与首次实验仍有外部验证缺口。** 安装、自检、统一启动、活动命令、CI 配置和本地干净源码检查已完成，当前用法见[Agent 安装流程](../guides/agent-installation.md)。托管 CI、其他平台容器、真实首次实验和浏览器验收仍按[实施计划](agent-installation.md)分别记录。
 
 **Studio 创建表单仍保留旧基线次数校验。** 后台 service/store 对 harbor-process-v1 已取消全套 H0 前置及 maxTrials 必须覆盖所选任务数的要求；但[公共表单 configError](../../packages/meta-workbench-client/form.mjs)仍无条件要求 tasks.length ≤ maxTrials，且[现有 UI 测试](../../tests/unit/workbench.test.mjs)明确验证旧行为。当前指南已如实说明。
