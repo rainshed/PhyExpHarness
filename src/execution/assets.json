@@ -61,7 +61,6 @@
           "src/execution/host/model_gateway.mjs",
           "src/execution/host/model_access.mjs",
           "src/execution/host/task_network.py",
-          "src/execution/host/container_runtime.py",
           "src/execution/host/capabilities.mjs",
           "src/execution/host/provider-config.schema.json",
           "src/execution/host/model_failures.mjs",

@@ -70,8 +70,6 @@ class Research:
         if type(expectedRevision) is not int or expectedRevision<0:raise Refused('Expected research revision required')
         if recordId is not None and (not isinstance(recordId,str) or len(recordId)>100):raise Refused('Invalid research identity')
         payload={'record':record,'expectedRevision':expectedRevision,'recordId':recordId,'author':author}
-        from src.evidence.cold import ColdArchive
-        ColdArchive(self.data).prepare_references(self.store,campaign,record)
         with self.store.connection(True) as db:
             previous=self.store._idem(db,campaign,'research-save',idempotencyKey,payload)
             if previous:return previous

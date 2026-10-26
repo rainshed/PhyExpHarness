@@ -50,8 +50,8 @@ def task_image_sources(root, version=2):
 
 
 def validate_task_image_lock(lock, task, sources):
-    from .container_runtime import verify_lock
-    verify_lock(lock, task)
+    if lock.get('containerRuntime', 'docker') != 'docker':
+        raise ValueError('Frozen task environment requires a different runtime; use its matching execution distribution')
     digest = hashlib.sha256(json.dumps(sources, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
     if lock.get('task') != task or lock.get('taskSourcesDigest') != digest:
         raise ValueError('Task image lock does not match current task sources; prepare a new environment')
@@ -91,10 +91,6 @@ def cleanup(output):
 def run(bundle_root, quantum_harbor, task_name, output, deadline, soft_token_limit=None, task_image_lock=None):
     if soft_token_limit is not None and not os.environ.get('PHYEXP_ACCOUNTING_URL'):
         raise ValueError('Token budgets are unavailable for new standalone runs')
-    from .container_runtime import preflight, policy, PODMAN_SINGLE_UID
-    preflight([task_name])
-    if policy() == PODMAN_SINGLE_UID and not task_image_lock:
-        raise ValueError('Single-UID Podman requires a frozen task image lock')
     runtime_root = Path(__file__).resolve().parents[3]
     bundle_root, quantum_harbor, output = map(lambda p: Path(p).resolve(), [bundle_root, quantum_harbor, output])
     bundle = verify(bundle_root)

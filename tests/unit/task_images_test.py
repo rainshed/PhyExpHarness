@@ -10,6 +10,9 @@ class TaskImageLockTests(unittest.TestCase):
         lock={'task':'task','taskSourcesDigest':hashlib.sha256(json.dumps(sources,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
               'images':{role:'sha256:'+'a'*64 for role in ['main','qsim','verifier']}}
         self.assertEqual(validate_task_image_lock(lock,'task',sources),lock['images'])
+        self.assertEqual(validate_task_image_lock({**lock,'containerRuntime':'docker'},'task',sources),lock['images'])
+        with self.assertRaises(ValueError):
+            validate_task_image_lock({**lock,'containerRuntime':'external-runtime'},'task',sources)
         for task,source in [('other',sources),('task',{'src/a.py':'changed'})]:
             self.assertRaises(ValueError,validate_task_image_lock,lock,task,source)
         lock['images']['qsim']='qiqcbench-qsim:latest'

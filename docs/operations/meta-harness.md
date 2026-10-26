@@ -6,7 +6,7 @@
 
 Meta 在 `/work/plugins/h0` 获得普通完整基线，可复制到其他目录，修改入口、框架、profile、依赖及恢复。对工程调用 candidate_check / candidate_freeze 的 `projectPath`，然后使用原 batch_submit / batch_status / evidence / results_compare / export_create。不需要先覆盖全部 H0 任务、提交研究引用或申请某种执行算法。check 只表示隔离构建及入口存在性通过，正式启动与评分以 Trial 为准。
 
-外部容量来自 `schemas/execution/process-resources.json`，冻结到活动和配方：构建默认 2 CPU、4 GiB、256 PID、600 秒、产物 1 GiB；模型代理默认 1 CPU、512 MiB、64 PID、单请求解压后 64 MiB。它们不是 token 预算或执行策略。任务 main/qsim 使用 benchmark 与宿主兼容层资源，并记录实际 HostConfig。Rootless 单 UID 目前仅验证五个公开数据提交任务，不能据此声称支持需要其他 UID、特殊服务或自定义环境的任务。
+外部容量来自 `schemas/execution/process-resources.json`，冻结到活动和配方：构建默认 2 CPU、4 GiB、256 PID、600 秒、产物 1 GiB；模型代理默认 1 CPU、512 MiB、64 PID、单请求解压后 64 MiB。它们不是 token 预算或执行策略。任务 main/qsim 使用 benchmark 声明的资源，并记录实际 HostConfig。主线使用标准 Docker/Harbor 执行环境。
 
 构建联网取得精确依赖并允许运行安装脚本；候选执行时 main 只连接任务 qsim 和专属模型通道。真实凭据不进候选。通道支持原生 Responses（含 compact）、Chat Completions、Anthropic HTTP/SSE，支持常用压缩请求，暂不支持 WebSocket。不同工具清单、辅助会话与内部重试共用通道，无额外许可。
 
@@ -39,8 +39,6 @@ Meta 在 `/work/plugins/h0` 获得普通完整基线，可复制到其他目录�
 ## 启动工作台
 
 需要 Node.js 24.13+、Python 3.13、Docker、Harbor 0.18.0，以及显式指定的 Quantum-Harbor checkout。平台使用锁定的 DeepSeek Harness 0.2.1-rc.2。
-
-没有 sudo 的 Linux 节点可使用下方的[单 UID Podman 运行](#单-uid-podman-运行)。它是显式选择的有限兼容策略，不代表所有任务已支持 Podman。
 
 ```sh
 npm ci
@@ -93,98 +91,17 @@ PHYEXP_UI_VARIANT=all node scripts/workbench.mjs
 
 Studio 首次加载将旧草稿、活动选择与待重试创建身份复制到本版存储记录，保留旧键；以后使用自己的命名空间。其他 UI 的状态默认隔离，草稿共享需要明确的兼容或导入。未保存供应商设置须先保存或取消，密钥草稿不跨面板保存。卸载只释放本版读取和监听，桥与后台独立存活。
 
-### 使用 Tailscale 从手机访问
+### 外部 HTTPS 访问配置
 
-电脑和手机连接同一 Tailscale 网络后，可用 Tailscale Serve 将 HTTPS 入口代理到工作台的 `127.0.0.1:18401`。UI 和控制后台仍绑定回环地址，不开放控制端口。远程入口的访问范围由 Tailscale 网络策略决定；浏览器还必须完成 dsh 宿主认证。工作台的 `/phyexp/api` 接口复用宿主的会话和可信域名校验，不能只凭同源请求操作后台。
+工作台接受由外部入口提供的 HTTPS 根地址。将 `{"publicUrl":"https://workbench.example.org/"}` 保存到 UI 宿主目录的 `workbench-access.json`，或设置 `PHYEXP_UI_PUBLIC_URL`，再启动 UI。只接受无路径、查询参数、凭据和 fragment 的 HTTPS 根地址；空字符串禁用该配置。启动器只信任声明的准确域名与端口。
 
-将以下配置保存为 UI 宿主目录下的 `workbench-access.json`（默认位于数据目录的 `ui/`），替换为电脑实际的 Tailscale DNS 名称：
+外部入口须把请求转发到工作台的回环监听地址。浏览器通过启动终端输出的登录链接建立宿主会话；`/phyexp/api` 复用原生来源和会话认证，浏览器不取得后台凭据。反向代理、证书、网络接入与服务托管由外部部署维护。此配置不构成多用户权限系统。
 
-```json
-{"publicUrl":"https://your-computer.your-tailnet.ts.net:18443/"}
-```
+### 执行环境约束
 
-重新启动 UI：`node scripts/workbench.mjs`。启动器只信任配置中的准确域名与端口；也可用 `PHYEXP_UI_PUBLIC_URL` 覆盖文件配置，空字符串表示禁用远程域名配置。只接受无路径、查询参数、凭据和 fragment 的 HTTPS 根地址。只重启 UI 不停止控制后台或实验。
+任务镜像在活动创建时准备并冻结，Trial 只消费不可变镜像 ID，不在执行期间重建或拉取。镜像校验、Compose 创建和健康等待共用任务声明的 `environment.build_timeout_sec`，不缩短 Solver 或 verifier 的阶段时限。启动回执记录阶段、预算、耗时与失败原因。
 
-随后添加独立入口（先检查该端口没有其他 Serve 服务）：
-
-```sh
-tailscale serve --bg --https=18443 http://127.0.0.1:18401
-```
-
-手机首次打开启动终端打印的完整 HTTPS 登录链接（带 `token`），宿主会写入浏览器会话并跳转到不带令牌的地址；以后收藏干净地址即可。该链接授予此 UI 宿主的访问权，只通过可信渠道传给自己的设备，不写入仓库或公开文档。宿主重启后生成新的启动令牌，已有有效浏览器会话由同一 UI 数据目录保留。默认首屏从侧栏选择「研究工作台」（Studio）。
-
-手机使用完整浏览器打开 HTTPS 启动链接。若聊天应用把链接转成「文件预览」，长按复制链接后粘贴到 Chrome 等浏览器的地址栏；文件预览的抓取器可能不保留登录跳转的会话 Cookie，从而得到 401 或抓取异常。`127.0.0.1` 仅用于工作台所在电脑，不能作为手机浏览器的访问地址。
-
-使用 Serve 的私有网络模式，不启用 Funnel。电脑需保持联网、唤醒且 UI 与后台进程运行；本配置不负责开机自启。关闭此入口用 `tailscale serve --https=18443 off`，不使用会清除其他转发的 `reset`。远程入口撤销后可删除配置文件中的 `publicUrl` 并重启 UI。
-
-若 HTTPS 直连成功而浏览器显示连接被关闭，检查系统或浏览器代理是否接管了 Tailscale 域名。将工作台的准确域名加入代理绕过列表并保留原有条目，让该地址走 Tailscale；不要关闭浏览器认证或证书校验。手机也需保持 Tailscale 已连接。
-
-## 单 UID Podman 运行
-
-`PHYEXP_CONTAINER_RUNTIME=podman-single-uid-v1` 支持工作台中的 5 个公开任务，可单选或组合创建活动：
-
-| 工作台任务 | 任务 ID | 启用的模拟能力 |
-|---|---|---|
-| 10 比特 Hamiltonian 学习 | `time_budgeted_hamlearn_10q` | `hamiltonian_probe` |
-| 60 比特 Shadow Surrogate | `time_budgeted_shadow_surrogate_60q` | `basis_shot_sampling`、`sealed_holdout_reveal` |
-| 可调耦合器 CZ | `tunable_coupler_cz_netzero` | `basic_measurement`、`netzero_flux_control` |
-| 逻辑 CNOT 解码器校准 | `logical_cnot_decoder_calibration` | `lattice_surgery_calibration` |
-| H₂O 自适应测量 | `adaptive_clustered_clbcs_h2o` | `composite_measurement` |
-
-这些任务提交数据，由独立 verifier 评分，均不启用仓库中另一个能力 `syndrome_feedback_control` 的 UID/GID 65534 控制器沙箱。单 UID 支持采用明确任务列表；新增任务或改变能力组合需要重新做兼容验证，不能通过关闭其沙箱来兼容。默认未设置时仍使用原 Docker 路径，已有活动不会自动迁移。
-
-运行条件为 Linux 普通账户可创建 user namespace、cgroup v2 已委派 CPU/内存/进程数控制、本地可写镜像存储，以及部署到用户目录的 Podman、crun、conmon、网络辅助程序、catatonit 和依赖库。镜像存储不能放在 NFS。此策略不需要创建 subordinate UID/GID，也不安装系统服务或修改系统权限。
-
-### 部署边界
-
-- Podman API 仅通过当前用户可访问的 Unix socket 提供 Docker 兼容接口，不监听 TCP，不挂载进实验容器。工作台与控制后台仍绑定回环地址；本机浏览器通过 SSH 端口转发访问工作台。
-- 使用专用 PATH 中的 `docker` 入口调用 [podman-single-uid.py](../../scripts/podman-single-uid.py)，不替换系统 Docker。运行命令使用 Podman 原生接口，以显式指定用户目录下的 init；Compose 等操作使用 Docker 客户端连接 Podman socket。
-- `PHYEXP_PODMAN_CONFIG` 指向仓库外配置，字段包括 `policy`、`podman`、`dockerClient`、`dockerConfig`、`socket`、`signaturePolicy`、`work`、`init` 和 `fakeroot`。所有路径使用部署机器上的绝对路径；`fakeroot` 映射 Debian 的 `fakeroot-sysv`、`faked-sysv`、`libfakeroot-sysv.so` 三个文件。入口应自行设置配置路径，因为隔离 Runner 的宿主进程只继承白名单环境变量。
-- Podman 的 `conmon_env_vars` 必须包含这些用户目录二进制需要的 PATH、动态库路径、容器配置路径及运行目录。缺失时清理子进程可能无法加载库，造成约 20 秒的退出等待；不能靠延长实验时限掩盖这个问题。
-- Podman 4 的 systemd 健康检查只继承 PATH。用户目录安装需让其定时任务调用同一 Podman 启动入口，带回依赖库和存储配置；只对本部署的 `healthcheck run` 转换命令，保留原健康检查内容及间隔，并验证定时重复执行。
-- Compose 启动等待由适配器读取真实运行状态：未定义健康检查的服务必须处于运行中，定义了健康检查的服务必须为 healthy；unhealthy、提前退出或等待超时均失败。此处理兼容 Podman 4 对 `HEALTHCHECK NONE` 返回空 Health 状态的差异。
-- 新冻结适配器把任务 `environment.build_timeout_sec` 的剩余时间传给 Compose；创建、发现容器和健康等待共用此时间，不再另设 180 秒截断。未传时间的旧入口仍保留原默认值。Solver 与独立评分阶段的时间配置不变。
-- `phyexp/environment-startup-agent.json` 和独立评分环境的 `environment-startup-verifier.json` 保存启动预算、耗时和阶段。Podman 等待期间持续保存状态变化及最近三次健康检查输出，即使外层超时取消也保留最后观测；未取得容器状态时不推测原因。环境超时、健康检查失败、提前退出和其他准备失败分别显示，原始官方评分不被覆盖。
-- 控制后台选择此策略时，会验证原生 Podman 的 rootless 状态，并核对 Docker 兼容客户端与它使用同一个存储目录。服务和临时目录要保持当前用户独占；共享 home 上的用户服务应限制启动主机。
-
-### 镜像与隔离
-
-构建适配器从官方 Dockerfile 生成临时构建文件，保留任务源码、依赖声明、评分程序、文件模式和入口。文件属主以及镜像 USER 统一为容器 UID/GID 0，映射到普通宿主账户。Debian fakeroot 只用于构建时的文件属主操作，apt 在构建容器中使用单一身份；最终镜像恢复普通 shell 并移除构建辅助文件。它不赋予宿主 root，也不作为运行时沙箱。
-
-Podman 4 不支持 Dockerfile 的逐条 `RUN --network=none`。对所有 RUN 都声明离线的构建，适配器改为整个构建使用 `--network=none`；混合策略会拒绝，不默默放开网络。镜像附带运行策略及原 Dockerfile 摘要标签，构建回执保存转换后的摘要、辅助文件摘要和结果镜像 ID。没有适配标签的镜像不能用于此策略。
-
-任务镜像锁保存 `containerRuntime` 和实际不可变镜像 ID，Runner/Meta 缓存也按运行策略区分。Docker 与单 UID Podman 的镜像不是同一个执行环境，不直接混合比较结果。实验期间依然禁止重建或拉取冻结镜像。
-
-Runner 保留无网络、只读根文件系统、精确挂载、清空 capabilities、禁止提权、系统调用过滤及 CPU/内存/进程数限制。main、qsim、独立 verifier 也清空 capabilities 并禁止提权；main/verifier 保留 Harbor 的有效 CPU、内存配置，未设置时限制为 2 CPU、4 GiB，qsim 为 4 CPU、8 GiB，均最多 256 个进程。具体而言，Shadow 的 main 保留 4 CPU，逻辑 CNOT 的 main 保留 6 GiB，不能被统一安全配置覆盖成较低额度。评分私有文件只进入 verifier，模型凭据仍由宿主网关持有。
-
-qsim 在 Compose 覆盖层设置 `OPENBLAS_NUM_THREADS=4`、`OMP_NUM_THREADS=4`、`MKL_NUM_THREADS=4`，与 4 CPU 配额对应；任务原有环境变量继续合并，main/verifier 不注入这些值。此修改随新冻结执行版本生效；线程调度变化可能带来浮点舍入差异，需要数值容差检查，不承诺逐位一致。
-
-Podman 4 的内部网络仍可能转发外部 DNS。此策略显式关闭该网络的 DNS，仅在 main 的 hosts 文件中固定本次 qsim 地址；移除 main 的其他网络后才提供任务工具。需要实测内部服务可达、外网 IP/宿主服务/外部 DNS 均不可达，不能只检查网络名称或配置标志。
-
-单 UID 模式不能保持同一容器内多个 Unix 用户之间的文件权限隔离；这里依靠独立容器、挂载边界与权限限制保护所列 5 个任务。列表之外的任务、多节点调度、长期存储保留和高并发性能不属于本策略的完成承诺。用户目录中的容器运行时也需要定期维护升级。
-
-### 验证与恢复
-
-先构建并检查镜像，再运行 `tests/contracts/isolation.test.mjs` 以及官方任务的无模型执行/评分检查，通过后才启动有明确轮次、次数、时间和用量限制的真实活动。保留失败记录、构建回执、隔离探针、镜像身份、实际用量及浏览器结果；基础容器启动不代表实验闭环通过。
-
-五任务验收入口为 `tests/smoke/harbor/public_tasks.py`。先用 Quantum-Harbor 自带的 `tools/build_qsim_images.py` 补齐全部 verifier，再在配置好专用容器入口的宿主环境执行：
-
-```bash
-python tests/smoke/harbor/public_tasks.py \
-  --quantum-harbor /absolute/Quantum-Harbor \
-  --cache /absolute/data/task-runtime-locks \
-  --output /absolute/results/public-tasks-check
-```
-
-该检查使用新输出目录，最多并发 2 个任务，不调用模型。它通过正式 MCP 运行探针、提交固定测试答案，核对独立评分、冻结镜像、main 的网络与文件隔离、任务间容器/数据卷分离和清理；Shadow 还经过封存挑战与文件提交，H₂O 经过锁定方案的生产测量。测试答案用于验证链路，得分不代表 Solver 能力，技术验收通过也不要求科学得分为 1。原始失败和后续复查保存在各自输出目录，不能覆盖失败记录。
-
-可单独用 `tests/smoke/harbor/environment_startup.py --quantum-harbor /absolute/Quantum-Harbor --lock /absolute/one-task-image-lock.json --output /absolute/new-startup-check --concurrency 3` 检查同一 Hamlearn 任务的三个并发环境。此入口消费已有镜像，验证健康状态、线程配置、镜像身份、容器/数据卷独立性和清理，不运行模型或评分器。该并发检查不能证明更高并发或长时间活动均稳定。
-
-Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid argument`：宿主文件属主不在容器的单 UID 映射内。Harbor 原有的 tar 流后备上传可完成该操作，无需改写 Harbor；验收要核对后备上传成功、最终 Trial 无异常及独立评分原件，不能只忽略日志中的错误。
-
-用户目录安装的 Podman 4 在保存镜像时也需要显式指定已有的签名策略文件，例如 `podman save --signature-policy /absolute/policy.json --multi-image-archive ...`；这是 `save` 子命令参数。备份应包含实际冻结镜像，校验压缩包与镜像配置摘要，并通过 SQLite backup API 保存在线数据库。归档可读性检查不等于已经完成整机重启恢复演练。
-
-服务可使用 systemd 用户服务持久运行，工作台关闭不应终止实验。SSH 转发应只绑定本机回环地址。数据和镜像位于临时磁盘时必须另做受保护备份；自动清理策略、重启恢复与持久磁盘位置需按具体节点确认。
+执行隔离、任务网络和模型凭据的职责见[执行边界设计](../design/execution-harness-boundary.md)。外部运行环境必须满足这些约束；其他运行时的镜像锁不能直接当作标准 Docker 环境使用。
 
 ## 检查与实验入口
 
@@ -194,7 +111,7 @@ Harbor 0.18.0 上传证据时，`compose cp` 可能先报告 `lchown ... invalid
 |---|---|
 | `npm test` | 自动生成 SDK 资料包后执行离线单元检查，不调用模型 |
 | `npm run test:contracts` | 原生契约与隔离检查；部分需要 Docker，使用假 provider，不调用真实模型 |
-| `python3 scripts/check-boundaries.py` | 检查模块依赖边界 |
+| `npm run check:project` | 检查模块依赖及主线代码、配置、文档的职责边界 |
 | `npm run smoke:harbor -- --quantum-harbor /path/to/Quantum-Harbor` | Docker/Harbor 无模型环境检查，使用 `nop` |
 | `npm run smoke:luna` | 真实模型连通性检查，固定 Luna 配置 |
 | `npm run h0 -- --quantum-harbor /path/to/Quantum-Harbor` | 按默认 Sol 配方运行一个真实 H0 Trial |
@@ -400,7 +317,7 @@ v2 Recipe 不要求人读 `id`，执行身份使用冻结 `bundleId`。收集器
 
 活动数据保存在数据目录的 `control.sqlite`、`campaigns/`、`objects/sha256/`、`trials/`、`evidence/`、`reports/` 和 `exports/`。完整备份应在无活动运行时退出后台后复制整个目录；不要只复制 SQLite 文件而遗漏 WAL 或内容对象。备份包含用户访问令牌和原始实验材料，应保持本机私有权限。
 
-部署或修复前制作的整库回滚快照应放在活动数据目录之外的独立私有目录，例如与 `data/` 同级的 `maintenance-backups/<维护标识>/`，不要放入 `data/backups/`。整库快照混合多个活动，放在受管数据目录内会按删除设计阻止单个活动永久删除。处理已有快照时，先确认备份完整、没有进程占用，将数据库、相关 WAL/SHM 和校验记录一起移出，并核对摘要与权限；不要关闭混合备份检查或直接删除仍需回滚的快照。移出后属于独立备份，后续活动删除不会同步清除其中历史，必须向用户说明此边界。数据库快照不能代替包含内容对象的完整备份。
+整库回滚快照应放在受管数据目录之外。混合多个活动的数据库备份会阻止单活动永久删除；独立备份不随活动删除，须由备份所有者维护。数据库快照不能替代包含证据正文、报告和冻结资产的完整备份。
 
 v2 候选目录本身只有 `bundle.json` 和 `recipe.json`，插件与必要适配引用同级内容对象。单独备份候选目录不足以恢复，须连同 `objects/sha256/` 备份。完整独立交付使用导出 ZIP，不直接复制某一个候选目录。
 
@@ -678,7 +595,7 @@ PHYEXP_DATA_DIR=/absolute/new-synthetic-data PHYEXP_CONTROL_URL=http://127.0.0.1
 
 基线装配通过后，后台还会继续准备选定的参考 Harness 镜像。全部准备完成后才可点击「启动进化」；准备期间按钮显示等待状态，直接请求启动也会被拒绝，此时活动不开始计时、不预留实验、不调用模型。若显示准备失败，在「后台动态」查看准备记录；仅有 H0 检查通过不代表整个活动已就绪。
 
-Claude Code 使用 `dontAsk` 配合显式工具授权：原生终端、文件与研究辅助工具，以及本次冻结的 task/qsim MCP。未授权操作由 CLI 拒绝，不使用 `--dangerously-skip-permissions`。这同时兼容普通 Docker 用户和单 UID Podman 的容器 UID 0；宿主普通用户映射、禁网、只读根文件系统和禁止提权等隔离条件保持不变。此启动策略进入冻结运行时，新活动采用新策略，历史冻结参考运行不热替换。
+Claude Code 使用 `dontAsk` 配合显式工具授权：原生终端、文件与研究辅助工具，以及本次冻结的 task/qsim MCP。未授权操作由 CLI 拒绝，不使用 `--dangerously-skip-permissions`。禁网、只读根文件系统和禁止提权等隔离条件保持不变。此启动策略进入冻结运行时，新活动采用新策略，历史冻结参考运行不热替换。
 
 Codex 外部通道支持明确 API Key 的 Responses 服务，以及固定 Solver 或原生参考模型为 `openai-codex` 时的原有 Codex 订阅通道。原生参考模型仍从 Models 配置读取；在 `llm-pi-ai` 配置 `openai-codex` 和准确模型列表，沿用宿主 `~/.codex/auth.json`（或 `PHYEXP_CODEX_AUTH_FILE`），无需再次填写 Key。此绑定禁止覆盖 API、端点和认证头，目录只保存宿主认证句柄；每次运行重新读取有效访问令牌，不复制刷新令牌、不进入 Runner。登录缺失或即将过期时目录显示不可用；刷新宿主登录后重新读取目录。该订阅接口不支持 `max_output_tokens`，因此每次输出没有此参数的硬上限，仍受时限和共享软预算约束。Claude Code 要求 Messages 服务，DeepSeek 原生 Messages 可用于 Claude Code。其他原生账户配置、自定义推理 wire 值等不能准确恢复的组合标为不支持/未核验，不换默认模型或近似协议。完整支持边界见[设计第 13 节](../design/meta-reference-experiments.md#13-当前实现版本与已声明限制)。目录“可组合”表示适配器协议/配置检查通过，不表示已对每个真实服务发起在线测试。
 
@@ -736,7 +653,7 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 `meta-tools-v5` 引入的输出边界由当前 v7 继承：业务回执只含状态、简短说明和文件入口；完整结果、错误、停止审查及恢复核对结果保存在活动材料与输出目录。使用 `tool_result_read` 按 Unicode 字符分页读取大文件，后续页使用返回的 `nextOffset` 和 `sha256`。原生会话查询的巨型事件同样转为文件入口。输出容量耗尽会明确保留部分状态，不能把缺少文件的回执当作完整证据。
 
-更新部署时，先核对活动、运行中的 Trial、Meta 会话及模型请求。存在在途任务时将新版同步到独立发布目录，保留当前服务的工作目录与冻结运行包；仅同步代码不会让既有进程或旧活动自动切换协议。切换后台服务应在没有在途任务的维护窗口进行，并重新核对冻结版本和未结算请求。不要直接覆盖活动中服务正在校验的协议源文件，不要通过重启替换活动的冻结组合。
+源码更新不会自动切换已运行进程或旧活动的冻结协议。后台与工作台的版本应保持兼容；有在途任务时保留其工作目录和冻结运行包，停止完成后才可替换进程使用的源码。
 
 收到服务端 `CONTEXT_WINDOW_EXCEEDED` 后，网关保留失败审计与用量核对，同时允许原生 SDK 发起压缩；它不触发新的宿主重试循环。压缩和压缩后的模型请求仍检查固定路由、额度、取消及截止时间。只有同一会话完成压缩且后续正常请求成功，才将此溢出记为恢复；压缩失败不能标记恢复。认证等终止错误仍会锁止后续请求。旧活动已冻结的网关代码与历史巨型事件不会自动被更新。
 
@@ -767,32 +684,7 @@ python3 tests/smoke/references/run.py --execute-real-models \
 
 后台仅回收宽限期外、无数据库/归档引用且无硬链接视图的对象，以及已过期的对象发布临时文件。依赖/适配缓存只清理非当前代际，且须无活动任务、无进程引用、无文件视图引用并取得构建锁。冻结镜像、当前依赖、会话、研究证据不按年龄或分数删除；无法判断使用状态则跳过。自动整理异常在活动存储面板显示。容器存储监测实际空闲容量，不按镜像累计虚拟大小估算，也不自动执行镜像 prune。
 
-增长预测至少需要一小时观测，重启重新积累；没有有效正增长时不提供剩余时长。有限磁盘不能保证任意一周活动持续产出，等待存储是保护状态。可选外部归档见下文；部署不自动清空历史。
-
-### 可选 NFS 证据归档
-
-宿主可通过 `scripts/archive-evidence.py` 管理独立归档策略。执行前确认本地数据与远端目录权限、共享空间预算、生产者状态，并备份活动配置和数据库。不要把活跃 SQLite WAL、Podman 镜像或整个 `data/` 移到 NFS。配置文件保存在仓库外；例如：
-
-```json
-{"version":1,"enabled":true,"evict":false,"root":"/your-writable-nfs/PhyExpHarness/archive","instance":"node-2","bytesPerSecond":33554432,"maxBytes":214748364800,"minFreeBytes":10737418240,"localReserveBytes":2147483648,"cacheSeconds":3600,"minObjectBytes":65536,"lockTimeoutSeconds":5,"restoreTimeoutSeconds":30}
-```
-
-```bash
-python scripts/archive-evidence.py --data /local/data configure /private/archive-policy.json
-python scripts/archive-evidence.py --data /local/data run
-python scripts/archive-evidence.py --data /local/data status
-python scripts/archive-evidence.py --data /local/data restore trials/launch-id
-```
-
-首次先使用 `evict:false` 复制、读回验证，确认跨盘恢复和原始摘要一致后改为 `evict:true`。后台每分钟尝试一轮；已有归档任务时不重复启动。配置由后台每轮重新读取，无需再次重启。每个对象保存为 `<root>/<instance>/objects/<前两位>/<sha>.gz`，同名 `.json` 是路径和归属回执。本地 `archive-index.sqlite` 保存定位；维护备份须同时保存控制数据库、归档索引和策略，整库备份置于受管数据目录之外。归档及独立维护备份是两个范围，单活动删除不会同步删除独立备份。
-
-`GET /storage` 和活动存储面板显示归档对象数、压缩后大小、状态和最近错误。原始证据的 API、材料、历史来源纳入和文件视图会按需恢复；归集重放恢复原始路径后核验。恢复有本地容量预留及超时，失败不会提供部分正文。完整清单与官方结果留在本地；运行中的写入、会话文件、活动会话已获得的文件视图不回收。原生脚本直接读主机历史目录前，先使用 `restore`。已发布的活动内路径继续可用。
-
-需要回退时先将策略设为 `enabled:false`、`evict:false`，确认后台归档进程结束，再执行 `restore-all` 并核验原路径/摘要，之后才可切回不支持归档的旧程序。禁用归档本身不会自动恢复正文。不可直接修改既有策略的 `root/instance`；远端故障时保留定位与本地有效文件并修复连接。NFS 共享空闲量不等于个人配额，本方案也不保证持续增长的数据能无限运行。
-
-容量等待的本机 NDJSON 网关在新冻结运行时中立即发送响应头，并每 15 秒发送一次保活帧；消费者忽略保活帧。该行为避免等待期间被 HTTP 响应头/空闲超时误取消，不改变截止时间、实际取消或模型设置。
-
-2026-10-25：TensorTrain 2 的 control/workbench 已切换至独立发布 `fd0465b`，归档在后台独立进程运行。实际跨文件系统校验、历史原件恢复和同设置新活动启动已验证；旧活动的冻结配置与结果未替换。完整实验结果及持续容量增长仍须按活动实际进展判断。
+增长预测至少需要一小时观测，重启重新积累；没有有效正增长时不提供剩余时长。有限磁盘不能保证任意一周活动持续产出，等待存储是保护状态。本地容量不足时由用户释放空间或调整容量；更新程序不自动清空历史。
 
 ### 单次活动永久删除
 
@@ -847,10 +739,8 @@ Worker 结束后先关闭桥接入口并记录尚未完成的调用，再作评�
 
 容量统计由后台巡检更新，`observedAt` 表示测量时间；已有活动的数据首次巡检前暂缓新增执行，已有请求与收尾保留即时磁盘检查。空安装初始化一次统计。旧历史材料不补造阶段时间。
 
-部署先构建独立 release，在无 Trial、Meta、构建及归集工作的窗口切换 control/workbench 两个用户服务。维护备份放在 data 同级的私有 maintenance-backups，保存数据库一致性备份和服务配置；保留旧 release。冻结候选与协议不替换。Schema 9 的报告引用不能由旧代码直接读取：无新业务写入时可同时恢复本次数据库备份和旧服务；已有新业务数据时应先验证兼容导出/展开报告引用，不能只切回旧代码。
+Schema 9 的报告引用不能由旧代码直接读取。回退必须同时满足数据库与文件格式兼容性；已有新业务数据时，须先验证兼容导出或报告引用展开。新源码不替换旧活动的冻结候选与协议。
 
 `python scripts/project-candidate-diagnostics.py --data <data> --campaign <id>` 仅检查历史候选错误；加 `--write` 追加 failure-diagnoses.json 阅读投影。它记录输入摘要，不改官方结果、原事件或历史报告。
 
-TensorTrain 2 于 2026-10-25 发布 `936d39a`，control/workbench 均使用独立 release；规模验证、历史完整性核对和已知性能边界见[发布验收](../plans/control-plane-scalability.md#7-tensortrain-2-发布验收)。候选诊断包含运行中可能已恢复的错误，读取时须结合最终结果，不能将上报错误数量当作失败次数。
-
-同日按用户授权暂停并永久删除本次测试活动后，control/workbench 已切换至 `2d60358`，补齐原生 Meta 材料与执行策略说明的读取性能修复。两个服务验收正常；没有自动创建或启动新活动。
+候选诊断包含运行中可能已恢复的错误，读取时须结合最终结果，不能将上报错误数量当作失败次数。

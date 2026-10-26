@@ -335,7 +335,7 @@ class Inventory:
                     if file.name == 'control-before.sqlite' or file.suffix in ('.sqlite','.sqlite3','.db'):
                         self.blockers.append({'kind':'mixed_backup','path':str(file),
                             'message':'受管目录中存在混合数据库备份，请先移出或明确处理：' + str(file)})
-            elif directory.name not in ('control.sqlite','provider-settings.sqlite','archive-index.sqlite') and directory.suffix in ('.sqlite','.sqlite3','.db'):
+            elif directory.name not in ('control.sqlite','provider-settings.sqlite') and directory.suffix in ('.sqlite','.sqlite3','.db'):
                 self.blockers.append({'kind':'mixed_backup','path':str(directory),
                     'message':'受管目录中存在混合数据库备份，请先移出或明确处理：' + str(directory)})
         annotations = self.data / 'plugin-annotations.json'

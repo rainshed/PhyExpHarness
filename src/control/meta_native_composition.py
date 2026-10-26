@@ -13,7 +13,6 @@ from pathlib import Path
 from .store import Refused,encoded
 from .stop_policy import GOAL_POLICY
 from src.execution.bundle.manifest import safe_relative
-from src.execution.host.container_runtime import policy, verify_image
 from .reference.plugins import entry_path, configure as configure_optional, contracts as optional_contracts
 
 VERSION='meta-composition-v2'
@@ -69,7 +68,6 @@ def validate(manifest,source):
 
 def prepare_image(source,data):
     inputs={p:file_hash(source/p) for p in ['packages/meta-harness/runtime-package.json','packages/meta-harness/runtime-package-lock.json','packages/meta-harness/Dockerfile','packages/meta-harness/development-dependencies.json']}
-    if policy() != 'docker': inputs['containerRuntime'] = policy()
     arch=subprocess.run(['docker','info','--format','{{.Architecture}}'],text=True,capture_output=True,check=True,timeout=30).stdout.strip()
     arch={'aarch64':'arm64','x86_64':'amd64'}.get(arch,arch)
     key=digest({'inputs':inputs,'architecture':arch});tag='phyexp-meta:'+key;directory=data/'cache/meta-images';directory.mkdir(parents=True,exist_ok=True)
@@ -124,7 +122,6 @@ def prepare_image(source,data):
                 subprocess.run(['docker','build','-t',tag,temp],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=600)
             image=inspect()
         if image.returncode or not re.fullmatch(r'sha256:[0-9a-f]{64}',image.stdout.strip()):raise Refused('Native Meta image unavailable')
-        verify_image(image.stdout.strip())
         return image.stdout.strip()
 
 def freeze(source,data,config):

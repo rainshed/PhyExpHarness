@@ -8,7 +8,6 @@ from pathlib import Path
 
 from .store import PUBLIC_TASKS, encoded
 from src.execution.host.single_run import task_image_sources, validate_task_image_lock, write_json
-from src.execution.host.container_runtime import policy, require_tasks, verify_image
 
 POLICY = 'campaign-pinned-v1'
 ROLES = ('main', 'qsim', 'verifier')
@@ -28,9 +27,9 @@ def image_id(reference):
             engine = subprocess.run(['docker', 'info', '--format', '{{.ServerVersion}}'],
                                     capture_output=True, text=True, timeout=10)
             if engine.returncode:
-                raise ValueError('无法连接 Docker 引擎。请启动 Docker Desktop，等待引擎就绪后重试；若已启动，请检查当前 Docker context 和访问权限。')
+                raise ValueError('无法连接 Docker 引擎。请确认引擎已就绪，并检查当前 Docker context 和访问权限。')
     except FileNotFoundError:
-        raise ValueError('未找到 Docker 命令。请安装 Docker Desktop，并确保后台进程可以调用 docker。') from None
+        raise ValueError('未找到 Docker 命令。请提供 Docker 客户端，并确保后台进程可以调用 docker。') from None
     except subprocess.TimeoutExpired:
         raise ValueError('Docker 镜像检查超时。请确认 Docker 引擎已就绪且能够响应，然后重试。') from None
     if result.returncode:
@@ -40,7 +39,6 @@ def image_id(reference):
             raise ValueError('Task image unavailable: '+reference+'; restore this exact frozen image or select the Docker context containing it')
         raise ValueError('Task image unavailable: '+reference+'; install the official Quantum-Harbor images first')
     image = result.stdout.strip()
-    verify_image(image)
     return image
 
 
@@ -70,7 +68,6 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
     """
     root, cache, log_path = map(Path, (root, cache, log_path))
     tasks = list(dict.fromkeys(tasks))
-    require_tasks(tasks)
     if not tasks or any(task not in PUBLIC_TASKS for task in tasks):
         raise ValueError('Select supported public tasks for image preparation')
     cache.mkdir(parents=True, exist_ok=True)
@@ -88,7 +85,7 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
             subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
 
         def cached_build(role, key, arguments):
-            key = {**key, 'containerRuntime': policy()}
+            key = {**key, 'containerRuntime': 'docker'}
             key = sources_digest(key)
             tag = 'phyexp-task:'+role+'-'+key[:24]
             receipt = cache/(role+'-'+key+'.json')
@@ -128,8 +125,8 @@ def prepare_task_images(root, tasks, cache, log_path, expected_sources_digest=No
             locks[task] = {'schemaVersion': 2, 'task': task, 'taskSourcesDigest': digest,
                            'images': {'main': main, 'qsim': qsim, 'verifier': verifier, 'verifierSource': reference},
                            'agentBaseImage': base,
-                           'containerRuntime': policy(),
-                           'source': 'Official task/scorer sources; '+policy()+' image provisioning.'}
+                           'containerRuntime': 'docker',
+                           'source': 'Official task/scorer sources; docker image provisioning.'}
         # Check both source stability during builds and availability before publishing
         # any Campaign lock. The cache is never the authority for an existing Campaign.
         verify_locks(root, tasks, locks)

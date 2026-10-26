@@ -6,6 +6,41 @@ from pathlib import Path
 
 FORBIDDEN = ('src/control/', 'src/evidence/', 'src/reporting/', 'src/exporting/', 'src/meta/', 'src/integrations/', 'src/runtime/', 'packages/')
 
+def project_violations(root):
+    """Reject concrete deployment implementations in the project distribution.
+
+    This check is for the project branch. Deployment distributions run the
+    dependency checks plus their own environment acceptance instead.
+    """
+    root = Path(root).resolve()
+    excluded = {'scripts/check-boundaries.py', 'tests/unit/project_scope_test.py'}
+    removed = {
+        'scripts/podman-single-uid.py', 'scripts/archive-evidence.py',
+        'src/execution/host/container_runtime.py', 'src/control/archive.py',
+        'src/evidence/cold.py', 'src/evidence/cold_io.py',
+    }
+    patterns = {
+        'deployment runtime': r'\bpodman\b|\bfakeroot\b|PHYEXP_(?:PODMAN_CONFIG|CONTAINER_RUNTIME)|host[/.]container_runtime',
+        'remote archive implementation': r'\bnfs\b|\bColdArchive\b|archive-(?:policy\.json|index\.sqlite)|src[/.]evidence[/.]cold(?:\b|_)',
+        'host deployment': r'tensor[ _-]?train[ _-]?2|\btailscale\b|/var/tmp/phyexp-[\w-]+',
+    }
+    errors = [f'{name}: deployment-only file' for name in sorted(removed) if (root/name).exists()]
+    files = [root/'AGENTS.md', root/'README.md', root/'package.json']
+    for folder in ('src', 'packages', 'scripts', 'tests', 'schemas', 'profiles', 'recipes',
+                   'experiments', 'templates', 'docs', 'knowledge'):
+        files.extend((root/folder).rglob('*'))
+    for file in files:
+        if not file.is_file() or file.is_symlink(): continue
+        relative = file.relative_to(root)
+        if relative.as_posix() in excluded: continue
+        if any(part in ('node_modules', '__pycache__', 'lib') for part in relative.parts): continue
+        if relative.as_posix().startswith('knowledge/plugin-sdk/reference/'): continue
+        if file.suffix not in ('.py', '.mjs', '.js', '.ts', '.tsx', '.json', '.yml', '.yaml', '.md', '.sh'): continue
+        source = file.read_text()
+        for label, pattern in patterns.items():
+            if re.search(pattern, source, re.I): errors.append(f'{relative}: {label} belongs outside the project distribution')
+    return sorted(set(errors))
+
 def imports(file, root):
     source=file.read_text()
     if file.suffix=='.py':
@@ -98,7 +133,12 @@ def violations(root):
     return sorted(set(errors))
 
 if __name__=='__main__':
-    import sys
-    issues=violations(Path(__file__).resolve().parents[1])
+    import argparse,sys
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--project', action='store_true', help='Also enforce project-only source and documentation scope')
+    args=parser.parse_args()
+    root=Path(__file__).resolve().parents[1]
+    issues=violations(root)
+    if args.project: issues+=project_violations(root)
     print(json.dumps({'status':'failed' if issues else 'passed','violations':issues},indent=2))
     sys.exit(bool(issues))
