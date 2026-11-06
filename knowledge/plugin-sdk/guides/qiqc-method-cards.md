@@ -4,7 +4,7 @@
 
 ## 内容与读法
 
-本文收录 QIQC Challenge 自建 harness `stack-h16` 中的 5 张任务卡（CNOT、H2O、60q、hamlearn、CZ v3）、2 张原型卡（estimate、calibrate）和 1 组分析规则（扣除零信号参考、按实际到达的控制量拟合）。
+本文收录 QIQC Challenge 自建 harness `stack-h16` 中的 5 张任务卡（CNOT、H2O、60q、hamlearn、CZ v3）、2 张原型卡（estimate、calibrate）和 1 组分析规则（扣除零信号参考、按实际到达的控制量拟合），并说明 8 个与具体方法无关的 [hook](#hook)（不含代码）。
 
 卡片是给 Solver 的建议文本，是否遵循由 Solver 决定。每张卡的“阅读信息”写的是设计意图，不代表已验证的效果；效果只看下文证据。
 
@@ -369,6 +369,94 @@ SUBMIT THE TESTED OBJECT. The answer is exactly the object you last measured, wr
 NULL MAP. Any conversion from a raw signal to a physical quantity (an accumulated phase or rate to a frequency or field, a ratio to an amplitude, counts to a population) carries the instrument's zero-input response. Measure that zero-input reference under the same conditions as the signal (same frame, same sequence, the control set to zero), make it an explicitly fitted term of your forward model, and push the zero-input data through the same pipeline. For each such conversion print from your code a line `CHECK NULL <name> value=<v> sigma=<s>`, where v is what the zero-input data map to and s its standard error; the conversion is valid when v is within about three sigma of zero. If the task has no such conversion, print `CHECK NULL none: <reason>`.
 REALIZED CONTROL. If a control you program reaches the system through a transfer you have characterized or modelled (a filter, a settling or distortion response, a delay, crosstalk), fit every feature against the realized control computed from that transfer model, never against the programmed value. For each such fit print from your code `CHECK CONTROL <name> realized`, or `CHECK CONTROL <name> programmed: <reason>` if the transfer is negligible there. If there is no such transfer, print `CHECK CONTROL none: <reason>`.
 ```
+
+## Hook
+
+`stack-h16` 还有 8 个与具体方法无关的 hook。它们按 Claude Code 的 hook 协议编写，尚未移植。本页不收录代码，代码随我们的 AGPL 版本发布（这部分标注 AGPL-3.0-or-later）。
+
+**没有一个 hook 单独测试过。**以下是全部 hook 共用的整体证据：
+
+- 卡片加 hook 的 harness 为 15/16，无插件为 2/16。两者一起生效，无法拆开。
+- 最终测量中 20/20 的答案被接受，hook 错误 0 次，丢失答案 0 次。
+
+下面只有写明的才是单个 hook 的证据，其余 hook 只有这组整体证据。
+
+迁移时，拒绝调用可能对应 `tools/pre-execute`，附加上下文可能对应 `tools/post-execute`。回合结束时的拦截没有核对到对应接口。
+
+### `contract-check-v5`
+
+- `displayName`：提交约定检查
+- `functionSummary`：提交前按任务族的提交约定检查答案，并提供离线校验和从文件提交的命令行工具。不判断答案在物理上是否正确。
+- `mechanism`：拦截提交调用，以及能定位到答案文件的脚本提交。确定会被拒收的硬错误每次都拒绝；软错误每会话最多拒绝 3 次，之后放行。定位不到文件时只提醒。检查本身出错时放行。部分规则依据公开的 verifier 和 simulator 源码编写，不含隐藏数值。
+- `categories`：`execution-control`、`tools`、`prompt-context`
+- **预防的失败：**答案不符合提交约定，到评分时才被拒收。
+- **证据：**只有整体证据。
+
+### `file-route-v2`
+
+- `displayName`：大载荷文件通道
+- `functionSummary`：提供一个助手，从 JSON 文件读取任务工具的参数并调用，把完整结果写入文件，只打印简短摘要。
+- `mechanism`：会话开始时宣告一次，建议不要手打大载荷；是否使用由 Solver 决定。助手拒绝转发最终答案，答案走 `contract-check` 的提交助手。
+- `categories`：`tools`、`prompt-context`
+- **预防的失败：**手打的大答案超过 64k 输出上限而丢失。
+- **证据：**CNOT 载荷有 138–186 KB，曾因此丢失，这是文件通道的由来。这是事故记录，不是对照测试。
+
+### `submit-floor-v2`
+
+- `displayName`：提交底线提醒
+- `functionSummary`：快到时限仍没有答案被接受时，提醒 Solver 从文件提交当前最好的已验证答案。
+- `mechanism`：每次工具调用后计算剩余时间。剩余时间不超过 5 分钟或时限的 10%（取较大者）且没有答案被接受时附加提醒，每会话最多 3 次，间隔至少 60 秒。首个答案被接受后提示一次可以继续改进。只提醒，不拒绝也不阻断。
+- `categories`：`prompt-context`、`tool-results`
+- **预防的失败：**到时限仍没有答案。
+- **证据：**一次 60q 运行在时限前 26 秒才提交，因为 3 分钟的窗口对需要先锁定的任务太短，所以短任务的窗口改为 5 分钟。5 分钟这个值没有实测显示额外收益，只知道没有损害最终测量。
+
+### `answer-before-wait-v4`
+
+- `displayName`：等待前时间提示
+- `functionSummary`：Solver 开始长等待而还没有答案时，给出一行中性的已用时间提示，不要求提交。
+- `mechanism`：已用时间超过时限的 33% 后，识别 Bash、ScheduleWakeup、Agent 等调用中的长等待，放行调用并附加已用和总时长，以及后台运行长任务的建议。最多每 5 分钟一次，每会话 6 次。不阻断。
+- `categories`：`prompt-context`、`tool-results`
+- **预防的失败：**时间耗在等待上而没有答案。早期版本要求立即提交，在需要先锁定的任务上使 Solver 过早锁定，所以改为中性文字。
+- **证据：**只有整体证据。[投递经验](#投递经验)中的时间提示测量不是对这个 hook 的单独测试。
+
+### `answer-guard-v3`
+
+- `displayName`：答案常识检查
+- `functionSummary`：提交前对答案做与任务无关的常识检查，发现问题时警告。只警告，不拒绝。
+- `mechanism`：检查非有限数值、非零项数达到公开的稀疏上限、复用公开 notebook 或先验中的数值、控制数组与实际发给设备的数组不符。答案被接受后又出现新测量时提示一次，说明答案没有用到这些数据。每会话最多 3 次警告、4 次提示。
+- `categories`：`prompt-context`、`tool-results`
+- **预防的失败：**提交照抄先验的值或没有测过的对象；最后一次答案之后的测量没有进入答案。
+- **证据：**只有整体证据。
+
+### `answer-consistency-v1`
+
+- `displayName`：答案一致性检查
+- `functionSummary`：提交前按任务说明写明的格式和答案自身的声明重新计算。格式不符时拒绝，声明不一致时警告。
+- `mechanism`：读取答案和任务说明。格式项包括成对字段长度、采样点上限、常量、声明的长度、元素范围和有限数值；每项每会话最多拒绝 2 次，最后 3 分钟不拒绝。声明项（例如声称净零但数组之和不为零）只警告。
+- `categories`：`execution-control`、`prompt-context`
+- **预防的失败：**答案因格式无法评分，或与自身声明矛盾而未被发现。
+- **证据：**回放 434 个已记录答案，格式拒绝只出现在 2 个已知无法评分的 CZ 答案上；声明警告出现在 8 个失败的 CZ 答案上，通过的答案没有触发。这是离线回放，没有测量它对通过率的影响。
+
+### `no-background-agents-v4`
+
+- `displayName`：禁止后台委派主任务
+- `functionSummary`：不让 Solver 把主任务交给后台代理，也不让它在答案被接受之前结束回合。
+- `mechanism`：拒绝后台子代理和委派整个实验与提交流程的前台子代理，其他前台子代理放行。没有答案被接受时阻止结束回合，每会话最多 2 次，之后放行。最终总结报告有未达标的自查项且剩余时间超过 20% 时也会阻止，与 `final-action-guard` 共用次数上限。
+- `categories`：`execution-control`、`prompt-context`、`tool-results`
+- **预防的失败：**把任务交给后台代理后结束回合，无头会话随之结束，没有提交答案。
+- **证据：**早期一次 CZ 留出测试为 0/12，其中有运行因后台代理退出，也有其他原因，所以这个 0/12 不能全部归因于此。
+
+### `final-action-guard-v2`
+
+- `displayName`：最终动作前的记录检查
+- `functionSummary`：要求 Solver 在不可逆调用或最后一次允许的提交之前，记录自己对每个通过门槛的当前数值。
+- `mechanism`：会话开始时列出任务说明中的门槛和不可逆工具。不可逆调用缺少比最新设备结果更新的记录时，每个工具拒绝一次；剩余时间少于 20% 或 5 分钟（取较大者）时不拒绝。答案被接受后，若有更新的设备活动，或最后一次答案没有对应记录，会阻止结束回合，并设有次数上限。记录的数值由 Solver 自己填写，本 hook 不核实其真实性。
+- `categories`：`execution-control`、`tools`、`prompt-context`
+- **预防的失败：**没有核对门槛就做不可逆动作；在最后答案会封闭证据记录的任务上，答案之后的设备活动使运行作废。
+- **证据：**
+  - 曾有一条停止规则（S3）：记录的数值未达门槛时阻止结束。它让运行工作得更久，但没有带来更多通过，**所以已经移除**，现在只记录不阻止。保留的是记录要求和不可逆调用前的检查。
+  - 后来因一次作废的答案加入了设备调用标记，**只有离线测试**。运行自己的 MCP 客户端脚本发起的调用不会被标记，要等结果文件出现后才能看到。
+  - 其余只有整体证据。
 
 ## 许可
 

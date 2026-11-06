@@ -44,4 +44,4 @@
 - [待办与验证缺口](plans/README.md)：仍需单独验证或设计的事项。
 - [历史文档索引](archive/README.md)：被替代的设计、计划及旧运行说明。
 
-执行 SDK 的资料源继续在 [knowledge/plugin-sdk](../knowledge/plugin-sdk/README.md)，字段契约继续在 [schemas](../schemas/contracts.schema.json)，命令继续以 [package.json](../package.json) 为准。QIQC 方法卡片及其实测结果和局限见 [QIQC 方法卡片参考](../knowledge/plugin-sdk/guides/qiqc-method-cards.md)，供人工阅读，不进入资料包。完整导航只在此维护。
+执行 SDK 的资料源继续在 [knowledge/plugin-sdk](../knowledge/plugin-sdk/README.md)，字段契约继续在 [schemas](../schemas/contracts.schema.json)，命令继续以 [package.json](../package.json) 为准。QIQC 方法卡片、hook 及其实测结果和局限见 [QIQC 方法卡片参考](../knowledge/plugin-sdk/guides/qiqc-method-cards.md)，供人工阅读，不进入资料包。完整导航只在此维护。
